@@ -148,23 +148,50 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             }];
     });
 }
+// All cover bookkeeping runs on the main queue. Scene and app events can overlap.
+static void hidePrivacyCover(UIScene *scene) {
+    for(UIView *cover in [privacyViews copy]) {
+        UIWindowScene *owner=cover.window.windowScene;
+        if((scene && owner==scene) || (!scene && (!owner || owner.activationState==UISceneActivationStateForegroundActive))) {
+            [cover removeFromSuperview];[privacyViews removeObject:cover];
+        }
+    }
+}
+static void showPrivacyCover(UIScene *onlyScene) {
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes)if([scene isKindOfClass:UIWindowScene.class] && (!onlyScene || scene==onlyScene)) {
+        for(UIWindow *window in ((UIWindowScene *)scene).windows)if(window.isKeyWindow) {
+            BOOL covered=NO;
+            for(UIView *cover in privacyViews)if(cover.superview==window){covered=YES;break;}
+            if(covered)continue;
+            UIView *cover=[[UIView alloc] initWithFrame:window.bounds];cover.backgroundColor=UIColor.blackColor;
+            cover.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+            [window addSubview:cover];[privacyViews addObject:cover];
+        }
+    }
+}
+NG_EXPORT void ng_vault_resume(void) {
+    initialize();dispatch_async(dispatch_get_main_queue(), ^{
+        // Never uncover a background scene. An activation observer handles a later activation.
+        hidePrivacyCover(nil);
+    });
+}
 static void installPrivacyCover(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if(observers.count>0)return;
         NSNotificationCenter *nc=NSNotificationCenter.defaultCenter;
         id hide=[nc addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){
-            for(UIScene *scene in UIApplication.sharedApplication.connectedScenes)if([scene isKindOfClass:UIWindowScene.class]) {
-                for(UIWindow *window in ((UIWindowScene *)scene).windows)if(window.isKeyWindow) {
-                    UIView *cover=[[UIView alloc] initWithFrame:window.bounds];cover.backgroundColor=UIColor.blackColor;
-                    cover.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
-                    [window addSubview:cover];[privacyViews addObject:cover];
-                }
-            }
+            showPrivacyCover(nil);
         }];
         id reveal=[nc addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){
-            for(UIView *cover in privacyViews)[cover removeFromSuperview];[privacyViews removeAllObjects];
+            hidePrivacyCover(nil);
         }];
-        [observers addObject:hide];[observers addObject:reveal];
+        id sceneHide=[nc addObserverForName:UISceneWillDeactivateNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){
+            showPrivacyCover((UIScene *)note.object);
+        }];
+        id sceneReveal=[nc addObserverForName:UISceneDidActivateNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){
+            hidePrivacyCover((UIScene *)note.object);
+        }];
+        [observers addObjectsFromArray:@[hide,reveal,sceneHide,sceneReveal]];
     });
 }
 // Retained for older .gdip consumers; the AOT bridge initializes itself on first use.

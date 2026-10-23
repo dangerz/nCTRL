@@ -5,6 +5,14 @@ using System.Runtime.InteropServices;
 
 public static class NativeVaultBridge
 {
+    public static void RestoreForeground()
+    {
+        if(OS.GetName()!="iOS")return;
+        try { ng_vault_resume(); }
+        catch(DllNotFoundException) { }
+        catch(EntryPointNotFoundException) { } // Older bridge still uses OS activation notifications.
+    }
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_vault_resume();
     public static IVaultBridge Create()
     {
         if(OS.GetName()=="iOS") {

@@ -7,7 +7,7 @@ This revision adds secure phone-side credential persistence, biometric unlock, b
 1. Open nCTRL; it starts on the sign-in or saved-account unlock screen.
 2. Enter email, password and the four-digit Bluelink service PIN. On a supported phone, **Save account with Face ID / Touch ID / biometrics** is selected by default and can be turned off.
 3. After Hyundai accepts the account, complete the OS biometric prompt to save it. If saving fails or is cancelled, the current manual sign-in can continue for that session; the UI reports that it was not saved. An existing saved login is unchanged by a failed replacement.
-4. On subsequent launches, tap **Unlock with Face ID** (or the available biometric). The native vault releases the credentials only after authentication, then the app logs into Hyundai and shows vehicle selection.
+4. On subsequent launches, tap **Unlock with Face ID** (or the available biometric). The native vault releases the credentials only after authentication, then the app logs into Hyundai and opens the previously selected vehicle after checking current enrollment. First use or a missing/account-mismatched vehicle shows selection.
 5. Sending the app to the background ends the live session, cancels pending local work, clears account/vehicle references and hides the live dashboard. Unlock or manually sign in again to continue. A command already sent to Hyundai cannot be recalled by locking the app.
 6. **Lock app** keeps the saved vault account. **Sign out & forget** clears the active session and deletes the saved account. The locked login screen also has **Forget saved account**.
 
@@ -24,11 +24,11 @@ Face ID is local authorization to access the saved credentials, not a replacemen
 - `kSecAttrSynchronizable = false`: no iCloud Keychain synchronization.
 - A fresh `LAContext` for each operation, with biometric reuse disabled. No device-passcode or app-level success-flag fallback decrypts the item.
 
-Saving first authenticates the owner, then creates or updates the protected Keychain item. Unlock uses `SecItemCopyMatching` against the protected item itself, so the authentication is bound to the secret read. A fresh-install marker clears orphaned Keychain credentials that could otherwise outlive an uninstall. A native privacy cover hides the UI while the app is inactive/app-switcher snapshots are taken.
+Saving first authenticates the owner, then creates or updates the protected Keychain item. Unlock uses `SecItemCopyMatching` against the protected item itself, so the authentication is bound to the secret read. A fresh-install marker clears orphaned Keychain credentials that could otherwise outlive an uninstall. A native privacy cover hides the UI while the app is inactive/app-switcher snapshots are taken. It now handles both UIKit app and scene activation notifications, avoids stacking duplicate covers, and includes a managed resume cleanup call. Godot hides the old canvas on pause and rebuilds the locked UI on resume. These address identified lifecycle gaps; the reported blank screen still needs physical-device verification.
 
 ### Build on a Mac
 
-The vault is now compiled and statically linked into the C# NativeAOT framework during Godot's iOS export. `IoniqN.csproj` imports `Native/iOS/Vault.targets`, which runs `build-aot.sh` for the selected device/simulator architecture and binds the six C bridge functions using DirectPInvoke. A failed native compile/link stops export. This replaces the previous optional `.gdip` integration, which could be omitted from an otherwise successful export or leave `__Internal` imports unresolved at runtime.
+The vault is now compiled and statically linked into the C# NativeAOT framework during Godot's iOS export. `IoniqN.csproj` imports `Native/iOS/Vault.targets`, which runs `build-aot.sh` for the selected device/simulator architecture and binds the seven C bridge functions (including foreground cover cleanup) using DirectPInvoke. A failed native compile/link stops export. This replaces the previous optional `.gdip` integration, which could be omitted from an otherwise successful export or leave `__Internal` imports unresolved at runtime.
 
 1. On your Mac, open this updated project with Godot .NET 4.7 and Xcode selected via `xcode-select`. Build the C# project so the editor addon loads.
 2. Keep **nCTRL Secure Vault** enabled under Project Settings → Plugins (now enabled in `project.godot`). It supplies `NSFaceIDUsageDescription` to the exported Info.plist. Android also uses this addon for its AAR.
@@ -77,10 +77,10 @@ While unlocked, credentials exist in process memory because Hyundai's token refr
 Validation repeated in the Windows checkout:
 
 - C# Debug and ExportRelease application/export-plugin builds pass with zero warnings/errors (October 23, 2026).
-- 32 secure-login coordinator checks with a fake native bridge, plus 147 protocol checks (179 total), with JSON reflection explicitly disabled. These cover safe mobile runtime diagnostics, capability failures and existing no-retry/credential-handling behavior.
+- 32 secure-login coordinator checks with a fake native bridge, plus 149 protocol and 11 remembered-vehicle/door-control checks (192 total), with JSON reflection explicitly disabled. These cover safe mobile runtime diagnostics, capability failures and existing no-retry/credential-handling behavior.
 - The previous Android Java/AAR validation remains unchanged; Android export/device checks have not been performed.
 - iOS MSBuild settings were evaluated for NativeAOT linkage. Apple native compilation and a signed export remain unverified; Windows Git Bash could not start in this sandbox, so the new shell script could not be executed here either.
-- Debug-only security smoke remains available for save preference, background lock, cancelled biometric unlock, mocked unlock, stale-unlock rejection and account removal. The current Godot smoke launch stalled during .NET initialization before app execution; current rendered flows remain unverified. Prior rendered results are not native/device verification; see README for details.
+- Debug-only security smoke remains available for save preference, background lock, cancelled biometric unlock, mocked unlock, stale-unlock rejection and account removal. The latest Godot smoke launch failed with missing .NET assemblies and crashed before app test execution; current resume/rendered flows remain unverified. Prior rendered results are not native/device verification; see README for details.
 
 The nCTRL rename and new iOS linkage preserve all secure-storage identifiers and encryption settings, including the iOS Keychain service/account, fresh-install marker and legacy Android AES-GCM associated-data text. No credential migration is required when upgrading with the same app identity/signing. Keep the existing package/bundle identity and signing configuration; changing those may require signing in and securely saving again. No plaintext or cross-identity credential migration is performed. See README for appearance preference compatibility.
 

@@ -14,6 +14,7 @@ public partial class Main : Control
     private string screen = "Connect", paintName = "Performance Blue", paintHex = "89b7f0";
     private string garageName = "Roy’s garage", notice = "";
     private bool noticeError;
+    private string linkedVehicle="",accountKey="";
     private const string Prefs = "user://preferences.cfg";
     private bool smoke=false;
     private readonly (string Name,string Hex)[] paints = {
@@ -53,6 +54,7 @@ public partial class Main : Control
         paintName = cfg.GetValue("appearance","name","Performance Blue").AsString();
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","Roy’s garage").AsString();
+        linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
     }
     private void SavePrefs()
     {
@@ -61,7 +63,8 @@ public partial class Main : Control
         cfg.SetValue("appearance","paint",paintHex);
         cfg.SetValue("appearance","name",paintName);
         cfg.SetValue("appearance","garage",garageName);
-        if(cfg.Save(Prefs) != Error.Ok) { notice = "Could not save appearance on this device."; noticeError=true; }
+        cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
+        if(cfg.Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
     }
     private void PickPaint(string name,string hex)
     {
@@ -78,7 +81,7 @@ public partial class Main : Control
         AddChild(canvas);
         Rect(0,0,460,920,Back);
         // N-inspired asymmetric motorsport detail; original artwork and layout.
-        Panel(0,0,460,96,new("#0c1825"),false,true);
+        var header=Panel(0,0,460,96,new("#0c1825"),false,true);header.BottomEdgeOnly=true;
         Label(24,19,310,20,garageName,13,Muted);
         Label(24,44,340,41,liveMode?"IONIQ 5 N":"nCTRL",29,White,true);
         Button(365,20,70,28,smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");

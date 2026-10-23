@@ -17,20 +17,31 @@ public partial class Main
     }
     private void EnsureLive(int version)
     {if(version!=liveEpoch || liveLifetime.IsCancellationRequested)throw new OperationCanceledException();}
-    private void EndLiveSession()
+    private void EndLiveSession(bool render=true)
     {
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection?.Dispose();connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;
+        history.Clear();manualAccountEntry=false;accountKey="";lastCheck=default;
         screen="Connect";notice="";noticeError=false;
-        foreach(var child in GetChildren())if(child is ConfirmationDialog dialog){dialog.Hide();dialog.QueueFree();}
-        if(IsInsideTree())Render();
+        if(render&&IsInsideTree())Render();
     }
     public override void _Notification(int what)
     {
         // Focus loss also occurs during Face ID, so only actual backgrounding ends the session.
-        if(what==NotificationApplicationPaused && vaultReady)EndLiveSession();
+        if(!vaultReady)return;
+        if(what==NotificationApplicationPaused) {
+            // Hide immediately, then rebuild after the engine resumes its scene tree.
+            if(canvas!=null)canvas.Hide();
+            EndLiveSession(false);
+        }
+        if(what==NotificationApplicationResumed)CallDeferred(nameof(RestoreForeground));
+    }
+    private void RestoreForeground()
+    {
+        if(!IsInsideTree())return;
+        Render();
+        if(!smoke)NativeVaultBridge.RestoreForeground();
     }
     private void SavedLoginScreen()
     {
@@ -50,8 +61,10 @@ public partial class Main
             var account=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
             connection?.Dispose();var active=connectionFactory();connection=active;
             var vehicles=await active.LoginAsync(account.Email,account.Password,account.Pin,liveLifetime.Token);EnsureLive(version);
+            accountKey=VehicleLink.AccountKey(account.Email);
             enrollment=vehicles;selectedIndex=0;manualAccountEntry=false;screen="Connect";
             notice="Unlocked and signed in. Select your vehicle.";
+            await RestoreLinkedVehicle(active,version);
         },"Waiting for "+vault.BiometricName+"…");
     }
     private async Task ForgetAccount()
@@ -59,6 +72,7 @@ public partial class Main
         if(liveBusy)return;
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
         EndLiveSession();
+        linkedVehicle="";SavePrefs();
         if(!vault.Present){notice="Session cleared. This build has no saved account storage.";Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{

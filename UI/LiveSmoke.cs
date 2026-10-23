@@ -72,21 +72,23 @@ public partial class Main
             Navigate("Settings");await Capture("16-live-settings-test.png");
             Navigate("Appearance");
             if(canvas.GetNodeOrNull<LineEdit>("GarageName")==null)throw new Exception("Garage appearance editor missing");
-            Navigate("Car");ConfirmLive(new(ActionKind.Unlock),"Unlock the vehicle?");
-            ConfirmationDialog? dialog=null;
-            foreach(var child in GetChildren())if(child is ConfirmationDialog d)dialog=d;
-            if(dialog==null||fixture.Commands!=0)throw new Exception("Command sent before confirmation");
-            await Capture("17-command-confirmation-test.png");
-            dialog.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+            Navigate("Car");
+            var door=canvas.GetNode<Button>("DoorControl");
+            if(door.Text!="Unlock"||door.Disabled)throw new Exception("Combined door button does not match reported lock state");
+            door.EmitSignal(Godot.Button.SignalName.Pressed);
             while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            foreach(var child in GetChildren())if(child is ConfirmationDialog)throw new Exception("Direct control opened a confirmation");
             if(fixture.Commands!=1||connection!.State!.Locked!=true)throw new Exception("Command count or optimistic update error");
+            await Capture("17-command-accepted-test.png");
             await CheckLive();
             if(connection.Pending?.Outcome!=RemoteOutcome.Confirmed)throw new Exception("Command confirmation missing");
             Navigate("Activity");await Capture("18-live-activity-test.png");
             Disconnect();
             if(liveMode||connection!=null)throw new Exception("Disconnect failed");
             AssertAccountOnly();
-            GD.Print("LIVE SMOKE PASS: offline authentication/enrollment 502 recovery, sign-in, selection, screens, confirmation, tracking, disconnect. No real API calls.");
+            await SignIn("tester@example.invalid","fixture-password","1234");
+            if(!liveMode||screen!="Car"||fixture.Commands!=1)throw new Exception("Remembered vehicle did not reconnect without commands");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

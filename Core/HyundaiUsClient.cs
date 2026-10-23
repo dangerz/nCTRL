@@ -162,10 +162,10 @@ public sealed class HyundaiUsClient : IDisposable
             try
             {
                 var reply=await RequestAsync(HttpMethod.Post,"/ac/v2/"+route,body,true,true,ct,
-                    command.Kind is ActionKind.Lock or ActionKind.Unlock?new Dictionary<string,string>{{"APPCLOUD-VIN",Selected!.Vin}}:null);
+                    command.Kind is ActionKind.Lock or ActionKind.Unlock?new Dictionary<string,string>{{"APPCLOUD-VIN",Selected!.Vin}}:null,stage:"Command");
                 // HTTP success is acceptance, not evidence of vehicle state.
-                Pending=new(RemoteOutcome.Accepted,reply.TransactionId is null?
-                    "Request accepted; no tracking ID. Refresh status to verify.":"Request accepted. Check command status to confirm.",reply.TransactionId);
+                Pending=new(RemoteOutcome.Accepted,$"Hyundai accepted the request (HTTP {reply.HttpStatus}). "+(reply.TransactionId is null?
+                    "No tracking ID; completion unverified. Refresh vehicle status.":"Vehicle completion pending. Tap Check last command."),reply.TransactionId);
             }
             catch(OperationCanceledException) {
                 Pending=new(RemoteOutcome.Unknown,"Request interrupted; outcome unknown. Check vehicle status before retrying.",null);throw;
@@ -190,7 +190,7 @@ public sealed class HyundaiUsClient : IDisposable
             if(Pending.TransactionId is null)return Pending with {Message="No tracking ID is available. Refresh vehicle status to verify."};
             await EnsureToken(ct);
             var r=await RequestAsync(HttpMethod.Get,"/ac/v2/rmt/getRunningStatus",null,true,true,ct,
-                new Dictionary<string,string>{{"tid",Pending.TransactionId},{"login_id",username},{"service_type","REMOTE_POLL"}});
+                new Dictionary<string,string>{{"tid",Pending.TransactionId},{"login_id",username},{"service_type","REMOTE_POLL"}},stage:"Command status");
             var status=Text(r.Body,"status");
             Pending=Pending with {
                 Outcome=status=="SUCCESS"?RemoteOutcome.Confirmed:status=="ERROR"?RemoteOutcome.Failed:RemoteOutcome.Accepted,
@@ -234,7 +234,7 @@ public sealed class HyundaiUsClient : IDisposable
         if(token.Length==0||seconds is null||!double.IsFinite(seconds.Value)||seconds<=0)throw new BluelinkException("Authentication: No supported session returned. MFA/challenge flows are not supported by this US adapter.");
         access=token;refresh=Text(r.Body,"refresh_token");expires=DateTimeOffset.UtcNow.AddSeconds(Math.Min(seconds.Value,86400));
     }
-    private sealed record Reply(JsonElement Body,string? TransactionId);
+    private sealed record Reply(JsonElement Body,string? TransactionId,int HttpStatus);
     private async Task<Reply> RequestAsync(HttpMethod method,string path,string? body,bool authenticated,bool vehicle,
         CancellationToken ct,Dictionary<string,string>? extra=null,string stage="Request")
     {
@@ -287,7 +287,7 @@ public sealed class HyundaiUsClient : IDisposable
             throw Failure("Hyundai rejected the request; the cause is not established. MFA/challenges are not supported. No automatic retry was sent.");
         string? tid=null;
         foreach(var name in new[]{"tmsTid","transactionId","Xid"})if(response.Headers.TryGetValues(name,out var values)){tid=values.FirstOrDefault();break;}
-        return new(json,tid);
+        return new(json,tid,status);
     }
     private static bool HasChallenge(JsonElement json)
     {

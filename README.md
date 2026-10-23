@@ -11,10 +11,10 @@ N Performance styling, pixel Ioniq 5 N, six presets including **Ecotonic Gray**,
 3. The app opens directly to **Connect your Hyundai**, or biometric unlock if an account is saved.
 4. Enter your US Bluelink email, password and four-digit Bluelink service PIN **inside the app**. Do not put credentials into the source code or a chat message.
 5. On a supported phone, leave **Save account with Face ID / biometrics** selected and authenticate to store the account securely. Subsequent launches show biometric unlock. Desktop builds remain session-only.
-6. Select your enrolled vehicle. The app reads its cached status; connecting does not send a remote vehicle command.
-7. A **LIVE** badge indicates the connected UI. Controls require confirmation and display the selected vehicle's name and VIN suffix before submission.
+6. Select your enrolled vehicle once. After later unlocks/sign-ins, nCTRL matches that vehicle against fresh enrollment and loads its cached status automatically. Connecting sends no remote vehicle command.
+7. A **LIVE** badge indicates the connected UI. Tapping a command sends it directly, with no confirmation dialog. One door button offers Unlock when reported locked, or Lock when reported unlocked; unknown door state disables it until status is refreshed.
 
-There is no simulated vehicle mode. Startup, locking, backgrounding and sign-out all return to the account screen. Vehicle navigation appears only after you select an enrolled vehicle and its status loads. A saved phone account opens the locked login screen. **Lock app** clears the active session but retains protected credentials; **Sign out & forget** also deletes the saved account. Backgrounding ends the live session. An expired or denied session can be re-entered by unlocking or signing in manually. Failed refreshes preserve the last known vehicle state.
+There is no simulated vehicle mode. Startup, locking, backgrounding and sign-out all return to the account screen. Vehicle navigation appears only after an enrolled vehicle is selected or restored and its status loads. A saved phone account opens the locked login screen. **Lock app** clears the active session but retains protected credentials; **Sign out & forget** deletes the saved account and selected-vehicle preference. Backgrounding ends the live session and hides the old canvas; foreground resume rebuilds the locked account UI. After unlocking, the previous vehicle opens automatically if still enrolled. An expired or denied session can be re-entered by unlocking or signing in manually. Failed refreshes preserve the last known vehicle state.
 
 ## Implemented live functions
 
@@ -29,7 +29,7 @@ There is no simulated vehicle mode. Startup, locking, backgrounding and sign-out
 
 Missing status fields display **—** or **Unknown**. Server timestamps are shown as supplied; compact timestamps are not assigned an invented timezone. The dashboard is the last reported state, not continuous telemetry.
 
-The shared target endpoint sends both AC and DC targets. Both selections appear in the confirmation dialog; inspect them before confirming. EV climate requests turn off defrost and supplemental heating; generation 3 includes five minutes and seats off. The adapter does not start an ICE engine.
+The shared target endpoint sends both AC and DC targets. Tap **Set AC and DC targets** to send both displayed selections. EV climate requests turn off defrost and supplemental heating; generation 3 includes five minutes and seats off. The adapter does not start an ICE engine.
 
 ## Account compatibility and limitations
 
@@ -53,11 +53,13 @@ There is no `export_presets.cfg` or configured application bundle/package ID in 
 
 ## Storage, request limits and errors
 
-With secure saving enabled on a supported phone, email/password/PIN are protected by Apple Keychain or Android Keystore-backed encryption and biometric authentication. Tokens, enrollment, vehicle state, location and history remain memory-only. Locking drops session references; this is not guaranteed zeroization of managed strings. Only paint and garage name go into `user://preferences.cfg`. See `SECURE_LOGIN.md` for platform setup, exact protection and device-test limitations.
+With secure saving enabled on a supported phone, email/password/PIN are protected by Apple Keychain or Android Keystore-backed encryption and biometric authentication. Tokens, enrollment, vehicle state, location and history remain memory-only. Locking drops session references; this is not guaranteed zeroization of managed strings. Paint, garage name and an account-scoped SHA-256 vehicle fingerprint go into `user://preferences.cfg`. The fingerprint is only a selection preference, contains no raw email/VIN/credentials, and is checked against current authenticated enrollment. Sign out & forget clears it. See `SECURE_LOGIN.md` for platform setup, exact protection and device-test limitations.
 
 The adapter serializes operations. Cached reads are limited to one per 15 seconds, wake requests to one per two minutes, remote commands to one per 30 seconds, and location to one per hour. A tracked pending command blocks another command for up to two minutes. The UI limits command-status checks to one per five seconds. HTTP 429 introduces server-directed or five-minute backoff. These are conservative app policies, not documented Hyundai quotas.
 
-HTTP 200/empty-body commands are treated as accepted. When there is no transaction ID, use vehicle status to verify. On a timeout or network interruption, a command may have reached the vehicle; the app reports an unknown outcome and never automatically resubmits it. A status refresh can still be stale: inspect the reported timestamp or use an explicit wake request when appropriate.
+HTTP 200/empty-body commands are treated as accepted. The receipt now displays the HTTP status and explicitly says whether completion is pending or unverified. **Check last command** asks Hyundai for the transaction status; only SUCCESS marks completion. The dashboard does not change optimistically. When there is no transaction ID, use vehicle status to verify. On a timeout or network interruption, a command may have reached the vehicle; the app reports an unknown outcome and never automatically resubmits it. A status refresh can still be stale: inspect the reported timestamp or use an explicit wake request when appropriate.
+
+The owner reported “Request accepted; no tracking ID. Refresh status to verify” after a command. That code path requires a successful HTTP response without a detected API error; it establishes submission and a Hyundai server response, not physical vehicle action. The recognized tracking headers (`tmsTid`, `transactionId`, `Xid`), routes and payloads match the [current upstream US implementation](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api/blob/master/hyundai_kia_connect_api/HyundaiBlueLinkApiUSA.py). No evidence currently establishes why the vehicle did not respond. Without a tracking ID, use reported vehicle status; cached reads can lag. No command replay, endpoint changes or fabricated completion were introduced.
 
 Opening Maps sends the requested coordinates to the map provider. It happens only after pressing the Maps button. No map SDK, background polling, telemetry, server or cloud credential storage is included.
 
@@ -68,7 +70,7 @@ Opening Maps sends the requested coordinates to the map provider. It happens onl
 - `Native/iOS`, `Native/Android`, `addons/ngarage_vault`: native secure storage, build scripts and mobile export support.
 - `Core/Vehicle.cs`: shared live vehicle command types.
 - `UI/Main.cs`: account-first navigation, shared styling and appearance settings.
-- `UI/Live.cs`: account connection, live status, controls and confirmation screens.
+- `UI/Live.cs`: account connection, live status, direct controls and command receipts.
 - `UI/LiveSmoke.cs`: explicitly invoked offline UI smoke fixture, compiled only in debug builds; never used in ordinary sign-in.
 - `Assets/Paint.gdshader`: body recoloring tuned to this sprite. Existing saved Cyber Gray preferences migrate to Ecotonic Gray.
 - `Tests/`: dependency-free console behavior and protocol checks using fake HTTP responses.
@@ -80,10 +82,10 @@ Protocol attribution and the reference revision are in `THIRD_PARTY_NOTICES.md`.
 
 Current Windows checkout validation (October 23, 2026, US Eastern):
 
-- **179 offline checks passed: 147 protocol and 32 secure-login coordinator**, with JSON reflection disabled to match mobile restrictions. The unchanged source passed 134 checks in desktop mode but failed authentication when reflection was disabled; explicit JSON writing fixes that reproducible defect. The 16 checks for the removed simulated client were deleted with that client. Protocol regressions cover both sign-in stages, HTTP and JSON 502, sanitized transport/timeouts and malicious error-code strings, manual recovery, explicit challenges, fiveN request headers/path punctuation, escaped path delimiters, preserved state after failed refresh, and unknown command outcomes without retries.
+- **192 offline checks passed: 149 protocol, 32 secure-login coordinator and 11 remembered-vehicle/door-control**, with JSON reflection disabled to match mobile restrictions. The unchanged source passed 134 checks in desktop mode but failed authentication when reflection was disabled; explicit JSON writing fixes that reproducible defect. The 16 checks for the removed simulated client were deleted with that client. Protocol regressions cover both sign-in stages, HTTP and JSON 502, sanitized transport/timeouts and malicious error-code strings, manual recovery, explicit challenges, fiveN request headers/path punctuation, escaped path delimiters, preserved state after failed refresh, and unknown command outcomes without retries.
 - Standard .NET 8.0.100/MSBuild Debug and ExportRelease builds of `IoniqN.csproj` against Godot 4.7.2 succeeded with zero warnings/errors, including the C# mobile export plugin. iOS MSBuild evaluation confirms the vault archive, direct imports and Apple frameworks; actual Apple compilation/linking remains unverified. In previous validation, ExportRelease metadata was checked to ensure the synthetic HTTP/native-vault fixtures and smoke methods are absent. The default SDK attempted unavailable NuGet resolution; validation used the installed .NET 8 SDK and cached dependencies. The project target/framework was not changed.
 - Android vault Java compiled with JDK 17 against Android 35 and official Godot `4.7.0.stable`; the bundled AAR was rebuilt with those classes while retaining its manifest/resources. A full Gradle app export/install was not performed.
-- Rendered smoke was attempted with Godot `4.7.2.stable.mono.official.ed1daf0bf`, but stalled at `.NET: Initializing module...` before the app loaded and was stopped. The sandbox also denied shader-cache writes to `user://`. The new headless account-flow smoke attempt also did not finish engine startup and was stopped. Current UI runtime/rendering is **unverified**, including account-only navigation and authentication/enrollment 502 recovery. Prior rendered results are historical only.
+- The updated headless secure-flow smoke was attempted with Godot `4.7.2.stable.mono.official.ed1daf0bf`. The engine reported `.NET: Assemblies not found` and crashed before executing app tests; it also could not open its user-data log. Earlier attempts stalled at .NET initialization. Current UI runtime/rendering is **unverified**, including the combined door button, direct commands, remembered selection, and resume. The updated debug smoke fixtures cover these paths but are not counted as passed checks. Native scene/cover behavior still requires an iPhone build and repeated background/resume tests.
 - No real account credentials, real vehicle commands, mobile exports, iOS native builds or physical-device biometric tests were used in this validation.
 
 On a normal development machine:

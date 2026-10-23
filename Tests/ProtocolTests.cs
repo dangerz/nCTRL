@@ -93,6 +93,7 @@ static class ProtocolTests
             using var doors=JsonDocument.Parse(f.Calls[^1].Body);
             Check(doors.RootElement.GetProperty("userName").GetString()=="tester@example.invalid"&&doors.RootElement.GetProperty("vin").GetString()=="TESTVIN0000000001","Door payload in reflection-disabled runtime");
             Check(receipt.Outcome==RemoteOutcome.Accepted&&c.State==initial,"Acceptance never changes vehicle state");
+            Check(receipt.Message.Contains("HTTP 200")&&receipt.Message.Contains("completion pending")&&!receipt.Message.Contains("transaction-1"),"Command receipt displays HTTP acceptance and pending completion without tracking secrets");
             var calls=f.Calls.Count;await Reject(()=>c.ExecuteAsync(new(ActionKind.Unlock),null,default),"Duplicate command");Check(f.Calls.Count==calls,"Duplicate not submitted");
             f.Add("{\"status\":\"SUCCESS\"}");receipt=await c.CheckCommandAsync(default);
             Check(receipt.Outcome==RemoteOutcome.Confirmed&&c.State==initial,"Completion does not fabricate new state");
@@ -103,6 +104,7 @@ static class ProtocolTests
             f.Add("{}");await c.ExecuteAsync(new(ActionKind.Lock),null,default);
             Check(f.Calls[^1].Path.EndsWith("/rcs/rdo/off"),"Lock endpoint");
             Check(c.Pending?.TransactionId==null&&c.Pending?.Outcome==RemoteOutcome.Accepted,"Empty tracking ID supported");
+            Check(c.Pending!.Message.Contains("completion unverified"),"Untracked acceptance does not claim car response");
         }
         (c,f)=await Session();using(c)
         {

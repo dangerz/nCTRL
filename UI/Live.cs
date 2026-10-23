@@ -33,7 +33,7 @@ public partial class Main
             foreach(var v in enrollment)vehicles.AddItem($"{(v.Name.Length>0?v.Name:v.Model)} · VIN …{v.Vin[^6..]}");
             vehicles.Select(selectedIndex);vehicles.ItemSelected+=i=>selectedIndex=(int)i;
             vehicles.Disabled=liveBusy;canvas.AddChild(vehicles);
-            Label(24,359,412,100,"Selecting a vehicle reads its last reported status. Remote commands are sent only when you use a control and confirm the request.",14,Muted,false,true);
+            Label(24,359,412,100,"Choose your vehicle once. After you unlock or sign in again, nCTRL opens the same vehicle automatically.",14,Muted,false,true);
             LiveButton(24,510,412,52,liveBusy?"Reading vehicle…":"Connect selected vehicle",14,()=>_ = ChooseVehicle(),true,"ChooseVehicle");
             LiveButton(24,581,412,44,"Cancel and lock session",13,()=>EndLiveSession());
             return;
@@ -72,6 +72,7 @@ public partial class Main
             connection?.Dispose();connection=null;enrollment=null;
             var active=connectionFactory();connection=active;
             var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
+            accountKey=VehicleLink.AccountKey(email);
             enrollment=vehicles;selectedIndex=0;screen="Connect";notice="Signed in. Select your vehicle.";
             try {
                 if(remember) {
@@ -84,21 +85,33 @@ public partial class Main
             } catch(VaultException ex) {
                 EnsureLive(version);notice="Signed in for this session. "+ex.Message;noticeError=true;
             }
+            await RestoreLinkedVehicle(active,version);
         },"Signing in to Hyundai…");
     }
     private async Task ChooseVehicle()
     {
         if(enrollment==null||connection==null)return;
         int version=liveEpoch;var active=connection;var selected=enrollment[selectedIndex];
-        await RunLive(async()=>{
-            await active.SelectAsync(selected,liveLifetime.Token);EnsureLive(version);
-            liveMode=true;screen="Car";history.Clear();
-            if(connection.State?.AcLimit is int ac)liveAc=ac;
-            if(connection.State?.DcLimit is int dc)liveDc=dc;
-            if(connection.State?.TemperatureF is int t&&t>=62&&t<=82)liveTemperature=t;
-            history.Add(("Connected to Hyundai","Read-only status loaded. No remote command sent.",true));
-            notice="Connected. Showing Hyundai’s last reported state.";
-        },"Reading Hyundai vehicle status…");
+        await RunLive(()=>ConnectVehicle(active,selected,version),"Reading Hyundai vehicle status…");
+    }
+    private async Task RestoreLinkedVehicle(HyundaiUsClient active,int version)
+    {
+        if(enrollment==null)return;
+        int index=VehicleLink.Find(linkedVehicle,accountKey,enrollment);
+        if(index<0)return;
+        selectedIndex=index;
+        await ConnectVehicle(active,enrollment[index],version);
+    }
+    private async Task ConnectVehicle(HyundaiUsClient active,EnrolledVehicle selected,int version)
+    {
+        await active.SelectAsync(selected,liveLifetime.Token);EnsureLive(version);
+        liveMode=true;screen="Car";history.Clear();
+        if(active.State?.AcLimit is int ac)liveAc=ac;
+        if(active.State?.DcLimit is int dc)liveDc=dc;
+        if(active.State?.TemperatureF is int t&&t>=62&&t<=82)liveTemperature=t;
+        history.Add(("Connected to Hyundai","Read-only status loaded. No remote command sent.",true));
+        if(!noticeError)notice="Connected. Showing Hyundai’s last reported state.";
+        linkedVehicle=VehicleLink.Fingerprint(accountKey,selected.Vin);SavePrefs();
     }
     private void Disconnect()
     {
@@ -146,14 +159,16 @@ public partial class Main
         for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:new("#243446"));
         Label(24,482,412,24,"Doors: "+OnOff(s?.Locked,"Locked","Unlocked"),13,White);
         Label(24,509,412,36,"Reported: "+ReportedTime(s?.ReportedAt),11,Muted,false,true);
-        LiveButton(24,563,94,49,"Lock",13,()=>ConfirmLive(new(ActionKind.Lock),"Lock the vehicle?"));
-        LiveButton(130,563,94,49,"Unlock",13,()=>ConfirmLive(new(ActionKind.Unlock),"Unlock the vehicle?"));
+        var doorAction=VehicleLink.DoorAction(s?.Locked);
+        var door=LiveButton(24,563,200,49,doorAction==ActionKind.Unlock?"Unlock":doorAction==ActionKind.Lock?"Lock":"Door status unknown",13,
+            ()=>{if(doorAction is ActionKind action)_ = SendLive(new(action));},false,"DoorControl");
+        door.Disabled=liveBusy||doorAction==null;
         Button(236,563,94,49,"Climate",13,()=>Navigate("Climate"));
         Button(342,563,94,49,"Charge",13,()=>Navigate("Energy"));
         LiveButton(24,636,200,46,"Refresh cached status",12,()=>_ = RefreshLive(false));
         Button(236,636,200,46,"Vehicle location  ›",12,()=>Navigate("Locate"));
         LiveButton(24,704,412,46,"Check last command",13,()=>_ = CheckLive());
-        if(notice.Length==0)Label(24,790,412,48,"Live account. Cached status may lag the vehicle. Missing data is shown as — or Unknown.",11,Muted,false,true);
+        if(notice.Length==0)Label(24,778,412,65,connection?.Pending?.Message??"Cached status may lag the vehicle. Missing data is shown as — or Unknown.",11,Muted,false,true);
     }
     private static string ReportedTime(string? raw)
     {
@@ -172,8 +187,8 @@ public partial class Main
         LiveButton(43,363,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
         LiveButton(366,363,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
         Label(24,505,412,70,"Starts climate with defrost and supplemental heaters off. Generation 3 requests a five-minute duration.",12,Muted,false,true);
-        LiveButton(24,613,412,52,"Start / update climate",14,()=>ConfirmLive(new(ActionKind.Climate,liveTemperature,true),$"Start climate at {liveTemperature}°F?"),true);
-        LiveButton(24,687,412,48,"Stop climate",14,()=>ConfirmLive(new(ActionKind.Climate,liveTemperature,false),"Stop remote climate?"));
+        LiveButton(24,613,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true)),true);
+        LiveButton(24,687,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false)));
     }
     private void LiveEnergy()
     {
@@ -188,11 +203,11 @@ public partial class Main
         ac.ItemSelected+=i=>{liveAc=50+(int)i*10;};
         dc.ItemSelected+=i=>{liveDc=50+(int)i*10;};
         LiveButton(24,490,412,49,"Set AC and DC targets",13,()=>{
-            ConfirmLive(new(ActionKind.ChargeLimit,liveAc),$"Set AC to {liveAc}% and DC to {liveDc}%?",liveDc);
+            _ = SendLive(new(ActionKind.ChargeLimit,liveAc),liveDc);
         });
-        Label(24,552,412,44,"Both displayed selections are sent together. They are not applied until you confirm.",11,Muted,false,true);
-        LiveButton(24,622,198,52,"Start charging",14,()=>ConfirmLive(new(ActionKind.Charge,Enabled:true),"Start charging the vehicle?"),true);
-        LiveButton(238,622,198,52,"Stop charging",14,()=>ConfirmLive(new(ActionKind.Charge,Enabled:false),"Stop charging the vehicle?"));
+        Label(24,552,412,44,"Tap Set AC and DC targets to apply both displayed selections.",11,Muted,false,true);
+        LiveButton(24,622,198,52,"Start charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:true)),true);
+        LiveButton(238,622,198,52,"Stop charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:false)));
         LiveButton(24,708,412,46,"Refresh cached status",13,()=>_ = RefreshLive(false));
     }
     private OptionButton LimitChoice(int x,int y,int w,int value)
@@ -209,9 +224,7 @@ public partial class Main
         Label(24,295,412,62,"Session: "+(connection?.IsAuthenticated==true?"Signed in":"Expired / denied — sign in again"),14,Muted,false,true);
         Button(24,381,412,48,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"));
         LiveButton(24,452,412,48,"Refresh cached status",13,()=>_ = RefreshLive(false));
-        LiveButton(24,523,412,48,"Wake vehicle and refresh",13,()=>{
-            ConfirmAction("Wake vehicle?","This asks Hyundai to contact your car for fresh status.",()=>_ = RefreshLive(true));
-        });
+        LiveButton(24,523,412,48,"Wake vehicle and refresh",13,()=>_ = RefreshLive(true));
         LiveButton(24,594,198,48,"Lock app",13,()=>EndLiveSession());
         LiveButton(238,594,198,48,"Sign out & forget",12,()=>_ = ForgetAccount());
         Label(24,676,412,96,vault.HasAccount?"Account saved securely on this device. "+vault.BiometricName+" unlocks it. Backgrounding locks the app; signing out removes the saved login.":
@@ -241,21 +254,14 @@ public partial class Main
         });
         Label(24,607,412,105,"Location may be the last reported position. Requests are limited to one per hour. Opening Maps shares these coordinates with your map provider.",13,Muted,false,true);
     }
-    private void ConfirmAction(string title,string detail,Action action)
-    {
-        if(liveBusy)return;
-        var confirm=new ConfirmationDialog{Title=title,DialogText=detail,OkButtonText="Confirm",CancelButtonText="Cancel"};
-        AddChild(confirm);confirm.Confirmed+=()=>{confirm.QueueFree();action();};confirm.Canceled+=()=>confirm.QueueFree();
-        confirm.PopupCentered(new Vector2I(400,210));
-    }
-    private void ConfirmLive(VehicleCommand cmd,string question,int? dc=null)
+    private Task SendLive(VehicleCommand cmd,int? dc=null)
     {
         int version=liveEpoch;
-        ConfirmAction(question,$"This sends a real command to\n{connection?.Selected?.Name} · VIN …{connection?.Selected?.Vin[^6..]}",()=>_ = RunLive(async()=>{
+        return RunLive(async()=>{
             EnsureLive(version);var receipt=await connection!.ExecuteAsync(cmd,dc,liveLifetime.Token);EnsureLive(version);
             notice=receipt.Message;noticeError=receipt.Outcome is RemoteOutcome.Failed or RemoteOutcome.Unknown;
             history.Add((receipt.Message,DateTime.Now.ToString("h:mm tt")+" · "+cmd.Kind,!noticeError));
-        },"Sending command to Hyundai…"));
+        },"Sending command to Hyundai…");
     }
     private Task RefreshLive(bool wake)=>RunLive(async()=>{
         int version=liveEpoch;await connection!.ReadAsync(wake,liveLifetime.Token);EnsureLive(version);
