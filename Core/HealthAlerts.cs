@@ -13,6 +13,12 @@ public static class HealthAlerts
     public const int Battery12VLowBelow=50;
     public static bool Low12V(LiveVehicleState? state)=>state?.Health?.Battery12V is int soc&&soc<Battery12VLowBelow;
 
+    /// <summary>The Car screen line when no alert is raised. An unlocked car at an ignored place is
+    /// still unlocked: say so rather than implying it is locked.</summary>
+    public static string QuietStatus(LiveVehicleState? state,string? ignoredPlaceName)=>state?.Locked switch {
+        null=>"Door status unknown",
+        false=>"Unlocked · ignored "+(ignoredPlaceName is {Length: >0} name?"at "+name:"here"),
+        _=>state.Health==null?"Doors locked":"All closed and locked"};
     // atIgnoredPlace hides only the unlocked alert; everything else still shows there.
     public static IReadOnlyList<HealthAlert> From(LiveVehicleState? state,bool atIgnoredPlace=false)
     {

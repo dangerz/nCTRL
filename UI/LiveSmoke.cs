@@ -273,6 +273,10 @@ public partial class Main
             if(ignoredPlaces.Count!=1||ignoredPlaces[0].Name!="Home"||!AtIgnoredPlace||canvas.GetNodeOrNull<Label>("IgnoredNote")==null)
                 throw new Exception("Saving the place did not hide the unlocked alert");
             if(snapshot?.AtIgnoredPlace!=true)throw new Exception("Saved status does not remember being at an ignored place");
+            // With the unlocked alert ignored, the Car screen still says the car is unlocked.
+            Navigate("Car");
+            if(canvas.GetNodeOrNull<Button>("AlertStrip") is {} remaining&&remaining.Text.Contains("Doors unlocked"))throw new Exception("Unlocked doors still flagged at an ignored place");
+            Navigate("Alerts");
             await Capture("41-ignored-place-applied-test.png");
             Navigate("Car");
             if(canvas.GetNode<Button>("AlertStrip").Text.Contains("Doors unlocked"))throw new Exception("Car screen still flags unlocked doors at an ignored place");

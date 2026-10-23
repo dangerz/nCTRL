@@ -15,7 +15,7 @@ public partial class Main
     {
         var alerts=HealthAlerts.From(s,AtIgnoredPlace);
         if(alerts.Count==0) {
-            Label(24,482,412,24,s?.Locked==null?"Door status unknown":s.Health==null?"Doors locked":"All closed and locked",13,White).Name="HealthStatus";
+            Label(24,482,412,24,HealthAlerts.QuietStatus(s,IgnoredHere?.Name),13,s?.Locked==false?Muted:White).Name="HealthStatus";
             return;
         }
         bool critical=alerts.Any(a=>a.Critical);

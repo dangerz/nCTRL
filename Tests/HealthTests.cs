@@ -26,6 +26,10 @@ static class HealthTests
         Check(HealthAlerts.From(State(false,open)).First().Kind==AlertKind.Unlocked,"Unlocked comes first");
         Check(!HealthAlerts.Low12V(State(true,closed with {Battery12V=50}))&&HealthAlerts.Low12V(State(true,closed with {Battery12V=49}))&&
             !HealthAlerts.Low12V(State(true,closed with {Battery12V=null})),"12-volt low means below 50%, never when unknown");
+        Check(HealthAlerts.QuietStatus(State(true,closed),null)=="All closed and locked"&&HealthAlerts.QuietStatus(State(true,null),null)=="Doors locked"&&
+            HealthAlerts.QuietStatus(State(null,closed),null)=="Door status unknown","Quiet status for locked, locked without health, and unknown");
+        Check(HealthAlerts.QuietStatus(State(false,closed),"Home")=="Unlocked · ignored at Home"&&HealthAlerts.QuietStatus(State(false,closed),null)=="Unlocked · ignored here",
+            "An ignored unlocked car is never described as locked");
         var unknown=new VehicleHealth(null,null,null,null,null,null,null,null,null,null,null,null,null,null,null);
         Check(HealthAlerts.From(State(true,unknown)).Count==0,"Unreported items never raise alerts");
 
