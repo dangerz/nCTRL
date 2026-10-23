@@ -167,6 +167,7 @@ public partial class Main
         else if(screen=="Energy")LiveEnergy();
         else if(screen=="Activity")LiveActivity();
         else if(screen=="Locate")LiveLocation();
+        else if(screen=="Details")LiveDetails();
         else LiveSettings();
     }
     private void LiveHome()

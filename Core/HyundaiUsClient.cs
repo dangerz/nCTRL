@@ -45,6 +45,8 @@ public sealed class HyundaiUsClient : IDisposable
     public bool SessionValid => access.Length>0&&clock.GetUtcNow()<expires.AddSeconds(-60);
     public EnrolledVehicle? Selected { get; private set; }
     public LiveVehicleState? State { get; private set; }
+    // Hyundai's raw vehicleStatus from the latest read, for the Details screen. Memory only.
+    public JsonElement? RawStatus { get; private set; }
     public RemoteReceipt? Pending { get; private set; }
     public VehicleLocation? Location { get; private set; }
     public bool CanRequestLocation=>budget.CanAcquire(RequestKind.Location);
@@ -131,7 +133,9 @@ public sealed class HyundaiUsClient : IDisposable
     {
         var reply=await RequestAsync(wake?RequestKind.Wake:RequestKind.Read,HttpMethod.Get,"/ac/v2/rcs/rvs/vehicleStatus",null,true,true,ct,
             new Dictionary<string,string>{{"refresh",wake?"true":"false"}});
-        return ParseState(reply.Body);
+        var state=ParseState(reply.Body);
+        RawStatus=At(reply.Body,"vehicleStatus");
+        return state;
     }
     public async Task<RemoteReceipt> ExecuteAsync(VehicleCommand command,int? dcLimit,CancellationToken ct)
     {
@@ -424,6 +428,6 @@ public sealed class HyundaiUsClient : IDisposable
     private static int? Integer(JsonElement e,string p){var n=Number(e,p);return n is >=int.MinValue and <=int.MaxValue?(int)n.Value:null;}
     private static bool? Boolean(JsonElement e,string p)=>At(e,p).ValueKind switch {
         JsonValueKind.True=>true,JsonValueKind.False=>false,_=>Text(e,p).ToLowerInvariant() switch {"1" or "true"=>true,"0" or "false"=>false,_=>null}};
-    private void Clear(){username="";password="";pin="";access="";refresh="";Selected=null;State=null;Pending=null;Location=null;}
+    private void Clear(){username="";password="";pin="";access="";refresh="";Selected=null;State=null;RawStatus=null;Pending=null;Location=null;}
     public void Dispose(){Clear();http.Dispose();}
 }

@@ -192,17 +192,17 @@ public partial class Main : Control
     private void Nav()
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
-        string[] names={"Car","Energy","Activity","Settings"};
+        string[] names={"Car","Energy","Details","Activity","Settings"};
         string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits"?"Settings":screen is "Climate" or "Locate"?"Car":screen;
-        for(int i=0;i<4;i++)
+        for(int i=0;i<names.Length;i++)
         {
-            string name=names[i];int x=i*115;
-            var b=Button(x,856,115,64,"",12,()=>Navigate(name),false,"Nav"+name);
+            string name=names[i];int x=i*92;
+            var b=Button(x,856,92,64,"",12,()=>Navigate(name),false,"Nav"+name);
             b.AddThemeStyleboxOverride("normal",Style(new("#0b1520"),new("#0b1520")));
-            var g=new Glyph {Kind=name,Ink=name==selected?Blue:Muted,Position=new(44,5),Size=new(26,26)};b.AddChild(g);
-            var l=new Label {Position=new(0,35),Size=new(115,22),Text=name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
+            var g=new Glyph {Kind=name,Ink=name==selected?Blue:Muted,Position=new(33,5),Size=new(26,26)};b.AddChild(g);
+            var l=new Label {Position=new(0,35),Size=new(92,22),Text=name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
             l.AddThemeFontOverride("font",regular);l.AddThemeFontSizeOverride("font_size",11);l.AddThemeColorOverride("font_color",name==selected?Blue:Muted);b.AddChild(l);
-            if(name==selected) Rect(x+31,917,53,3,Red);
+            if(name==selected) Rect(x+20,917,52,3,Red);
         }
     }
     private void Rect(float x,float y,float w,float h,Color color)

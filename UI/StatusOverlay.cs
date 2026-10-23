@@ -28,8 +28,8 @@ public partial class StatusOverlay : Control
         if(!IsVisibleInTree()||Lock==LockEffect.None)return;
         time+=(float)delta;QueueRedraw();
     }
-    private float Scale=>Mathf.Min(Size.X/TextureSize.X,Size.Y/TextureSize.Y);
-    private Vector2 At(Vector2 source)=>(Size-TextureSize*Scale)/2+source*Scale;
+    private float ArtScale=>Mathf.Min(Size.X/TextureSize.X,Size.Y/TextureSize.Y);
+    private Vector2 At(Vector2 source)=>(Size-TextureSize*ArtScale)/2+source*ArtScale;
     // The padlock's tap area in this control's coordinates (larger than the 28-point badge).
     public Rect2 LockArea()=>new(At(LockCenter)-new Vector2(24,24),new Vector2(48,48));
     private static Color Tint(ComfortTint tint,float alpha)=>new(tint==ComfortTint.Heat?HeatTint:CoolTint,alpha);
@@ -43,7 +43,7 @@ public partial class StatusOverlay : Control
         if(DriverSeat!=ComfortTint.None)SeatBack(DriverSeatBack,DriverSeat);
         if(PassengerSeat!=ComfortTint.None)SeatBack(PassengerSeatBack,PassengerSeat);
         if(WheelHeat) {
-            var center=At(WheelCenter);var radius=WheelRadius*Scale;
+            var center=At(WheelCenter);var radius=WheelRadius*ArtScale;
             var ring=new Vector2[25];
             for(int i=0;i<ring.Length;i++){float a=i*Mathf.Tau/24;ring[i]=center+new Vector2(Mathf.Cos(a)*radius.X,Mathf.Sin(a)*radius.Y);}
             DrawPolyline(ring,new Color(HeatTint,0.9f),2.5f);
@@ -52,7 +52,7 @@ public partial class StatusOverlay : Control
     }
     private void SeatBack(Rect2 source,ComfortTint tint)
     {
-        var rect=new Rect2(At(source.Position),source.Size*Scale);
+        var rect=new Rect2(At(source.Position),source.Size*ArtScale);
         // Seat back with a narrower headrest above it.
         float head=rect.Size.Y*0.3f;
         DrawRect(new Rect2(rect.Position+new Vector2(rect.Size.X*0.25f,0),new Vector2(rect.Size.X*0.5f,head*0.8f)),Tint(tint,0.55f));

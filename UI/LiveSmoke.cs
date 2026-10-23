@@ -3,6 +3,7 @@ using Godot;
 using NGarage.Core;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -37,7 +38,7 @@ public partial class Main
             string body=route switch {
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
-                "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
+                "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"battery\":{\"batSoc\":87},\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0},\"tirePressure\":{\"tirePressureFrontLeft\":36,\"tirePressureFrontRight\":36,\"tirePressureRearLeft\":35,\"tirePressureRearRight\":29},\"tirePressureLamp\":{\"tirePressureWarningLampAll\":1,\"tirePressureWarningLampRearRight\":1},\"vehicleLocation\":{\"coord\":{\"lat\":40.111111,\"lon\":-74.222222}},\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
                 "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
                 "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
@@ -126,6 +127,14 @@ public partial class Main
             Navigate("Energy");await Capture("14-live-energy-test.png");
             Navigate("Climate");await Capture("15-live-climate-test.png");
             Navigate("Settings");await Capture("16-live-settings-test.png");
+            // Details tab: tires first, then every reported field, never the vehicle's coordinates.
+            Navigate("Details");
+            if(canvas.GetNodeOrNull<Button>("NavDetails")==null||canvas.GetNodeOrNull<Label>("Tire0")?.Text!="36 psi"||canvas.GetNodeOrNull<Label>("Tire3")?.Text!="29 psi · Low")
+                throw new Exception("Details tab does not show tire pressures and warnings");
+            var detailText=string.Join("|",canvas.GetNode("DetailScroll").FindChildren("*","Label",true,false).Cast<Label>().Select(l=>l.Text));
+            if(!detailText.Contains("12-volt battery|87%")||detailText.Contains("40.111")||detailText.Contains("74.222")||detailText.Contains("coord"))
+                throw new Exception("Full detail is missing fields or shows the vehicle location");
+            await Capture("31-details-test.png");
             Navigate("Appearance");
             if(canvas.GetNodeOrNull<LineEdit>("GarageName")==null)throw new Exception("Garage appearance editor missing");
             Navigate("Car");

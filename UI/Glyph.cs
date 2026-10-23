@@ -23,6 +23,8 @@ public partial class Glyph : Control
             case "Activity": DrawArc(new(16,16),12,0,Mathf.Tau,32,Ink,2,true); L(16,8,16,16);L(16,16,22,19); break;
             case "Settings": R(6,6,20,20);DrawCircle(new(16,16),5,Ink,false,2);L(16,1,16,6);L(16,26,16,31);L(1,16,6,16);L(26,16,31,16);break;
             case "Energy": R(4,19,4,10,true);R(14,11,4,18,true);R(24,3,4,26,true);break;
+            case "Details": DrawArc(new(16,16),13,0,Mathf.Tau,32,Ink,3,true);DrawArc(new(16,16),5,0,Mathf.Tau,18,Ink,2,true);
+                for(int i=0;i<5;i++){float a=i*Mathf.Tau/5;L(16+Mathf.Cos(a)*5,16+Mathf.Sin(a)*5,16+Mathf.Cos(a)*10,16+Mathf.Sin(a)*10);} break;
             default: R(4,13,24,12);L(6,13,10,6);L(10,6,22,6);L(22,6,26,13);R(5,25,4,4,true);R(23,25,4,4,true);R(8,17,3,3,true);R(21,17,3,3,true);break;
         }
     }

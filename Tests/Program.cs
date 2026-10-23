@@ -10,6 +10,7 @@ static class Program
         DisclaimerTests.Run();
         IndicatorTests.Run();
         SnapshotTests.Run();
+        DetailTests.Run();
         await RequestBudgetTests.Run();
         await MapTests.Run();
     }
