@@ -15,7 +15,9 @@ public partial class VaultAndroidExport : EditorExportPlugin
     public override void _ExportBegin(string[] features,bool isDebug,string path,uint flags)
     {
         if(GetExportPlatform() is EditorExportPlatformIos)
-            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to unlock your saved Hyundai account in nCTRL on this device.</string>");
+            // HTTPS only (exempt encryption): skips the App Store Connect compliance question per upload.
+            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to unlock your saved Hyundai account in nCTRL on this device.</string>"+
+                "<key>ITSAppUsesNonExemptEncryption</key><false/>");
     }
     public override string[] _GetAndroidLibraries(EditorExportPlatform platform,bool debug)
         =>new[]{"res://addons/ngarage_vault/NGarageVault.aar"};

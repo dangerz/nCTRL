@@ -10,7 +10,7 @@ Current upstream was inspected at revision `6b966c021bd3e2e7fd39c979b2abb3defeab
 [HyundaiBlueLinkApiUSA.py](https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api/blob/6b966c021bd3e2e7fd39c979b2abb3defeab8a2b/hyundai_kia_connect_api/HyundaiBlueLinkApiUSA.py).
 Upstream still posts a JSON username/password pair to `/v2/ac/oauth/token`, then gets `/ac/v2/enrollment/details/{username}`. Its JSON error helper treats errorCode 502 separately from authentication errors; this does not establish the cause of this user's sign-in failure. Its token-refresh payload includes username/password plus grant_type/refresh_token, which nCTRL already implements.
 
-The owner then identified `C:\Users\Roy\Documents\fiveN` as successfully authenticating. Its `Classes/Managers/CommsManager.cs` was inspected read-only; it was not executed. Both applications use the same host, methods, token body, client constants and JSON content type. The relevant differences were:
+The owner then identified a local fiveN checkout as successfully authenticating. Its `Classes/Managers/CommsManager.cs` was inspected read-only; it was not executed. Both applications use the same host, methods, token body, client constants and JSON content type. The relevant differences were:
 
 | Request detail | nCTRL before | Working fiveN example | nCTRL now |
 | --- | --- | --- | --- |

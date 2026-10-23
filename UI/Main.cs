@@ -12,7 +12,7 @@ public partial class Main : Control
     private Texture2D car = null!;
     private Shader paintShader = null!;
     private string screen = "Connect", paintName = "Performance Blue", paintHex = "89b7f0";
-    private string garageName = "Roy’s garage", notice = "";
+    private string garageName = "My garage", notice = "";
     private bool noticeError;
     private string linkedVehicle="",accountKey="";
     private const string Prefs = "user://preferences.cfg";
@@ -53,7 +53,7 @@ public partial class Main : Control
         if (Color.HtmlIsValid(hex)) paintHex = hex;
         paintName = cfg.GetValue("appearance","name","Performance Blue").AsString();
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
-        garageName = cfg.GetValue("appearance","garage","Roy’s garage").AsString();
+        garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
     }
     private void SavePrefs()

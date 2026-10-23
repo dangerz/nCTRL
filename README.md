@@ -49,7 +49,19 @@ The display name, visible branding, native biometric prompts and editor plugin l
 
 Desktop `user://` explicitly stays at `Godot/app_userdata/N Garage` under the OS app-data directory, preserving this checkout's paint and garage preferences. Godot's custom-directory setting only affects desktop; mobile storage remains within the existing app sandbox ([Godot data-path documentation](https://docs.godotengine.org/en/stable/tutorials/io/data_paths.html)). Ecotonic Gray and the existing Cyber Gray preference migration are retained. An older build that stored preferences under `IoniqN` needs a one-time copy of **only** `preferences.cfg` into the retained N Garage directory while the app is closed; no credential files should be copied or converted.
 
-There is no `export_presets.cfg` or configured application bundle/package ID in this checkout. New export display names default to the project name, nCTRL. In existing external presets, set Android **Package → Name** and iOS **Application → Name** to nCTRL (or leave blank to inherit). Keep the previously shipped Android package ID/signing key and iOS bundle ID/team/Keychain access group to retain access to saved credentials. If an identity must change, users must sign in and save credentials again; this revision does not migrate secrets between app identities. Freshly export iOS to include its NativeAOT-linked vault and Face ID permission text; see SECURE_LOGIN.md.
+`export_presets.cfg` is intentionally not committed: this is a public repository and presets contain the Apple team ID and bundle ID. Create your own preset in **Project → Export**. New export display names default to the project name, nCTRL. In existing external presets, set Android **Package → Name** and iOS **Application → Name** to nCTRL (or leave blank to inherit). Keep the previously shipped Android package ID/signing key and iOS bundle ID/team/Keychain access group to retain access to saved credentials. If an identity must change, users must sign in and save credentials again; this revision does not migrate secrets between app identities. Freshly export iOS to include its NativeAOT-linked vault and Face ID permission text; see SECURE_LOGIN.md.
+
+### iOS preset for TestFlight
+
+The release flow is: export from Godot, open the generated Xcode project, then **Product → Archive** and upload to TestFlight. Recommended iOS preset settings:
+
+- **Export Path:** `exports/ios/nCTRL.ipa`. `exports/` is git-ignored except its `.gdignore`, which stops Godot importing the generated project's images.
+- **Application → Export Method Release:** App Store. **Code Sign Identity (Debug and Release):** Apple Development, with provisioning profiles left blank so Xcode signs automatically; Xcode re-signs for distribution when uploading.
+- **Application → Targeted Device Family:** iPhone. The UI is a fixed portrait phone layout.
+- **Application → Short Version:** blank, inheriting `application/config/version` from `project.godot`. **Application → Version** (the build number) must increase for every TestFlight upload of the same version.
+- **Privacy → User Defaults Access Reasons:** CA92.1 (“Access info from same app”). The iOS vault stores its install marker in `NSUserDefaults`.
+- **Plugins:** leave any legacy NGarageVault `.gdip` disabled. The enabled **nCTRL Secure Vault** editor addon adds `NSFaceIDUsageDescription` and `ITSAppUsesNonExemptEncryption = false` (the app uses only standard HTTPS) to Info.plist.
+- Keep signing credentials in Godot's `.godot/export_credentials.cfg`, which is git-ignored, never in tracked files.
 
 ## Storage, request limits and errors
 

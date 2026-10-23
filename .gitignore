@@ -9,18 +9,27 @@
 .import/
 export.cfg
 export_credentials.cfg
+# Public repo: presets hold the Apple team ID and bundle ID. See README for required settings.
+export_presets.cfg
 Native/iOS/build/
 *.tmp
 
 # Imported translations (automatically generated from CSV files)
 *.translation
 
+# .NET build outputs (contain local machine paths)
+bin/
+obj/
+
 # Mono-specific ignores
 .mono/
 data_*/
 mono_crash.*.json
 
-# Export outputs
+# Export outputs. exports/.gdignore stays tracked so Godot never imports
+# generated Xcode project images as game resources.
+exports/*
+!exports/.gdignore
 *.exe
 # Uncomment if your project does not version PCK files as runtime dependencies.
 # *.pck

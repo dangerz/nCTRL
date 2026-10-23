@@ -1,6 +1,6 @@
 # fiveN command comparison
 
-Reviewed October 23, 2026. Reference: `C:\Users\Roy\Documents\fiveN\Classes\Managers\CommsManager.cs`, particularly `Connect` and `Lock(bool)`, plus `Classes/Scenes/Main.cs`. The reference files were read only. No account credentials or real vehicle commands were used.
+Reviewed October 23, 2026. Reference: a local fiveN checkout, `Classes/Managers/CommsManager.cs`, particularly `Connect` and `Lock(bool)`, plus `Classes/Scenes/Main.cs`. The reference files were read only. No account credentials or real vehicle commands were used.
 
 ## Differences found and corrected
 
