@@ -172,6 +172,7 @@ public partial class Main
         else if(screen=="Activity")LiveActivity();
         else if(screen=="Locate")LiveLocation();
         else if(screen=="Details")LiveDetails();
+        else if(screen=="Alerts")LiveAlerts();
         else LiveSettings();
     }
     private void LiveHome()
@@ -189,7 +190,7 @@ public partial class Main
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
         Label(288,403,150,42,s?.RangeMiles is double range?$"{range:0} mi":"—",28,White,true);
         for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:new("#243446"));
-        Label(24,482,412,24,"Doors: "+OnOff(s?.Locked,"Locked","Unlocked"),13,White);
+        HealthStrip(s);
         Label(24,509,412,36,"Reported: "+ReportedTime(s?.ReportedAt),11,Muted,false,true);
         var doorAction=VehicleLink.DoorAction(s?.Locked);
         var door=LiveButton(24,563,200,49,doorAction==ActionKind.Unlock?"Unlock":doorAction==ActionKind.Lock?"Lock":"Door status unknown",13,
@@ -289,7 +290,7 @@ public partial class Main
             "Expired / denied — sign in again"),13,Muted,false,true);
         Button(24,302,412,46,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
         LiveButton(24,358,412,46,"Update",13,()=>_ = RefreshLive(false));
-        LiveButton(24,414,412,46,"Wake vehicle and refresh",13,()=>_ = RefreshLive(true));
+        LiveButton(24,414,412,46,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
         LiveButton(24,470,412,46,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
         Button(24,526,412,46,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
         Button(24,582,412,46,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");

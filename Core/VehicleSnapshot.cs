@@ -25,6 +25,15 @@ public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint
             Int(w,"acLimit",s.AcLimit);Int(w,"dcLimit",s.DcLimit);
             w.WriteString("reportedAt",s.ReportedAt);w.WriteString("retrievedAt",s.RetrievedAt.ToString("O",CultureInfo.InvariantCulture));
             Int(w,"driverSeat",s.DriverSeat);Int(w,"passengerSeat",s.PassengerSeat);Bool(w,"steeringWheelHeat",s.SteeringWheelHeat);
+            // Health and openings only; the status location is never saved.
+            if(s.Health is {} h) {
+                w.WriteStartObject("health");Int(w,"battery12V",h.Battery12V);
+                Bool(w,"frontLeftDoor",h.FrontLeftDoor);Bool(w,"frontRightDoor",h.FrontRightDoor);Bool(w,"rearLeftDoor",h.RearLeftDoor);Bool(w,"rearRightDoor",h.RearRightDoor);
+                Bool(w,"tailgate",h.Tailgate);Bool(w,"hood",h.Hood);
+                Bool(w,"frontLeftWindow",h.FrontLeftWindow);Bool(w,"frontRightWindow",h.FrontRightWindow);Bool(w,"rearLeftWindow",h.RearLeftWindow);Bool(w,"rearRightWindow",h.RearRightWindow);
+                Bool(w,"tireWarning",h.TireWarning);Bool(w,"washerFluidLow",h.WasherFluidLow);Bool(w,"brakeFluidWarning",h.BrakeFluidWarning);Bool(w,"keyFobBatteryLow",h.KeyFobBatteryLow);
+                w.WriteEndObject();
+            }
             w.WriteEndObject();
         }
         return Encoding.UTF8.GetString(stream.ToArray());
@@ -44,14 +53,19 @@ public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint
             string reported=r.GetProperty("reportedAt").GetString()??"";
             var state=new LiveVehicleState(Bool(r,"locked"),Bool(r,"climateOn"),Int(r,"temperatureF"),Int(r,"battery"),Bool(r,"pluggedIn"),
                 Bool(r,"charging"),r.GetProperty("rangeMiles").ValueKind==JsonValueKind.Number?r.GetProperty("rangeMiles").GetDouble():null,
-                Int(r,"acLimit"),Int(r,"dcLimit"),reported.Length>48?"":reported,retrieved,Int(r,"driverSeat"),Int(r,"passengerSeat"),Bool(r,"steeringWheelHeat"));
+                Int(r,"acLimit"),Int(r,"dcLimit"),reported.Length>48?"":reported,retrieved,Int(r,"driverSeat"),Int(r,"passengerSeat"),Bool(r,"steeringWheelHeat"),
+                // Snapshots saved before health existed simply have none.
+                r.TryGetProperty("health",out var h)&&h.ValueKind==JsonValueKind.Object?new VehicleHealth(Int(h,"battery12V"),
+                    Bool(h,"frontLeftDoor"),Bool(h,"frontRightDoor"),Bool(h,"rearLeftDoor"),Bool(h,"rearRightDoor"),Bool(h,"tailgate"),Bool(h,"hood"),
+                    Bool(h,"frontLeftWindow"),Bool(h,"frontRightWindow"),Bool(h,"rearLeftWindow"),Bool(h,"rearRightWindow"),
+                    Bool(h,"tireWarning"),Bool(h,"washerFluidLow"),Bool(h,"brakeFluidWarning"),Bool(h,"keyFobBatteryLow")):null);
             return new(account,vehicle,name,vinTail,r.GetProperty("generation").GetInt32(),state);
         } catch(Exception) {return null;}
     }
     private static void Bool(Utf8JsonWriter w,string name,bool? value){if(value is bool b)w.WriteBoolean(name,b);else w.WriteNull(name);}
     private static void Int(Utf8JsonWriter w,string name,int? value){if(value is int n)w.WriteNumber(name,n);else w.WriteNull(name);}
-    private static bool? Bool(JsonElement e,string name)=>e.GetProperty(name).ValueKind switch {JsonValueKind.True=>true,JsonValueKind.False=>false,_=>null};
-    private static int? Int(JsonElement e,string name)=>e.GetProperty(name).ValueKind==JsonValueKind.Number&&e.GetProperty(name).TryGetInt32(out int n)?n:null;
+    private static bool? Bool(JsonElement e,string name)=>e.TryGetProperty(name,out var v)?v.ValueKind switch {JsonValueKind.True=>true,JsonValueKind.False=>false,_=>null}:null;
+    private static int? Int(JsonElement e,string name)=>e.TryGetProperty(name,out var v)&&v.ValueKind==JsonValueKind.Number&&v.TryGetInt32(out int n)?n:null;
     private static bool IsHash(string key)
     {
         if(key.Length!=64)return false;

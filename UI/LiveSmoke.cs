@@ -23,6 +23,8 @@ public partial class Main
         public int Requests;
         public int Tokens;
         public string LastBody="",LastPath="";
+        // Turns the reported car unlocked, with a door and a window open and a weak 12-volt battery.
+        public bool Unhealthy;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
@@ -44,6 +46,9 @@ public partial class Main
                 "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
             };
+            if(Unhealthy&&route.EndsWith("/vehicleStatus"))
+                body=body.Replace("\"doorLock\":true","\"doorLock\":false").Replace("\"batSoc\":87","\"batSoc\":41")
+                    .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":0,\"frontRight\":1},\"windowOpen\":{\"backLeft\":1}");
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
             if(route.EndsWith("/rdo/on")){Commands++;response.Headers.Add("tmsTid","fixture-command");}
             return Task.FromResult(response);
@@ -200,7 +205,26 @@ public partial class Main
             if(!fixture.LastBody.Contains("\"drvSeatHeatState\":8")||!fixture.LastBody.Contains("\"astSeatHeatState\":3")||
                !fixture.LastBody.Contains("\"rlSeatHeatState\":0")||!fixture.LastBody.Contains("\"heating1\":3"))
                 throw new Exception("Climate start did not carry the chosen seats and steering wheel");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel. No real API calls.");
+            // Car health: the strip, Check your car with Lock, and a wake confirmation that sends nothing when cancelled.
+            fixture.Unhealthy=true;
+            await RefreshLive(false);
+            if(pendingOverride!=null)canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||connection?.State?.Locked!=false);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            Navigate("Car");
+            var strip=canvas.GetNodeOrNull<Button>("AlertStrip");
+            if(strip==null||!strip.Text.Contains("Doors unlocked")||!strip.Text.Contains("+4 more"))throw new Exception("Car screen does not lead with the unlocked alert");
+            await Capture("36-alert-strip-test.png");
+            strip.EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Alerts"||canvas.GetNodeOrNull<Button>("AlertLock")==null)throw new Exception("Check your car does not list alerts with Lock");
+            await Capture("37-check-your-car-test.png");
+            Navigate("Settings");int beforeWake=fixture.Requests;
+            canvas.GetNode<Button>("WakeRefresh").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingConfirm==null||canvas.GetNodeOrNull<Button>("ConfirmGo")==null||fixture.Requests!=beforeWake)
+                throw new Exception("Waking with a weak 12-volt battery did not ask first");
+            await Capture("38-wake-confirm-test.png");
+            canvas.GetNode<Button>("ConfirmCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingConfirm!=null||fixture.Requests!=beforeWake)throw new Exception("Cancelling the wake confirmation sent a request");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

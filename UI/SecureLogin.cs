@@ -34,7 +34,7 @@ public partial class Main
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
+        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;pendingConfirm=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
         sessionVerified=false;sessionAccount=null;
         screen="Connect";notice="";noticeError=false;
         // With a saved account and status, return to the Car screen showing that (stale) status.

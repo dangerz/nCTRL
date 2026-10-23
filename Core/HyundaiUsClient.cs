@@ -18,8 +18,16 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
     int? Battery, bool? PluggedIn, bool? Charging, double? RangeMiles, int? AcLimit, int? DcLimit,
     string ReportedAt, DateTimeOffset RetrievedAt,
     // Seat codes as reported (see SeatCodes.Reported); null when Hyundai does not report them.
-    int? DriverSeat=null, int? PassengerSeat=null, bool? SteeringWheelHeat=null);
+    int? DriverSeat=null, int? PassengerSeat=null, bool? SteeringWheelHeat=null,
+    VehicleHealth? Health=null,
+    // Location included in the status report, if any. Used only for ignored-place checks; never shown or saved.
+    VehicleLocation? StatusLocation=null);
 public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt);
+// Openings and warnings as reported; null means Hyundai did not report that item.
+public sealed record VehicleHealth(int? Battery12V,
+    bool? FrontLeftDoor, bool? FrontRightDoor, bool? RearLeftDoor, bool? RearRightDoor, bool? Tailgate, bool? Hood,
+    bool? FrontLeftWindow, bool? FrontRightWindow, bool? RearLeftWindow, bool? RearRightWindow,
+    bool? TireWarning, bool? WasherFluidLow, bool? BrakeFluidWarning, bool? KeyFobBatteryLow);
 public enum RemoteOutcome { Accepted, Confirmed, Failed, Unknown }
 public sealed record RemoteReceipt(RemoteOutcome Outcome, string Message, string? TransactionId);
 public class BluelinkException : Exception
@@ -421,10 +429,23 @@ public sealed class HyundaiUsClient : IDisposable
         if(tempUnit==0&&temp!=null)temp=(int)Math.Round(temp.Value*1.8+32);
         if(tempUnit is not (0 or 1))temp=null;
         static int? Seat(int? code)=>code is >=0 and <=8?code:null;
+        // The overall tire light, or any single tire light when the overall one is missing.
+        bool? tires=Boolean(v,"tirePressureLamp.tirePressureWarningLampAll");
+        if(tires==null) {
+            var each=new[]{"FrontLeft","FrontRight","RearLeft","RearRight"}.Select(t=>Boolean(v,"tirePressureLamp.tirePressureWarningLamp"+t)).ToList();
+            tires=each.Any(t=>t==true)?true:each.All(t=>t==false)?false:null;
+        }
+        var health=new VehicleHealth(Percent(Integer(v,"battery.batSoc")),
+            Boolean(v,"doorOpen.frontLeft"),Boolean(v,"doorOpen.frontRight"),Boolean(v,"doorOpen.backLeft"),Boolean(v,"doorOpen.backRight"),
+            Boolean(v,"trunkOpen"),Boolean(v,"hoodOpen"),
+            Boolean(v,"windowOpen.frontLeft"),Boolean(v,"windowOpen.frontRight"),Boolean(v,"windowOpen.backLeft"),Boolean(v,"windowOpen.backRight"),
+            tires,Boolean(v,"washerFluidStatus"),Boolean(v,"breakOilStatus"),Boolean(v,"smartKeyBatteryWarning"));
+        var lat=Number(v,"vehicleLocation.coord.lat");var lon=Number(v,"vehicleLocation.coord.lon");
+        var located=lat is double y&&lon is double x&&Math.Abs(y)<=90&&Math.Abs(x)<=180&&!(y==0&&x==0)?new VehicleLocation(y,x,Text(v,"vehicleLocation.time")):null;
         return new(Boolean(v,"doorLock"),Boolean(v,"airCtrlOn"),temp,Percent(Integer(v,"evStatus.batteryStatus")),
             plugin is null?Boolean(v,"evStatus.batteryPlugin"):plugin>0,Boolean(v,"evStatus.batteryCharge"),range,ac,dc,
             Text(v,"dateTime"),DateTimeOffset.UtcNow,Seat(Integer(v,"seatHeaterVentState.flSeatHeatState")),
-            Seat(Integer(v,"seatHeaterVentState.frSeatHeatState")),Boolean(v,"steerWheelHeat"));
+            Seat(Integer(v,"seatHeaterVentState.frSeatHeatState")),Boolean(v,"steerWheelHeat"),health,located);
     }
     private static int? Percent(int? n)=>n is >=0 and <=100?n:null;
     public static JsonElement At(JsonElement e,string path)

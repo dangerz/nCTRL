@@ -22,6 +22,12 @@ static class SnapshotTests
         Check(VehicleSnapshot.Decode(json.Replace(account,"tester@example.invalid"))==null,"Raw email is never accepted as the account key");
         Check(VehicleSnapshot.Decode(json.Replace("\"000001\"","\"TESTVIN0000000001\""))==null,"Full VIN is never accepted");
         Check(VehicleSnapshot.Decode(json.Replace("\"version\":1","\"version\":2"))==null,"Unknown format version is discarded");
+        var health=new VehicleHealth(41,false,true,null,false,true,false,false,false,true,false,true,false,null,true);
+        var withHealth=snapshot with {State=state with {Health=health,StatusLocation=new VehicleLocation(40.111111,-74.222222,"t")}};
+        string healthJson=withHealth.Encode();var healthBack=VehicleSnapshot.Decode(healthJson);
+        Check(healthBack?.State.Health==health,"Health and openings round-trip");
+        Check(healthBack?.State.StatusLocation==null&&!healthJson.Contains("40.11")&&!healthJson.Contains("74.22"),"The status location is never saved");
+        Check(VehicleSnapshot.Decode(json)?.State.Health==null,"Snapshots saved before health existed still open");
         Console.WriteLine($"PASS: {count} vehicle-snapshot checks.");
     }
 }
