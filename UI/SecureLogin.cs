@@ -23,7 +23,7 @@ public partial class Main
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection?.Dispose();connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
+        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
         screen="Connect";notice="";noticeError=false;
         if(render&&IsInsideTree())Render();
     }
@@ -57,12 +57,19 @@ public partial class Main
     }
     private async Task UnlockAccount()
     {
-        int version=liveEpoch;
+        int version=liveEpoch;SavedAccount? account=null;
         await RunLive(async()=>{
-            var account=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
+            account=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
             if(HoldForDisclaimer(account.Email,account.Password,account.Pin,true,true))return;
             await SignInSaved(account.Email,account.Password,account.Pin,version);
-        },"Waiting for "+vault.BiometricName+"…");
+        },"Waiting for "+vault.BiometricName+"…",
+        // An override retries with the already unlocked account instead of asking for Face ID twice.
+        ()=>account==null?UnlockAccount():SignInSavedLive(account.Email,account.Password,account.Pin));
+    }
+    private Task SignInSavedLive(string email,string password,string pin)
+    {
+        int version=liveEpoch;
+        return RunLive(()=>SignInSaved(email,password,pin,version),"Signing in to Hyundai…",()=>SignInSavedLive(email,password,pin));
     }
     private async Task SignInSaved(string email,string password,string pin,int version)
     {

@@ -30,7 +30,7 @@ public partial class Main
     {
         try {
             var fake=new VaultFixture();vault=new AccountVault(fake);
-            var http=new ScreenFixture();connectionFactory=()=>new HyundaiUsClient(http);
+            var http=new ScreenFixture();connectionFactory=()=>new HyundaiUsClient(http,null,budget);
             // Exercise the phone path: acceptance requires the (fake) device-owner check.
             deviceCheckRequired=true;Render();
             fake.CancelNext=true;FillDisclaimerFixture().EmitSignal(Godot.Button.SignalName.Pressed);
@@ -56,6 +56,12 @@ public partial class Main
             fake.CancelNext=true;await UnlockAccount();
             if(connection!=null||enrollment!=null||!vault.HasAccount)throw new Exception("Cancelled biometric leaked account access");
             await UnlockAccount();if(!liveMode||screen!="Car")throw new Exception("Unlock did not restore the previously selected vehicle");
+            // On phones an override needs the device check; cancelling it sends nothing.
+            int sent=http.Requests;await RefreshLive(false);
+            if(pendingOverride==null||http.Requests!=sent)throw new Exception("Read cooldown did not warn after unlock");
+            fake.CancelNext=true;canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(pendingOverride!=null||http.Requests!=sent||!notice.Contains("not confirmed"))throw new Exception("Cancelled device check still sent an override request");
             Navigate("Settings");await Capture("21-secure-settings-test.png");
             Navigate("Disclaimer");
             if(canvas.GetNodeOrNull<Button>("DisclaimerBack")==null)throw new Exception("Settings cannot show the accepted disclaimer");

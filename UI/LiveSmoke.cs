@@ -2,6 +2,7 @@
 using Godot;
 using NGarage.Core;
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -11,6 +12,9 @@ using System.Threading.Tasks;
 public partial class Main
 {
     private bool liveSmoke;
+    // Real read/command/location limits, but no sign-in cooldown so recovery flows can run back to back.
+    private static readonly IReadOnlyDictionary<RequestKind,RequestLimit> SmokeLimits=
+        new Dictionary<RequestKind,RequestLimit>(RequestBudget.Defaults){[RequestKind.SignIn]=new(TimeSpan.Zero,100)};
     // Explicit offline smoke mode only. Reserved .invalid account; no network.
     private sealed class ScreenFixture : HttpMessageHandler
     {
@@ -45,7 +49,7 @@ public partial class Main
     {
         try
         {
-            var fixture=new ScreenFixture();connectionFactory=()=>new HyundaiUsClient(fixture);
+            var fixture=new ScreenFixture();connectionFactory=()=>new HyundaiUsClient(fixture,null,budget);
             AssertAccountOnly();
             foreach(string route in new[]{"Car","Energy","Activity","Settings","Paint","Appearance","Climate","Locate"})
             {Navigate(route);AssertAccountOnly();}
@@ -68,6 +72,25 @@ public partial class Main
             notice="";Render();await Capture("11-vehicle-selection-test.png");
             await ChooseVehicle();
             if(!liveMode||connection?.State?.Battery!=78||fixture.Commands!=0)throw new Exception("Connect failed or sent a command");
+            // The connect read starts the read cooldown: warn every time, Cancel sends nothing, an override sends exactly one.
+            int reads=fixture.Requests;
+            await RefreshLive(false);
+            if(pendingOverride==null||canvas.GetNodeOrNull<Button>("OverrideConfirm")==null||fixture.Requests!=reads)
+                throw new Exception("Read cooldown did not warn before sending");
+            await Capture("25-limit-override-test.png");
+            canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingOverride!=null||fixture.Requests!=reads)throw new Exception("Cancelled override sent a request");
+            await RefreshLive(false);
+            if(pendingOverride==null)throw new Exception("A second refused request was not warned again");
+            canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||fixture.Requests==reads);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(fixture.Requests!=reads+1||pendingOverride!=null)throw new Exception("Override did not send exactly one request");
+            await RefreshLive(false);
+            if(pendingOverride==null||fixture.Requests!=reads+1)throw new Exception("Override applied to more than one request");
+            canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            Navigate("Settings");canvas.GetNode<Button>("ViewLimits").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Limits"||canvas.GetNodeOrNull<Button>("LimitsBack")==null)throw new Exception("Request limits screen missing");
+            await Capture("26-request-limits-test.png");
             PickPaint("Ecotonic Gray","747c79");notice="";Render();await Capture("12-connected-test.png");
             foreach(var child in canvas.GetChildren())
                 if(child is Button b&&b.Text.Contains("paint",StringComparison.OrdinalIgnoreCase))

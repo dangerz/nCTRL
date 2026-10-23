@@ -8,6 +8,7 @@ static class Program
         await VaultTests.Run();
         VehicleLinkTests.Run();
         DisclaimerTests.Run();
+        await RequestBudgetTests.Run();
         await MapTests.Run();
     }
 }

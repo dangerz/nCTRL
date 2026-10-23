@@ -38,6 +38,12 @@ public partial class Main : Control
         smoke = liveSmoke;
 #endif
         if (!smoke) LoadPrefs();
+#if DEBUG
+        budget = new RequestBudget(smoke ? new MemoryBudgetStore() : new FileBudgetStore(LimitsFile), null, smoke ? SmokeLimits : null);
+#else
+        budget = new RequestBudget(new FileBudgetStore(LimitsFile));
+#endif
+        connectionFactory = () => new HyundaiUsClient(budget);
         InitializeVault();
         Render();
 #if DEBUG
@@ -100,6 +106,7 @@ public partial class Main : Control
         else if(screen=="Paint") Paint();
         else if(screen=="Appearance") Appearance();
         else if(screen=="Disclaimer") DisclaimerView();
+        else if(screen=="Limits") LimitsScreen();
         else LiveScreen();
         if(liveMode)Nav();
         if(notice.Length>0)
@@ -107,6 +114,7 @@ public partial class Main : Control
             Rect(20,778,420,65,noticeError?new("#47232a"):new("#183749"));
             Label(31,784,397,53,notice,11,White,false,true);
         }
+        if(pendingOverride!=null)OverrideDialog();
     }
     private void Title(string title,string sub)
     {
@@ -175,7 +183,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Disclaimer"?"Settings":screen is "Climate" or "Locate"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits"?"Settings":screen is "Climate" or "Locate"?"Car":screen;
         for(int i=0;i<4;i++)
         {
             string name=names[i];int x=i*115;

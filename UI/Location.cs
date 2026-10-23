@@ -41,7 +41,7 @@ public partial class Main
         } catch(OperationCanceledException){throw;}
         catch(Exception) {EnsureLive(version);mapStatus="Map unavailable. Tap to open your maps app.";}
         notice="Showing Hyundai’s reported location; it may lag the vehicle.";
-    },"Requesting vehicle location…");
+    },"Requesting vehicle location…",()=>UpdateVehicleLocation(true));
 
     private void LiveLocation()
     {

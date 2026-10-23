@@ -88,7 +88,7 @@ public partial class Main
         },"Waiting for confirmation…");
         // Resume the held sign-in only after the gate is recorded; it never ran a request before.
         if(!accepted||pending==null||version!=liveEpoch)return;
-        if(pending.FromVault)await RunLive(()=>SignInSaved(pending.Email,pending.Password,pending.Pin,version),"Signing in to Hyundai…");
+        if(pending.FromVault)await SignInSavedLive(pending.Email,pending.Password,pending.Pin);
         else await SignIn(pending.Email,pending.Password,pending.Pin,pending.Remember);
     }
     private void DisclaimerView()

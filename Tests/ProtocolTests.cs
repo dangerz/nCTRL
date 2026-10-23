@@ -47,6 +47,9 @@ static class ProtocolTests
     static async Task Reject(Func<Task> f,string name){try{await f();}catch(BluelinkException){count++;return;}throw new Exception("Expected rejection: "+name);}
     static async Task<BluelinkException> Failure(Func<Task> action)
     {try{await action();}catch(BluelinkException e){return e;}throw new Exception("Expected sanitized failure");}
+    // Protocol recovery tests sign in repeatedly on one client; request limits have their own tests.
+    static RequestBudget Unlimited()=>new(new MemoryBudgetStore(),null,
+        RequestBudget.Defaults.ToDictionary(x=>x.Key,x=>new RequestLimit(TimeSpan.Zero,int.MaxValue)));
     static async Task<(HyundaiUsClient,Fake)> Session(TimeProvider? clock=null)
     {
         var f=new Fake();f.Add(Token);f.Add(Enrollment);f.Add(Status);
@@ -73,7 +76,7 @@ static class ProtocolTests
         foreach(bool enrollmentFailure in new[]{false,true})
         foreach(Exception failure in new Exception[]{new InvalidOperationException(secret),new PlatformNotSupportedException(secret),new TypeInitializationException(secret,new Exception(secret)),new Exception(secret)}) {
             f=new Fake();if(enrollmentFailure)f.Add(Token);f.Replies.Enqueue(()=>throw failure);
-            using var client=new HyundaiUsClient(f);
+            using var client=new HyundaiUsClient(f,null,Unlimited());
             var error=await Failure(()=>client.LoginAsync("tester@example.invalid",secret,"1234",default));
             Check(error.Message.StartsWith(enrollmentFailure?"Vehicle list:":"Authentication:")&&!error.ToString().Contains(secret)&&error.InnerException==null,"Unexpected runtime error keeps stage and withholds private details");
             Check(!client.IsAuthenticated&&f.Calls.Count==(enrollmentFailure?2:1),"Runtime error clears session without retries");
@@ -200,7 +203,7 @@ static class ProtocolTests
             (HttpStatusCode.BadGateway,"{\"errorCode\":\"502\",\"errorMessage\":\"private account response\"}",(int?)502)})
         {
             f=new Fake();if(enrollmentFailure)f.Add(Token);f.Add(scenario.Item2,scenario.Item1);
-            using(c=new HyundaiUsClient(f))
+            using(c=new HyundaiUsClient(f,null,Unlimited()))
             {
                 var e=await Failure(()=>c.LoginAsync("tester@example.invalid","test-password","1234",default));
                 Check(e.Message.StartsWith(enrollmentFailure?"Vehicle list:":"Authentication:"),"Failure stage");

@@ -14,7 +14,8 @@ public partial class Main
     private IReadOnlyList<EnrolledVehicle>? enrollment;
     private bool liveMode,liveBusy;
     private int selectedIndex,liveAc=80,liveDc=80,liveTemperature=72;
-    private Func<HyundaiUsClient> connectionFactory = () => new HyundaiUsClient();
+    // Set in _Ready so every client shares the persisted request budget.
+    private Func<HyundaiUsClient> connectionFactory = null!;
     private bool monitoringCommand;
     private ActionKind? feedbackKind;
     private bool feedbackEnabled;
@@ -90,21 +91,25 @@ public partial class Main
                 EnsureLive(version);notice="Signed in for this session. "+ex.Message;noticeError=true;
             }
             await RestoreLinkedVehicle(active,version);
-        },"Signing in to Hyundai…");
+        },"Signing in to Hyundai…",()=>SignIn(email,password,pin,remember));
     }
     private async Task ChooseVehicle()
     {
         if(enrollment==null||connection==null)return;
         int version=liveEpoch;var active=connection;var selected=enrollment[selectedIndex];
-        await RunLive(()=>ConnectVehicle(active,selected,version),"Reading Hyundai vehicle status…");
+        await RunLive(()=>ConnectVehicle(active,selected,version),"Reading Hyundai vehicle status…",ChooseVehicle);
     }
     private async Task RestoreLinkedVehicle(HyundaiUsClient active,int version)
     {
         if(enrollment==null)return;
         int index=VehicleLink.Find(linkedVehicle,accountKey,enrollment);
         if(index<0)return;
-        selectedIndex=index;
-        await ConnectVehicle(active,enrollment[index],version);
+        selectedIndex=index;var selected=enrollment[index];
+        // Signed in already: an override reconnects this vehicle rather than repeating the sign-in.
+        try {await ConnectVehicle(active,selected,version);}
+        catch(RequestLimitException ex) when(ex.Overridable) {
+            OfferOverride(ex,()=>{int v=liveEpoch;return RunLive(()=>ConnectVehicle(active,selected,v),"Reading Hyundai vehicle status…");});
+        }
     }
     private async Task ConnectVehicle(HyundaiUsClient active,EnrolledVehicle selected,int version)
     {
@@ -122,7 +127,8 @@ public partial class Main
         if(liveBusy)return;
         EndLiveSession();notice="Session locked. Saved login, if any, remains protected.";Render();
     }
-    private async Task RunLive(Func<Task> work,string progress)
+    // retry re-runs a user-initiated request after an override; automatic work passes none.
+    private async Task RunLive(Func<Task> work,string progress,Func<Task>? retry=null)
     {
         if(liveBusy)return;
         int version=liveEpoch;
@@ -130,6 +136,7 @@ public partial class Main
         try {await work();EnsureLive(version);}
         catch(Exception) when(version!=liveEpoch) { }
         catch(VaultException ex){notice=ex.Message;noticeError=true;}
+        catch(RequestLimitException ex){OfferOverride(ex,retry);}
         catch(BluelinkException ex){notice=ex.Message;noticeError=true;}
         catch(OperationCanceledException){notice="Request interrupted. For a command, the outcome may be unknown. Refresh before retrying.";noticeError=true;}
         catch(HttpRequestException){notice="Could not reach Hyundai. Check your connection. No automatic retry was sent.";noticeError=true;}
@@ -224,15 +231,16 @@ public partial class Main
     {
         var v=connection?.Selected;
         Title("YOUR CONNECTED GARAGE.","Hyundai USA · device security");
-        Label(24,210,412,60,$"{v?.Name}\nVIN …{v?.Vin[^6..]}",17,White,true,true);
-        Label(24,295,412,62,"Session: "+(connection?.IsAuthenticated==true?"Signed in":"Expired / denied — sign in again"),14,Muted,false,true);
-        Button(24,381,412,48,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
-        LiveButton(24,452,412,48,"Refresh cached status",13,()=>_ = RefreshLive(false));
-        LiveButton(24,523,412,48,"Wake vehicle and refresh",13,()=>_ = RefreshLive(true));
-        LiveButton(24,594,198,48,"Lock app",13,()=>EndLiveSession());
-        LiveButton(238,594,198,48,"Sign out & forget",12,()=>_ = ForgetAccount());
-        Button(24,656,412,44,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
-        Label(24,708,412,64,vault.HasAccount?"Account saved securely on this device. "+vault.BiometricName+" unlocks it. Backgrounding locks the app; signing out removes the saved login.":
+        Label(24,204,412,52,$"{v?.Name}\nVIN …{v?.Vin[^6..]}",17,White,true,true);
+        Label(24,262,412,28,"Session: "+(connection?.IsAuthenticated==true?"Signed in":"Expired / denied — sign in again"),13,Muted,false,true);
+        Button(24,302,412,46,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
+        LiveButton(24,358,412,46,"Refresh cached status",13,()=>_ = RefreshLive(false));
+        LiveButton(24,414,412,46,"Wake vehicle and refresh",13,()=>_ = RefreshLive(true));
+        LiveButton(24,470,198,46,"Lock app",13,()=>EndLiveSession());
+        LiveButton(238,470,198,46,"Sign out & forget",12,()=>_ = ForgetAccount());
+        Button(24,526,412,46,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
+        Button(24,582,412,46,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
+        Label(24,642,412,64,vault.HasAccount?"Account saved securely on this device. "+vault.BiometricName+" unlocks it. Backgrounding locks the app; signing out removes the saved login.":
             "Session-only login. To enable saved login, lock the app and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }
     private void LiveActivity()
@@ -281,7 +289,7 @@ public partial class Main
                     commandMonitor=MonitorLive(active,cmd,dc,before,version,token);
                 }
             }
-        },"Sending command to Hyundai…");
+        },"Sending command to Hyundai…",()=>SendLive(cmd,dc));
     }
     private async Task MonitorLive(HyundaiUsClient active,VehicleCommand cmd,int? dc,LiveVehicleState? before,int version,CancellationToken token)
     {
@@ -306,5 +314,5 @@ public partial class Main
     private Task RefreshLive(bool wake)=>RunLive(async()=>{
         int version=liveEpoch;await connection!.ReadAsync(wake,liveLifetime.Token);EnsureLive(version);
         notice="Hyundai status received. Check the reported timestamp.";
-    },wake?"Requesting fresh vehicle status…":"Reading Hyundai’s cached status…");
+    },wake?"Requesting fresh vehicle status…":"Reading Hyundai’s cached status…",()=>RefreshLive(wake));
 }
