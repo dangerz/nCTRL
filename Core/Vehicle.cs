@@ -1,6 +1,6 @@
 namespace NGarage.Core;
 
-public enum ActionKind { Lock, Unlock, Climate, Charge, ChargeLimit }
+public enum ActionKind { Lock, Unlock, Climate, Charge, ChargeLimit, Lights, HornLights }
 public enum SeatMode { Off, HeatLow, HeatMedium, HeatHigh, CoolLow, CoolMedium, CoolHigh }
 // Sent with a climate start. Front seats and the steering wheel only; rear seats always stay off.
 public sealed record ClimateOptions(SeatMode DriverSeat=SeatMode.Off,SeatMode PassengerSeat=SeatMode.Off,bool SteeringWheel=false)

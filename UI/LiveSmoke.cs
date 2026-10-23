@@ -13,21 +13,21 @@ using System.Threading.Tasks;
 public partial class Main
 {
     private bool liveSmoke;
-    // Real read/command/location limits, but no sign-in cooldown so recovery flows can run back to back.
+    // Real read and location limits; no sign-in or command cooldown so flows can run back to back.
     private static readonly IReadOnlyDictionary<RequestKind,RequestLimit> SmokeLimits=
-        new Dictionary<RequestKind,RequestLimit>(RequestBudget.Defaults){[RequestKind.SignIn]=new(TimeSpan.Zero,100)};
+        new Dictionary<RequestKind,RequestLimit>(RequestBudget.Defaults){[RequestKind.SignIn]=new(TimeSpan.Zero,100),[RequestKind.Command]=new(TimeSpan.Zero,100)};
     // Explicit offline smoke mode only. Reserved .invalid account; no network.
     private sealed class ScreenFixture : HttpMessageHandler
     {
         public int Commands;
         public int Requests;
         public int Tokens;
-        public string LastBody="";
+        public string LastBody="",LastPath="";
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             string route=request.RequestUri!.AbsolutePath;
-            Requests++;if(route.EndsWith("/oauth/token"))Tokens++;
+            Requests++;if(route.EndsWith("/oauth/token"))Tokens++;LastPath=route;
             LastBody=request.Content==null?"":request.Content.ReadAsStringAsync(ct).GetAwaiter().GetResult();
             if((FailStage=="Authentication"&&route.EndsWith("/oauth/token"))||
                (FailStage=="Vehicle list"&&route.Contains("/enrollment/details/")))
@@ -39,7 +39,7 @@ public partial class Main
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
                 "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"battery\":{\"batSoc\":87},\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0},\"tirePressure\":{\"tirePressureFrontLeft\":36,\"tirePressureFrontRight\":36,\"tirePressureRearLeft\":35,\"tirePressureRearRight\":29},\"tirePressureLamp\":{\"tirePressureWarningLampAll\":1,\"tirePressureWarningLampRearRight\":1},\"vehicleLocation\":{\"coord\":{\"lat\":40.111111,\"lon\":-74.222222}},\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
-                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start"=>"",
+                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
                 "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
@@ -175,6 +175,20 @@ public partial class Main
             AssertAccountOnly();
             await SignIn("tester@example.invalid","fixture-password","1234");
             if(!liveMode||screen!="Car"||fixture.Commands!=1)throw new Exception("Remembered vehicle did not reconnect without commands");
+            // Flash lights, then horn & lights: one request each; headlights blink (and the horn "!" shows) for about 4 seconds.
+            Navigate("Car");
+            canvas.GetNode<Button>("FlashLights").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||monitoringCommand);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            var art=canvas.GetNode<StatusOverlay>("StatusOverlay");
+            if(!fixture.LastPath.EndsWith("/rcs/rhl/light")||!art.Flashing||art.Horn)throw new Exception("Flash lights did not send its request or light the headlights");
+            await Capture("34-flash-lights-test.png");
+            canvas.GetNode<Button>("HornLights").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||monitoringCommand);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            art=canvas.GetNode<StatusOverlay>("StatusOverlay");
+            if(!fixture.LastPath.EndsWith("/rcs/rhl/hnl")||!art.Flashing||!art.Horn)throw new Exception("Horn & lights did not send its request or show the horn");
+            await Capture("35-horn-lights-test.png");
+            await ToSignal(GetTree().CreateTimer(4.3),SceneTreeTimer.SignalName.Timeout);
+            if(canvas.GetNode<StatusOverlay>("StatusOverlay").Flashing)throw new Exception("Headlights and horn did not clear after a few seconds");
             // Seat and steering-wheel choices ride on the single climate start.
             Navigate("Climate");
             var driver=canvas.GetNode<OptionButton>("DriverSeat");driver.Select((int)SeatMode.HeatHigh);driver.EmitSignal(OptionButton.SignalName.ItemSelected,(long)SeatMode.HeatHigh);

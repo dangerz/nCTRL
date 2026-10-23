@@ -26,6 +26,10 @@ internal static class RequestJson
         w.WriteString("userName",username);w.WriteString("vin",vin);w.WriteString("pin",pin);
     });
     // heating1: 0 off, 3 steering wheel only (upstream HEAT_STATUS). Defrost and rear-window heat stay off.
+    // Flash lights and horn & lights: upstream sends only the account and VIN (no service PIN in the body).
+    internal static string HornLights(string username,string vin)=>Object(w=>{
+        w.WriteString("userName",username);w.WriteString("vin",vin);
+    });
     internal static string Climate(int temperature,int generation,ClimateOptions? options=null)=>Object(w=>{
         options??=new();
         w.WriteNumber("airCtrl",1);w.WriteStartObject("airTemp");

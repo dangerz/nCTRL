@@ -35,7 +35,7 @@ static class ProtocolTests
                 Check(!new[]{"origin","referer","encryptFlag","accept-language","sec-fetch-mode","accept-encoding"}.Any(Calls[^1].Headers.ContainsKey),"Vehicle requests use fiveN minimal header profile");
                 Check(Calls[^1].Headers["user-agent"]=="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","All vehicle requests use fiveN user agent");
                 if(r.Method==HttpMethod.Post) {
-                    bool doors=r.RequestUri.AbsolutePath.Contains("/rcs/rdo/");
+                    bool doors=r.RequestUri.AbsolutePath.Contains("/rcs/rdo/")||r.RequestUri.AbsolutePath.Contains("/rcs/rhl/");
                     Check(Calls[^1].Headers.Count==(doors?17:16)&&Calls[^1].Headers.ContainsKey("username")&&Calls[^1].Headers.ContainsKey("accessToken")&&Calls[^1].Headers.ContainsKey("blueLinkServicePin"),"Every command uses fiveN common account/vehicle/PIN headers; APPCLOUD-VIN is door-only");
                 }
             }
@@ -88,6 +88,7 @@ static class ProtocolTests
     public static async Task Run()
     {
         await AutomaticFollowup();
+        await LightsAndHorn();
         Check(!JsonSerializer.IsReflectionEnabledByDefault,"Tests enforce mobile JSON reflection restrictions");
         await MobilePayloadsAndFailures();
         var sessionClock=new Clock();var (resumable,_)=await Session(sessionClock);using(resumable)
@@ -323,6 +324,39 @@ static class ProtocolTests
         DateTimeOffset now=DateTimeOffset.UtcNow;
         public override DateTimeOffset GetUtcNow()=>now;
         public Task Advance(TimeSpan duration,CancellationToken ct){ct.ThrowIfCancellationRequested();now+=duration;return Task.CompletedTask;}
+    }
+    static async Task LightsAndHorn()
+    {
+        foreach(var (kind,route,service) in new[]{(ActionKind.Lights,"/ac/v2/rcs/rhl/light","LIGHTS_ONLY"),(ActionKind.HornLights,"/ac/v2/rcs/rhl/hnl","HORN_AND_LIGHTS")})
+        {
+            var (c,f)=await Session();using(c)
+            {
+                f.Add("",tid:"fixture-rhl");var receipt=await c.ExecuteAsync(new(kind),null,default);
+                var call=f.Calls[^1];
+                Check(call.Method=="POST"&&call.Path==route&&call.Headers["APPCLOUD-VIN"]=="TESTVIN0000000001","Upstream route and VIN header: "+kind);
+                using var body=JsonDocument.Parse(call.Body);
+                Check(body.RootElement.EnumerateObject().Count()==2&&body.RootElement.GetProperty("userName").GetString()=="tester@example.invalid"&&
+                    body.RootElement.GetProperty("vin").GetString()=="TESTVIN0000000001","Body is account and VIN only: "+kind);
+                Check(receipt.Outcome==RemoteOutcome.Accepted&&f.Calls.Count(x=>x.Method=="POST"&&x.Path.StartsWith("/ac/"))==1,"Exactly one request, accepted: "+kind);
+                f.Add("{\"status\":\"SUCCESS\"}");await c.CheckCommandAsync(default);
+                Check(f.Calls[^1].Headers["service_type"]==service&&c.Pending?.Outcome==RemoteOutcome.Confirmed,"Tracking uses the upstream service type: "+kind);
+            }
+        }
+        // The car reports no lights/horn state: follow-up never reads vehicle status.
+        foreach(bool tracked in new[]{false,true})
+        {
+            var clock=new Clock();var (c,f)=await Session(clock);using(c)
+            {
+                f.Add("",tid:tracked?"fixture-rhl":null);var before=c.State;
+                await c.ExecuteAsync(new(ActionKind.HornLights),null,default);int calls=f.Calls.Count,updates=0;
+                if(tracked)f.Add("{\"status\":\"SUCCESS\"}");
+                await c.MonitorCommandAsync(new(ActionKind.HornLights),null,before,()=>updates++,default,clock.Advance);
+                Check(f.Calls.Skip(calls).All(x=>x.Path.EndsWith("/rmt/getRunningStatus"))&&f.Calls.Count==calls+(tracked?1:0),"No status reads after lights/horn: tracked="+tracked);
+                Check(tracked?c.Pending?.Outcome==RemoteOutcome.Confirmed:c.Pending?.Outcome==RemoteOutcome.Unknown&&c.Pending.Message.Contains("doesn't report"),
+                    "Untracked lights/horn is reported as unverifiable, tracked is confirmed: "+tracked);
+                Check(updates>=1&&c.State==before,"Lights/horn never change reported vehicle state");
+            }
+        }
     }
     static async Task AutomaticFollowup()
     {

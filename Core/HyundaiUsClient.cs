@@ -52,6 +52,8 @@ public sealed class HyundaiUsClient : IDisposable
     public bool CanRequestLocation=>budget.CanAcquire(RequestKind.Location);
     public RequestBudget Budget=>budget;
     private DateTimeOffset submittedAt;
+    // Upstream tracks lights and horn under their own service types.
+    private string pendingServiceType="REMOTE_POLL";
 
     public HyundaiUsClient(RequestBudget? budget=null) : this(new HttpClientHandler {
         // Match fiveN's default HttpClient compression behavior. Never forward secrets on redirects.
@@ -152,6 +154,9 @@ public sealed class HyundaiUsClient : IDisposable
                 case ActionKind.Lock: case ActionKind.Unlock:
                     route="rcs/rdo/"+(command.Kind==ActionKind.Lock?"off":"on");
                     body=RequestJson.Doors(username,Selected!.Vin,pin);break;
+                case ActionKind.Lights: case ActionKind.HornLights:
+                    route="rcs/rhl/"+(command.Kind==ActionKind.Lights?"light":"hnl");
+                    body=RequestJson.HornLights(username,Selected!.Vin);break;
                 case ActionKind.Climate:
                     NeedElectric();
                     if(command.Value<62||command.Value>82)throw new BluelinkException("Choose 62–82°F.");
@@ -176,11 +181,13 @@ public sealed class HyundaiUsClient : IDisposable
             }
             budget.Acquire(RequestKind.Command);
             submittedAt=clock.GetUtcNow();
+            pendingServiceType=command.Kind switch {ActionKind.Lights=>"LIGHTS_ONLY",ActionKind.HornLights=>"HORN_AND_LIGHTS",_=>"REMOTE_POLL"};
             Pending=null;
             try
             {
                 var reply=await RequestAsync(RequestKind.Command,HttpMethod.Post,"/ac/v2/"+route,body,true,true,ct,
-                    command.Kind is ActionKind.Lock or ActionKind.Unlock?new Dictionary<string,string>{{"APPCLOUD-VIN",Selected!.Vin}}:null,stage:"Command");
+                    command.Kind is ActionKind.Lock or ActionKind.Unlock or ActionKind.Lights or ActionKind.HornLights?
+                        new Dictionary<string,string>{{"APPCLOUD-VIN",Selected!.Vin}}:null,stage:"Command");
                 // HTTP success is acceptance, not evidence of vehicle state.
                 Pending=new(RemoteOutcome.Accepted,$"Hyundai accepted the request (HTTP {reply.HttpStatus}). "+(reply.TransactionId is null?
                     "No tracking ID; completion unverified. Checking state automatically.":"Vehicle completion pending; checking automatically."),reply.TransactionId);
@@ -210,7 +217,7 @@ public sealed class HyundaiUsClient : IDisposable
             budget.Acquire(RequestKind.Read,enforceCooldown:false,startsCooldown:false);
             await EnsureToken(ct);
             var r=await RequestAsync(RequestKind.Read,HttpMethod.Get,"/ac/v2/rmt/getRunningStatus",null,true,true,ct,
-                new Dictionary<string,string>{{"tid",Pending.TransactionId},{"login_id",username},{"service_type","REMOTE_POLL"}},stage:"Command status");
+                new Dictionary<string,string>{{"tid",Pending.TransactionId},{"login_id",username},{"service_type",pendingServiceType}},stage:"Command status");
             var status=Text(r.Body,"status");
             Pending=Pending with {
                 Outcome=status=="SUCCESS"?RemoteOutcome.Confirmed:status=="ERROR"?RemoteOutcome.Failed:RemoteOutcome.Accepted,
@@ -232,6 +239,13 @@ public sealed class HyundaiUsClient : IDisposable
         Action updated,CancellationToken ct,Func<TimeSpan,CancellationToken,Task> delay)
     {
         if(Pending==null)return;
+        // The car reports no lights or horn state, so only Hyundai's tracking can confirm those.
+        bool reportsState=command.Kind is not (ActionKind.Lights or ActionKind.HornLights);
+        if(!reportsState&&Pending.TransactionId==null&&Pending.Outcome==RemoteOutcome.Accepted) {
+            Pending=Pending with {Outcome=RemoteOutcome.Unknown,
+                Message="Hyundai accepted the request. The car doesn't report lights or horn, so completion can't be verified."};
+            updated();return;
+        }
         for(int attempt=0;attempt<8;attempt++)
         {
             await delay(TimeSpan.FromSeconds(15),ct);
@@ -250,7 +264,7 @@ public sealed class HyundaiUsClient : IDisposable
                 }
                 if(Pending?.Outcome==RemoteOutcome.Failed){updated();return;}
                 // Cached read only; does not wake the vehicle or send another POST.
-                if(budget.CanAcquire(RequestKind.Read))await ReadAsync(false,ct);
+                if(reportsState&&budget.CanAcquire(RequestKind.Read))await ReadAsync(false,ct);
                 if(Pending?.Outcome!=RemoteOutcome.Confirmed && ChangedToRequestedState(command,dcLimit,before,State))
                     Pending=Pending! with {Outcome=RemoteOutcome.Confirmed,
                         Message="Updated vehicle report matches the requested state."};

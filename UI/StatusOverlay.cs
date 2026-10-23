@@ -10,6 +10,13 @@ public partial class StatusOverlay : Control
     public LockEffect Lock;
     public ComfortTint Windshield,DriverSeat,PassengerSeat;
     public bool WheelHeat;
+    // Flash lights / horn & lights: blink the headlights (and show the horn "!") until this engine time.
+    public ulong FlashUntilMs;
+    public bool Horn;
+    public Font? ExclaimFont;
+    private FontVariation? italic;
+    private bool drewFlash;
+    public bool Flashing=>Time.GetTicksMsec()<FlashUntilMs;
     public Vector2 TextureSize=new(1774,887);
     private float time;
     private static readonly Color LockRed=new("#f24a4d"),Outline=new("#eef5fb"),Backdrop=new(0.03f,0.07f,0.11f,0.78f),
@@ -18,14 +25,23 @@ public partial class StatusOverlay : Control
     private static readonly Rect2 DriverSeatBack=new(778,196,66,64),PassengerSeatBack=new(884,198,92,98);
     private static readonly Vector2 WheelCenter=new(735,278),WheelRadius=new(42,22);
     private static readonly Vector2 LockCenter=new(1220,410);
+    private static readonly Rect2[] Headlights={new(132,431,96,39),new(552,431,83,39),new(680,431,80,37)};
+    // Just above the hood's front edge, over the grille where the horn sits.
+    private static readonly Vector2 HornAt=new(385,392);
+    private static readonly Color Beam=new(1f,0.96f,0.78f),Dark=new(0.03f,0.07f,0.11f);
     private static readonly string[] Closed={"..XXXXX..",".X.....X.",".X.....X.","XXXXXXXXX","XXXXXXXXX","XXXX.XXXX","XXXX.XXXX","XXXXXXXXX","XXXXXXXXX"};
     private static readonly string[] Open={"..XXXXX..",".X.....X.",".X.......",".X.......","XXXXXXXXX","X.......X","X...X...X","X.......X","XXXXXXXXX"};
 
-    public override void _Ready(){MouseFilter=MouseFilterEnum.Ignore;}
-    // Only the padlock animates.
+    public override void _Ready()
+    {
+        MouseFilter=MouseFilterEnum.Ignore;
+        // Italic by slanting the bold font: the top of each glyph leans right.
+        if(ExclaimFont!=null)italic=new FontVariation {BaseFont=ExclaimFont,VariationTransform=new Transform2D(new Vector2(1,0),new Vector2(-0.28f,1),Vector2.Zero)};
+    }
+    // The padlock pulses; headlights blink only while a flash is showing (one more redraw clears it).
     public override void _Process(double delta)
     {
-        if(!IsVisibleInTree()||Lock==LockEffect.None)return;
+        if(!IsVisibleInTree()||Lock==LockEffect.None&&!Flashing&&!drewFlash)return;
         time+=(float)delta;QueueRedraw();
     }
     private float ArtScale=>Mathf.Min(Size.X/TextureSize.X,Size.Y/TextureSize.Y);
@@ -49,6 +65,22 @@ public partial class StatusOverlay : Control
             DrawPolyline(ring,new Color(HeatTint,0.9f),2.5f);
         }
         if(Lock!=LockEffect.None)DrawLock();
+        drewFlash=Flashing;
+        if(drewFlash)DrawFlash();
+    }
+    private void DrawFlash()
+    {
+        // Hazard-style blink: about 0.3 s on, 0.3 s off.
+        if(Time.GetTicksMsec()/300%2==0)
+            foreach(var light in Headlights) {
+                var rect=new Rect2(At(light.Position),light.Size*ArtScale);
+                DrawRect(rect.Grow(8),new Color(Beam,0.22f));DrawRect(rect.Grow(4),new Color(Beam,0.45f));DrawRect(rect,new Color(Beam,0.95f));
+            }
+        if(Horn&&italic!=null) {
+            var at=At(HornAt)-new Vector2(6,0);
+            DrawStringOutline(italic,at,"!",HorizontalAlignment.Left,-1,30,6,Dark);
+            DrawString(italic,at,"!",HorizontalAlignment.Left,-1,30,LockRed);
+        }
     }
     private void SeatBack(Rect2 source,ComfortTint tint)
     {

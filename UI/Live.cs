@@ -20,6 +20,10 @@ public partial class Main
     // Set in _Ready so every client shares the persisted request budget.
     private Func<HyundaiUsClient> connectionFactory = null!;
     private bool monitoringCommand;
+    // Flash lights / horn & lights effect on the car art, shown when Hyundai accepts the request.
+    private ulong flashEffectUntil;
+    private bool hornEffect;
+    private const ulong FlashEffectMs=4000;
     private ActionKind? feedbackKind;
     private bool feedbackEnabled;
     private Task commandMonitor=Task.CompletedTask;
@@ -178,7 +182,8 @@ public partial class Main
         // Car screen only: door, climate, seat and steering-wheel state over the artwork.
         var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=car.GetSize(),
             Lock=VehicleIndicators.Lock(s?.Locked),Windshield=VehicleIndicators.Windshield(s?.ClimateOn,s?.TemperatureF),
-            DriverSeat=VehicleIndicators.Seat(s?.DriverSeat),PassengerSeat=VehicleIndicators.Seat(s?.PassengerSeat),WheelHeat=s?.SteeringWheelHeat==true};
+            DriverSeat=VehicleIndicators.Seat(s?.DriverSeat),PassengerSeat=VehicleIndicators.Seat(s?.PassengerSeat),WheelHeat=s?.SteeringWheelHeat==true,
+            FlashUntilMs=flashEffectUntil,Horn=hornEffect,ExclaimFont=bold};
         canvas.AddChild(overlay);
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
@@ -203,6 +208,8 @@ public partial class Main
         LiveButton(24,636,200,46,"Update",13,()=>_ = RefreshLive(false),false,"Update");
         Label(24,686,200,20,Updated(s?.RetrievedAt),11,Muted).Name="LastUpdated";
         Button(236,636,200,46,"Vehicle location  ›",12,()=>_ = OpenVehicleLocation());
+        CommandFeedback(RemoteButton(24,714,200,46,"Flash lights",13,()=>_ = SendLive(new(ActionKind.Lights)),false,"FlashLights"),ActionKind.Lights,false);
+        CommandFeedback(RemoteButton(236,714,200,46,"Horn & lights",13,()=>_ = SendLive(new(ActionKind.HornLights)),false,"HornLights"),ActionKind.HornLights,false);
 
         if(notice.Length==0)Label(24,778,412,65,connection?.Pending?.Message??(Offline?"Showing the last saved status. Your first update or command asks for "+vault.BiometricName+".":
             "Cached status may lag the vehicle. Missing data is shown as — or Unknown."),11,Muted,false,true);
@@ -330,6 +337,10 @@ public partial class Main
             try {
                 var receipt=await active.ExecuteAsync(cmd,dc,token);EnsureLive(version);
                 notice=receipt.Message;noticeError=receipt.Outcome is RemoteOutcome.Failed or RemoteOutcome.Unknown;
+                // Show the flash only once Hyundai has accepted the request; refused or failed requests show nothing.
+                if(cmd.Kind is ActionKind.Lights or ActionKind.HornLights&&receipt.Outcome==RemoteOutcome.Accepted) {
+                    flashEffectUntil=Time.GetTicksMsec()+FlashEffectMs;hornEffect=cmd.Kind==ActionKind.HornLights;
+                }
                 history.Add((receipt.Message,DateTime.Now.ToString("h:mm tt")+" · "+cmd.Kind,!noticeError));
             } finally {
                 if(version==liveEpoch&&active.Pending!=null&&!ReferenceEquals(previousReceipt,active.Pending)) {
