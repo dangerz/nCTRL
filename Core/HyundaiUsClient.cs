@@ -22,7 +22,8 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
     VehicleHealth? Health=null,
     // Location included in the status report, if any. Used only for ignored-place checks; never shown or saved.
     VehicleLocation? StatusLocation=null);
-public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt);
+// RetrievedAt is when nCTRL received it, for deciding whether a location is fresh enough to trust.
+public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt, DateTimeOffset RetrievedAt=default);
 // Openings and warnings as reported; null means Hyundai did not report that item.
 public sealed record VehicleHealth(int? Battery12V,
     bool? FrontLeftDoor, bool? FrontRightDoor, bool? RearLeftDoor, bool? RearRightDoor, bool? Tailgate, bool? Hood,
@@ -323,7 +324,7 @@ public sealed class HyundaiUsClient : IDisposable
             var lat=Number(r.Body,"coord.lat");var lon=Number(r.Body,"coord.lon");
             if(lat is null||lon is null||Math.Abs(lat.Value)>90||Math.Abs(lon.Value)>180)
                 throw new BluelinkException("Hyundai did not return a valid location.");
-            Location=new(lat.Value,lon.Value,Text(r.Body,"time"));return Location;
+            Location=new(lat.Value,lon.Value,Text(r.Body,"time"),clock.GetUtcNow());return Location;
         }
         finally { gate.Release(); }
     }
@@ -441,7 +442,7 @@ public sealed class HyundaiUsClient : IDisposable
             Boolean(v,"windowOpen.frontLeft"),Boolean(v,"windowOpen.frontRight"),Boolean(v,"windowOpen.backLeft"),Boolean(v,"windowOpen.backRight"),
             tires,Boolean(v,"washerFluidStatus"),Boolean(v,"breakOilStatus"),Boolean(v,"smartKeyBatteryWarning"));
         var lat=Number(v,"vehicleLocation.coord.lat");var lon=Number(v,"vehicleLocation.coord.lon");
-        var located=lat is double y&&lon is double x&&Math.Abs(y)<=90&&Math.Abs(x)<=180&&!(y==0&&x==0)?new VehicleLocation(y,x,Text(v,"vehicleLocation.time")):null;
+        var located=lat is double y&&lon is double x&&Math.Abs(y)<=90&&Math.Abs(x)<=180&&!(y==0&&x==0)?new VehicleLocation(y,x,Text(v,"vehicleLocation.time"),DateTimeOffset.UtcNow):null;
         return new(Boolean(v,"doorLock"),Boolean(v,"airCtrlOn"),temp,Percent(Integer(v,"evStatus.batteryStatus")),
             plugin is null?Boolean(v,"evStatus.batteryPlugin"):plugin>0,Boolean(v,"evStatus.batteryCharge"),range,ac,dc,
             Text(v,"dateTime"),DateTimeOffset.UtcNow,Seat(Integer(v,"seatHeaterVentState.flSeatHeatState")),

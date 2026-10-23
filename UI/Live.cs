@@ -184,7 +184,9 @@ public partial class Main
         var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=car.GetSize(),
             Lock=VehicleIndicators.Lock(s?.Locked),Windshield=VehicleIndicators.Windshield(s?.ClimateOn,s?.TemperatureF),
             DriverSeat=VehicleIndicators.Seat(s?.DriverSeat),PassengerSeat=VehicleIndicators.Seat(s?.PassengerSeat),WheelHeat=s?.SteeringWheelHeat==true,
-            FlashUntilMs=flashEffectUntil,Horn=hornEffect,ExclaimFont=bold};
+            FlashUntilMs=flashEffectUntil,Horn=hornEffect,ExclaimFont=bold,
+            FrontDoorOpen=s?.Health?.FrontRightDoor==true,RearDoorOpen=s?.Health?.RearRightDoor==true,
+            FrontWindowOpen=s?.Health?.FrontRightWindow==true,RearWindowOpen=s?.Health?.RearRightWindow==true,HoodOpen=s?.Health?.Hood==true};
         canvas.AddChild(overlay);
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
@@ -294,7 +296,8 @@ public partial class Main
         LiveButton(24,470,412,46,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
         Button(24,526,412,46,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
         Button(24,582,412,46,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
-        Label(24,642,412,64,vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
+        Button(24,638,412,46,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
+        Label(24,694,412,64,vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
             " is required for the first update or command after you open it. Signing out removes the saved login and status.":
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }

@@ -17,6 +17,8 @@ public partial class StatusOverlay : Control
     private FontVariation? italic;
     private bool drewFlash;
     public bool Flashing=>Time.GetTicksMsec()<FlashUntilMs;
+    // Reported openings on the visible (passenger) side; driver-side doors and the tailgate are not in view.
+    public bool FrontDoorOpen,RearDoorOpen,FrontWindowOpen,RearWindowOpen,HoodOpen;
     public Vector2 TextureSize=new(1774,887);
     private float time;
     private static readonly Color LockRed=new("#f24a4d"),Outline=new("#eef5fb"),Backdrop=new(0.03f,0.07f,0.11f,0.78f),
@@ -28,7 +30,12 @@ public partial class StatusOverlay : Control
     private static readonly Rect2[] Headlights={new(132,431,96,39),new(552,431,83,39),new(680,431,80,37)};
     // Just above the hood's front edge, over the grille where the horn sits.
     private static readonly Vector2 HornAt=new(385,392);
-    private static readonly Color Beam=new(1f,0.96f,0.78f),Dark=new(0.03f,0.07f,0.11f);
+    private static readonly Color Beam=new(1f,0.96f,0.78f),Dark=new(0.03f,0.07f,0.11f),OpenAmber=new("#e0a43a");
+    private static readonly Vector2[] FrontDoor={new(1060,328),new(1330,320),new(1332,605),new(1100,615),new(1065,570)};
+    private static readonly Vector2[] RearDoor={new(1335,320),new(1550,328),new(1560,430),new(1500,520),new(1490,600),new(1335,605)};
+    private static readonly Vector2[] FrontWindow={new(1075,315),new(1150,165),new(1265,162),new(1275,315)};
+    private static readonly Vector2[] RearWindow={new(1290,162),new(1430,180),new(1540,312),new(1300,315)};
+    private static readonly Vector2[] HoodPanel={new(160,425),new(250,345),new(485,312),new(1040,318),new(985,345),new(830,420)};
     private static readonly string[] Closed={"..XXXXX..",".X.....X.",".X.....X.","XXXXXXXXX","XXXXXXXXX","XXXX.XXXX","XXXX.XXXX","XXXXXXXXX","XXXXXXXXX"};
     private static readonly string[] Open={"..XXXXX..",".X.....X.",".X.......",".X.......","XXXXXXXXX","X.......X","X...X...X","X.......X","XXXXXXXXX"};
 
@@ -56,6 +63,9 @@ public partial class StatusOverlay : Control
             for(int i=0;i<glass.Length;i++)glass[i]=At(WindshieldGlass[i]);
             DrawColoredPolygon(glass,Tint(Windshield,0.30f));
         }
+        if(HoodOpen)Opening(HoodPanel,0.16f);
+        if(FrontDoorOpen)Opening(FrontDoor,0.16f);if(RearDoorOpen)Opening(RearDoor,0.16f);
+        if(FrontWindowOpen)Opening(FrontWindow,0.32f);if(RearWindowOpen)Opening(RearWindow,0.32f);
         if(DriverSeat!=ComfortTint.None)SeatBack(DriverSeatBack,DriverSeat);
         if(PassengerSeat!=ComfortTint.None)SeatBack(PassengerSeatBack,PassengerSeat);
         if(WheelHeat) {
@@ -81,6 +91,15 @@ public partial class StatusOverlay : Control
             DrawStringOutline(italic,at,"!",HorizontalAlignment.Left,-1,30,6,Dark);
             DrawString(italic,at,"!",HorizontalAlignment.Left,-1,30,LockRed);
         }
+    }
+    // Amber outline and light fill for a panel Hyundai reports open.
+    private void Opening(Vector2[] source,float fill)
+    {
+        var shape=new Vector2[source.Length+1];
+        for(int i=0;i<source.Length;i++)shape[i]=At(source[i]);
+        shape[^1]=shape[0];
+        DrawColoredPolygon(shape[..^1],new Color(OpenAmber,fill));
+        DrawPolyline(shape,OpenAmber,2);
     }
     private void SeatBack(Rect2 source,ComfortTint tint)
     {

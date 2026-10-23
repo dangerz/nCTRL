@@ -38,6 +38,13 @@ static NSMutableDictionary *query(void) {
               (__bridge id)kSecAttrService:service,(__bridge id)kSecAttrAccount:@"account",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
 }
+// Ignored places (car locations where an unlocked-doors alert is hidden). Sensitive, so Keychain only:
+// device-bound, never synced, readable while the device is unlocked, no biometric gate.
+static NSMutableDictionary *placesQuery(void) {
+    return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+              (__bridge id)kSecAttrService:@"com.ngarage.nctrl.places.v1",(__bridge id)kSecAttrAccount:@"places",
+              (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
+}
 static void initialize(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -47,6 +54,7 @@ static void initialize(void) {
         NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
         if(![defaults boolForKey:@"NGVaultInstalledV1"]) {
             SecItemDelete((__bridge CFDictionaryRef)query());
+            SecItemDelete((__bridge CFDictionaryRef)placesQuery());
             [defaults setBool:YES forKey:@"NGVaultInstalledV1"];
         }
     });
@@ -129,6 +137,32 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
                 finish(ticket,status==errSecSuccess||status==errSecItemNotFound,errorCode(status),nil);
             }
         });return;
+    }
+    if([op hasPrefix:@"places_"]) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+            @synchronized(guard){if(ticket!=generation)return;
+                if([op isEqualToString:@"places_load"]) {
+                    NSMutableDictionary *q=placesQuery();q[(__bridge id)kSecReturnData]=@YES;
+                    CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
+                    NSData *data=value?CFBridgingRelease(value):nil;
+                    if(status==errSecItemNotFound){finish(ticket,YES,@"",@"");return;}
+                    NSString *places=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
+                    finish(ticket,places!=nil,places?@"":errorCode(status),places);
+                } else if([op isEqualToString:@"places_save"]) {
+                    if(text.length>65536){finish(ticket,NO,@"invalid_data",nil);return;}
+                    SecItemDelete((__bridge CFDictionaryRef)placesQuery());
+                    NSMutableDictionary *item=placesQuery();
+                    item[(__bridge id)kSecValueData]=[text dataUsingEncoding:NSUTF8StringEncoding];
+                    item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+                    OSStatus status=SecItemAdd((__bridge CFDictionaryRef)item,NULL);
+                    finish(ticket,status==errSecSuccess,errorCode(status),nil);
+                } else if([op isEqualToString:@"places_forget"]) {
+                    OSStatus status=SecItemDelete((__bridge CFDictionaryRef)placesQuery());
+                    finish(ticket,status==errSecSuccess||status==errSecItemNotFound,errorCode(status),nil);
+                } else finish(ticket,NO,@"invalid_data",nil);
+            }
+        });
+        return;
     }
     if([op isEqualToString:@"authenticate"]) {
         // Device-owner check only: Face ID/Touch ID with the system passcode fallback. Touches no Keychain data.

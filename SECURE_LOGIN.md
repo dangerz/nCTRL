@@ -26,6 +26,8 @@ Face ID is local authorization to access the saved credentials, not a replacemen
 
 The same bridge also performs a device-owner check, the `authenticate` operation, used to record risk-disclaimer acceptance. It evaluates `LAPolicyDeviceOwnerAuthentication` (Face ID/Touch ID with the system passcode fallback) in a fresh `LAContext` and reads or writes no Keychain data. Android does not implement this operation yet, so Android builds stay locked at the disclaimer.
 
+Ignored places (car locations where an unlocked-doors alert is hidden) use a separate generic-password item, `places_load`/`places_save`/`places_forget`, with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` and no biometric access control so alerts can be checked after each update; it is not synchronized, is cleared with the credentials on a fresh install, and is deleted by Sign out & forget. Android does not implement these operations yet.
+
 Saving first authenticates the owner, then creates or updates the protected Keychain item. Unlock uses `SecItemCopyMatching` against the protected item itself, so the authentication is bound to the secret read. A fresh-install marker clears orphaned Keychain credentials that could otherwise outlive an uninstall. A native privacy cover hides the UI while the app is inactive/app-switcher snapshots are taken. It now handles both UIKit app and scene activation notifications, avoids stacking duplicate covers, and includes a managed resume cleanup call. Godot hides the old canvas on pause and rebuilds the locked UI on resume. These address identified lifecycle gaps; the reported blank screen still needs physical-device verification.
 
 ### Build on a Mac

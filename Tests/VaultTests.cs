@@ -13,12 +13,14 @@ static class VaultTests
         public int Starts,Cancels;
         public int Status=2;
         public string? Data;
+        public string Places="";
         string result="";
         public int Availability()=>Available?Status:0;
         public bool HasAccount()=>Saved;
         public void Start(string op,string payload){Starts++;if(Hang)return;if(Fail){result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
             if(op=="save"){Data=payload;Saved=true;}if(op=="forget"){Data=null;Saved=false;}
-            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?Data:"");});}
+            if(op=="places_save")Places=payload;if(op=="places_forget")Places="";
+            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?Data:op=="places_load"?Places:"");});}
         public string TakeResult(){var r=result;result="";return r;}
         public void Cancel(){Cancels++;result="";}
     }
@@ -63,6 +65,12 @@ static class VaultTests
         int before=bridge.Starts;using(var cts=new CancellationTokenSource()){cts.Cancel();try{await vault.UnlockAsync(cts.Token);}catch(OperationCanceledException){}Check(bridge.Starts==before,"Pre-cancelled operation never starts native request");}
         try{SavedAccount.Decode("{\"version\":2}");throw new Exception("Accepted invalid format");}catch(VaultException){Check(true,"Reject unsupported schema");}
         try{SavedAccount.Decode("secret malformed payload");throw new Exception("Accepted malformed payload");}catch(VaultException e){Check(!e.Message.Contains("secret"),"Malformed response never reflected in error");}
+        var placesVault=new AccountVault(new Bridge{Available=false});
+        Check(await placesVault.LoadPlacesAsync(default)=="","No saved places reads as empty, without biometrics");
+        await placesVault.SavePlacesAsync("{\"version\":1,\"places\":[]}",default);
+        Check((await placesVault.LoadPlacesAsync(default)).Contains("places"),"Places are saved and read back");
+        await placesVault.ForgetPlacesAsync(default);Check(await placesVault.LoadPlacesAsync(default)=="","Forgetting places clears them");
+        await Rejected(()=>absent.LoadPlacesAsync(default),"unavailable");
         Console.WriteLine($"PASS: {checks} secure-login coordinator checks (fake native bridge, not device biometrics).");
     }
 }

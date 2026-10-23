@@ -48,7 +48,7 @@ public partial class Main
             };
             if(Unhealthy&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"doorLock\":true","\"doorLock\":false").Replace("\"batSoc\":87","\"batSoc\":41")
-                    .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":0,\"frontRight\":1},\"windowOpen\":{\"backLeft\":1}");
+                    .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":0,\"frontRight\":1},\"windowOpen\":{\"backLeft\":1,\"backRight\":1},\"hoodOpen\":true");
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
             if(route.EndsWith("/rdo/on")){Commands++;response.Headers.Add("tmsTid","fixture-command");}
             return Task.FromResult(response);
@@ -212,8 +212,15 @@ public partial class Main
             for(int i=0;i<300&&(liveBusy||connection?.State?.Locked!=false);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             Navigate("Car");
             var strip=canvas.GetNodeOrNull<Button>("AlertStrip");
-            if(strip==null||!strip.Text.Contains("Doors unlocked")||!strip.Text.Contains("+4 more"))throw new Exception("Car screen does not lead with the unlocked alert");
+            if(strip==null||!strip.Text.Contains("Doors unlocked")||!strip.Text.Contains("+6 more"))throw new Exception("Car screen does not lead with the unlocked alert");
+            var panels=canvas.GetNode<StatusOverlay>("StatusOverlay");
+            if(!panels.FrontDoorOpen||!panels.RearWindowOpen||!panels.HoodOpen||panels.RearDoorOpen||panels.FrontWindowOpen)
+                throw new Exception("Car art does not outline exactly the reported open passenger-side panels");
             await Capture("36-alert-strip-test.png");
+            // Every visible panel outlined at once, for reviewing the shapes.
+            panels.RearDoorOpen=panels.FrontWindowOpen=true;panels.QueueRedraw();
+            for(int i=0;i<3;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            await Capture("39-open-panels-test.png");
             strip.EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Alerts"||canvas.GetNodeOrNull<Button>("AlertLock")==null)throw new Exception("Check your car does not list alerts with Lock");
             await Capture("37-check-your-car-test.png");
@@ -224,7 +231,30 @@ public partial class Main
             await Capture("38-wake-confirm-test.png");
             canvas.GetNode<Button>("ConfirmCancel").EmitSignal(Godot.Button.SignalName.Pressed);
             if(pendingConfirm!=null||fixture.Requests!=beforeWake)throw new Exception("Cancelling the wake confirmation sent a request");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts. No real API calls.");
+            // Ignore this location: the unlocked alert hides at the named place and returns when it is deleted.
+            Navigate("Alerts");
+            var ignore=canvas.GetNode<Button>("AlertIgnore");
+            if(ignore.Disabled)throw new Exception("Ignore here is disabled despite a fresh car location");
+            ignore.EmitSignal(Godot.Button.SignalName.Pressed);
+            var placeName=canvas.GetNodeOrNull<LineEdit>("PlaceName")??throw new Exception("Ignore here did not ask for a name");
+            if(placeName.Text!="Home")throw new Exception("The first place is not suggested as Home");
+            await Capture("40-ignore-place-test.png");
+            canvas.GetNode<Button>("PlaceSave").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(ignoredPlaces.Count!=1||ignoredPlaces[0].Name!="Home"||!AtIgnoredPlace||canvas.GetNodeOrNull<Label>("IgnoredNote")==null)
+                throw new Exception("Saving the place did not hide the unlocked alert");
+            if(snapshot?.AtIgnoredPlace!=true)throw new Exception("Saved status does not remember being at an ignored place");
+            await Capture("41-ignored-place-applied-test.png");
+            Navigate("Car");
+            if(canvas.GetNode<Button>("AlertStrip").Text.Contains("Doors unlocked"))throw new Exception("Car screen still flags unlocked doors at an ignored place");
+            Navigate("Settings");canvas.GetNode<Button>("ViewPlaces").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Places"||canvas.GetNodeOrNull<Button>("PlaceDelete0")==null)throw new Exception("Ignored places screen does not list the place");
+            await Capture("42-ignored-places-test.png");
+            canvas.GetNode<Button>("PlaceDelete0").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            Navigate("Car");
+            if(ignoredPlaces.Count!=0||!canvas.GetNode<Button>("AlertStrip").Text.Contains("Doors unlocked"))throw new Exception("Deleting the place did not bring the alert back");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

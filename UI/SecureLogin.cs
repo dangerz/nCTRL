@@ -34,7 +34,7 @@ public partial class Main
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;pendingConfirm=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
+        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;pendingConfirm=null;pendingPlaceAt=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
         sessionVerified=false;sessionAccount=null;
         screen="Connect";notice="";noticeError=false;
         // With a saved account and status, return to the Car screen showing that (stale) status.
@@ -84,13 +84,15 @@ public partial class Main
     {
         if(liveBusy)return;
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        ClearSnapshot();EndLiveSession();
+        ClearSnapshot();ignoredPlaces.Clear();EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
         linkedVehicle="";disclaimer=null;SavePrefs();
         if(!vault.Present){notice="Session cleared. This build has no saved account storage.";Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{
             await vault.ForgetAsync(liveLifetime.Token);EnsureLive(version);
+            // Ignored places go with the account.
+            await vault.ForgetPlacesAsync(liveLifetime.Token);EnsureLive(version);
             manualAccountEntry=true;notice="Signed out. Saved account removed from this device.";
         },"Removing saved account…");
     }

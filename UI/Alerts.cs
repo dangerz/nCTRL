@@ -13,7 +13,7 @@ public partial class Main
     // Car screen line under the range: "All closed and locked", or the most important alert as a strip that opens Check your car.
     private void HealthStrip(LiveVehicleState? s)
     {
-        var alerts=HealthAlerts.From(s);
+        var alerts=HealthAlerts.From(s,AtIgnoredPlace);
         if(alerts.Count==0) {
             Label(24,482,412,24,s?.Locked==null?"Door status unknown":s.Health==null?"Doors locked":"All closed and locked",13,White).Name="HealthStatus";
             return;
@@ -26,17 +26,29 @@ public partial class Main
     }
     private void LiveAlerts()
     {
-        var s=CurrentState;var alerts=HealthAlerts.From(s);
+        var s=CurrentState;var alerts=HealthAlerts.From(s,AtIgnoredPlace);
         Title("CHECK YOUR CAR.",Updated(s?.RetrievedAt)+" · last reported state");
-        if(alerts.Count==0)Label(24,206,412,60,"Nothing needs attention.",16,White,true,true);
         int y=200;
-        foreach(var alert in alerts) {
-            if(y>650)break;
-            Panel(24,y,412,54,new("#0e2031"),false);Rect(24,y,3,54,alert.Critical?Red:Amber);
-            Label(42,y+4,alert.Kind==AlertKind.Unlocked?250:380,46,alert.Text,14,White,true,true);
-            if(alert.Kind==AlertKind.Unlocked)
-                CommandFeedback(RemoteButton(316,y+7,110,40,"Lock",13,()=>_ = SendLive(new(ActionKind.Lock)),true,"AlertLock"),ActionKind.Lock,false);
+        // Unlocked at an ignored place: say so instead of flagging it.
+        if(s?.Locked==false&&AtIgnoredPlace) {
+            Panel(24,y,412,54,new("#0e2031"),false);Rect(24,y,3,54,Muted);
+            Label(42,y+4,380,46,"Doors unlocked · ignored at "+(IgnoredHere?.Name??"an ignored place"),13,Muted,false,true).Name="IgnoredNote";
             y+=62;
+        }
+        if(alerts.Count==0)Label(24,y+6,412,60,"Nothing needs attention.",16,White,true,true);
+        foreach(var alert in alerts) {
+            if(y>600)break;
+            bool unlocked=alert.Kind==AlertKind.Unlocked;int h=unlocked?100:54;
+            Panel(24,y,412,h,new("#0e2031"),false);Rect(24,y,3,h,alert.Critical?Red:Amber);
+            Label(42,y+4,unlocked?250:380,46,alert.Text,14,White,true,true);
+            if(unlocked) {
+                CommandFeedback(RemoteButton(316,y+7,110,40,"Lock",13,()=>_ = SendLive(new(ActionKind.Lock)),true,"AlertLock"),ActionKind.Lock,false);
+                // Needs the car's location from this report or a location request made within ten minutes.
+                var ignore=LiveButton(42,y+54,150,38,"Ignore here",12,StartIgnoreHere,false,"AlertIgnore");
+                ignore.Disabled|=FreshCarLocation==null;
+                if(FreshCarLocation==null)Label(202,y+52,224,42,"Car location needed. Open Vehicle location, then come back.",10,Muted,false,true);
+            }
+            y+=h+8;
         }
         Label(24,666,412,40,"Alerts come from Hyundai's last report and may lag the car. Unknown items never raise an alert.",11,Muted,false,true);
         Button(24,714,412,46,"Back to car",13,()=>Navigate("Car"),false,"AlertsBack");

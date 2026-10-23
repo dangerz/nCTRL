@@ -39,7 +39,7 @@ public partial class Main
         if(connection is not {State: {} state,Selected: {} vehicle}||accountKey.Length==0||ReferenceEquals(state,persistedState))return;
         persistedState=state;
         string name=vehicle.Name.Length>0?vehicle.Name:vehicle.Model;
-        snapshot=new(accountKey,VehicleLink.Fingerprint(accountKey,vehicle.Vin),name.Length>64?name[..64]:name,vehicle.Vin[^6..],vehicle.Generation,state);
+        snapshot=new(accountKey,VehicleLink.Fingerprint(accountKey,vehicle.Vin),name.Length>64?name[..64]:name,vehicle.Vin[^6..],vehicle.Generation,state,IgnoredHere!=null);
         if(smoke)return;
         using var file=FileAccess.Open(SnapshotFile,FileAccess.ModeFlags.Write);
         file?.StoreString(snapshot.Encode());

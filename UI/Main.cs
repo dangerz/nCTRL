@@ -47,6 +47,7 @@ public partial class Main : Control
         InitializeVault();
         // Cold launch: open straight to the Car screen with the last saved status, if any.
         EnterOffline();
+        _ = LoadPlaces();
         Render();
 #if DEBUG
         if (vaultSmoke) _ = SecureSmokeTest();
@@ -117,6 +118,7 @@ public partial class Main : Control
         else if(screen=="Appearance") Appearance();
         else if(screen=="Disclaimer") DisclaimerView();
         else if(screen=="Limits") LimitsScreen();
+        else if(screen=="Places") PlacesScreen();
         else LiveScreen();
         if(liveMode)Nav();
         if(notice.Length>0)
@@ -126,6 +128,7 @@ public partial class Main : Control
         }
         if(pendingOverride!=null)OverrideDialog();
         else if(pendingConfirm!=null)ConfirmDialog();
+        else if(pendingPlaceAt!=null)PlaceNameDialog();
     }
     private void Title(string title,string sub)
     {
@@ -195,7 +198,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits"?"Settings":screen is "Climate" or "Locate" or "Alerts"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits" or "Places"?"Settings":screen is "Climate" or "Locate" or "Alerts"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;

@@ -9,7 +9,8 @@ namespace NGarage.Core;
 /// <summary>The last reported vehicle status, kept on the device so the Car screen opens instantly
 /// (stale) before any request. Holds no location, credentials, email or full VIN: the account and
 /// vehicle are identified by the same SHA-256 hashes as the remembered-vehicle preference.</summary>
-public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint,string Name,string VinTail,int Generation,LiveVehicleState State)
+// AtIgnoredPlace records whether the car was at an ignored place when saved, without any coordinates.
+public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint,string Name,string VinTail,int Generation,LiveVehicleState State,bool AtIgnoredPlace=false)
 {
     public string Encode()
     {
@@ -17,7 +18,7 @@ public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint
         using(var w=new Utf8JsonWriter(stream)) {
             w.WriteStartObject();w.WriteNumber("version",1);
             w.WriteString("account",AccountKey);w.WriteString("vehicle",VehicleFingerprint);
-            w.WriteString("name",Name);w.WriteString("vinTail",VinTail);w.WriteNumber("generation",Generation);
+            w.WriteString("name",Name);w.WriteString("vinTail",VinTail);w.WriteNumber("generation",Generation);w.WriteBoolean("atIgnoredPlace",AtIgnoredPlace);
             var s=State;
             Bool(w,"locked",s.Locked);Bool(w,"climateOn",s.ClimateOn);Int(w,"temperatureF",s.TemperatureF);
             Int(w,"battery",s.Battery);Bool(w,"pluggedIn",s.PluggedIn);Bool(w,"charging",s.Charging);
@@ -59,7 +60,7 @@ public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint
                     Bool(h,"frontLeftDoor"),Bool(h,"frontRightDoor"),Bool(h,"rearLeftDoor"),Bool(h,"rearRightDoor"),Bool(h,"tailgate"),Bool(h,"hood"),
                     Bool(h,"frontLeftWindow"),Bool(h,"frontRightWindow"),Bool(h,"rearLeftWindow"),Bool(h,"rearRightWindow"),
                     Bool(h,"tireWarning"),Bool(h,"washerFluidLow"),Bool(h,"brakeFluidWarning"),Bool(h,"keyFobBatteryLow")):null);
-            return new(account,vehicle,name,vinTail,r.GetProperty("generation").GetInt32(),state);
+            return new(account,vehicle,name,vinTail,r.GetProperty("generation").GetInt32(),state,Bool(r,"atIgnoredPlace")==true);
         } catch(Exception) {return null;}
     }
     private static void Bool(Utf8JsonWriter w,string name,bool? value){if(value is bool b)w.WriteBoolean(name,b);else w.WriteNull(name);}

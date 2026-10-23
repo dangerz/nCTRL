@@ -12,6 +12,7 @@ static class Program
         SnapshotTests.Run();
         DetailTests.Run();
         HealthTests.Run();
+        PlaceTests.Run();
         await RequestBudgetTests.Run();
         await MapTests.Run();
     }

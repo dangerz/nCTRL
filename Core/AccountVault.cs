@@ -109,6 +109,10 @@ public sealed class AccountVault
         if(!bridge.Present)throw new VaultException("unavailable");
         await Request("authenticate",reason,ct);
     }
+    // Ignored places live in their own Keychain item, without a biometric gate. Empty text means none saved.
+    public Task<string> LoadPlacesAsync(CancellationToken ct)=>bridge.Present?Request("places_load","",ct):throw new VaultException("unavailable");
+    public Task SavePlacesAsync(string json,CancellationToken ct)=>bridge.Present?Request("places_save",json,ct):throw new VaultException("unavailable");
+    public Task ForgetPlacesAsync(CancellationToken ct)=>bridge.Present?Request("places_forget","",ct):throw new VaultException("unavailable");
     public async Task ForgetAsync(CancellationToken ct)
     {
         // Deletion must still work when enrollment was changed or biometrics are unavailable.

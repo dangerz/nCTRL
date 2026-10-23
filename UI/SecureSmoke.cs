@@ -14,6 +14,7 @@ public partial class Main
         public bool Present=>true;
         public bool CancelNext,Hold;
         public int Unlocks;
+        public string Places="";
         private string? saved;
         private string result="";
         public int Availability()=>2;
@@ -23,7 +24,8 @@ public partial class Main
             if(Hold)return;
             if(CancelNext){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
             if(op=="save")saved=data;if(op=="forget")saved=null;
-            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?saved:"");});
+            if(op=="places_save")Places=data;if(op=="places_forget")Places="";
+            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:"");});
         }
         public string TakeResult(){var s=result;result="";return s;}
         public void Cancel(){result="";}
@@ -53,6 +55,10 @@ public partial class Main
             if(disclaimer?.AccountKey!=testerKey)throw new Exception("Successful sign-in did not bind disclaimer acceptance");
             await ChooseVehicle();
             if(snapshot==null||snapshot.State.Battery!=78||snapshot.AccountKey!=testerKey)throw new Exception("Connecting did not save the vehicle status");
+            // Ignored places persist in the (fake) Keychain item, separate from the login.
+            await LoadPlaces();if(!placesPersisted)throw new Exception("Ignored places are not stored with the native bridge");
+            await StorePlaces(new(){new IgnoredPlace("Home",40.111111,-74.222222)},"Saved.");
+            if(!fake.Places.Contains("\"Home\""))throw new Exception("Ignored place was not saved to the Keychain item");
             // Backgrounding parks the idle session; returning opens the saved status with no Face ID or request.
             int tokens=http.Tokens,unlocks=fake.Unlocks,sent=http.Requests;
             _Notification((int)NotificationApplicationPaused);
@@ -121,9 +127,10 @@ public partial class Main
             if(parked==null)throw new Exception("Session was not parked before sign-out");
             await ForgetAccount();if(parked!=null)throw new Exception("Sign out did not discard the parked session");if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
             if(linkedVehicle.Length!=0||snapshot!=null)throw new Exception("Forget retained the linked vehicle or saved status");
+            if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, forget. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, forget. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }
