@@ -78,7 +78,9 @@ public partial class Main
             for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(pendingOverride!=null||http.Requests!=sent||!notice.Contains("not confirmed"))throw new Exception("Cancelled device check still sent an override request");
             // Later requests in the same session need no further Face ID.
-            unlocks=fake.Unlocks;await SendLive(new(ActionKind.Unlock));
+            // Tapping the padlock on the car sends the same toggle as the door button.
+            unlocks=fake.Unlocks;Navigate("Car");canvas.GetNode<Button>("LockBadge").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(fake.Unlocks!=unlocks||http.Commands!=1)throw new Exception("A second request in the same session asked for Face ID again");
             // After backgrounding, the next request asks again.
             _Notification((int)NotificationApplicationPaused);_Notification((int)NotificationApplicationResumed);await Settle();

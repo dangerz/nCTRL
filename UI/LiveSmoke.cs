@@ -96,13 +96,17 @@ public partial class Main
             await Capture("26-request-limits-test.png");
             Navigate("Car");
             PickPaint("Ecotonic Gray","747c79");notice="";Render();await Capture("12-connected-test.png");
-            // Car art follows the reported state (locked, climate off), and every effect renders.
+            // Car art follows the reported state (locked, climate off, seats unreported), and every tint renders.
             var overlay=canvas.GetNode<StatusOverlay>("StatusOverlay");
-            if(overlay.Lock!=LockEffect.Locked||overlay.Climate!=ClimateEffect.None)throw new Exception("Car art does not reflect reported lock and climate state");
-            foreach(var (lockEffect,climateEffect,file) in new[]{(LockEffect.Locked,ClimateEffect.Heat,"27-art-locked-heat-test.png"),
-                (LockEffect.Unlocked,ClimateEffect.Frost,"28-art-unlocked-frost-test.png"),(LockEffect.None,ClimateEffect.Airflow,"29-art-airflow-test.png")}) {
-                overlay.Lock=lockEffect;overlay.Climate=climateEffect;
-                for(int i=0;i<20;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(overlay.Lock!=LockEffect.Locked||overlay.Windshield!=ComfortTint.None||overlay.DriverSeat!=ComfortTint.None||overlay.WheelHeat)
+                throw new Exception("Car art does not reflect reported lock, climate and seat state");
+            if(canvas.GetNodeOrNull<Button>("LockBadge") is not {Disabled: false} badge||!new Rect2(badge.Position,badge.Size).Encloses(new Rect2(badge.Position,new Vector2(44,44))))
+                throw new Exception("The padlock on the car is not a usable tap target");
+            foreach(var (windshield,driverTint,passengerTint,wheel,file) in new[]{
+                (ComfortTint.Heat,ComfortTint.Heat,ComfortTint.Heat,true,"27-art-heat-test.png"),
+                (ComfortTint.Cool,ComfortTint.Cool,ComfortTint.None,false,"28-art-cool-test.png")}) {
+                overlay.Windshield=windshield;overlay.DriverSeat=driverTint;overlay.PassengerSeat=passengerTint;overlay.WheelHeat=wheel;overlay.QueueRedraw();
+                for(int i=0;i<5;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
                 await Capture(file);
             }
             Render();

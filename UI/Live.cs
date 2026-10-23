@@ -174,9 +174,11 @@ public partial class Main
         var s=CurrentState;
         Label(24,106,412,24,"YOUR HYUNDAI · LAST REPORTED",10,Muted,true);
         Hero(139,215);
-        // Car screen only: animated door and climate state over the artwork.
-        canvas.AddChild(new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=car.GetSize(),
-            Lock=VehicleIndicators.Lock(s?.Locked),Climate=VehicleIndicators.Climate(s?.ClimateOn,s?.TemperatureF)});
+        // Car screen only: door, climate, seat and steering-wheel state over the artwork.
+        var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=car.GetSize(),
+            Lock=VehicleIndicators.Lock(s?.Locked),Windshield=VehicleIndicators.Windshield(s?.ClimateOn,s?.TemperatureF),
+            DriverSeat=VehicleIndicators.Seat(s?.DriverSeat),PassengerSeat=VehicleIndicators.Seat(s?.PassengerSeat),WheelHeat=s?.SteeringWheelHeat==true};
+        canvas.AddChild(overlay);
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
         Label(288,403,150,42,s?.RangeMiles is double range?$"{range:0} mi":"—",28,White,true);
@@ -187,6 +189,13 @@ public partial class Main
         var door=LiveButton(24,563,200,49,doorAction==ActionKind.Unlock?"Unlock":doorAction==ActionKind.Lock?"Lock":"Door status unknown",13,
             ()=>{if(doorAction is ActionKind action)_ = SendLive(new(action));},false,"DoorControl");
         door.Disabled=liveBusy||monitoringCommand||doorAction==null;
+        // Tapping the padlock on the car toggles the lock, exactly like the door button.
+        var area=overlay.LockArea();
+        var badge=new Button {Name="LockBadge",Position=overlay.Position+area.Position,Size=area.Size,Flat=true,
+            Disabled=door.Disabled,TooltipText=door.Text,MouseDefaultCursorShape=CursorShape.PointingHand};
+        foreach(string state in new[]{"normal","hover","pressed","disabled","focus"})badge.AddThemeStyleboxOverride(state,new StyleBoxEmpty());
+        badge.Pressed+=()=>{if(doorAction is ActionKind action)_ = SendLive(new(action));};
+        canvas.AddChild(badge);
         CommandFeedback(door,ActionKind.Lock,s?.Locked==true);
         CommandFeedback(Button(236,563,94,49,"Climate",13,()=>Navigate("Climate")),ActionKind.Climate,s?.ClimateOn==true);
         CommandFeedback(Button(342,563,94,49,"Charge",13,()=>Navigate("Energy")),ActionKind.Charge,false);
