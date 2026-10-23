@@ -70,12 +70,13 @@ public partial class Main
     private async Task SignIn(string email,string password,string pin,bool remember=false)
     {
         if(liveBusy)return;
+        if(HoldForDisclaimer(email,password,pin,remember,false)){Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{
             connection?.Dispose();connection=null;enrollment=null;
             var active=connectionFactory();connection=active;
             var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
-            accountKey=VehicleLink.AccountKey(email);
+            accountKey=VehicleLink.AccountKey(email);BindDisclaimer();
             enrollment=vehicles;selectedIndex=0;screen="Connect";notice="Signed in. Select your vehicle.";
             try {
                 if(remember) {
@@ -231,7 +232,8 @@ public partial class Main
         LiveButton(24,523,412,48,"Wake vehicle and refresh",13,()=>_ = RefreshLive(true));
         LiveButton(24,594,198,48,"Lock app",13,()=>EndLiveSession());
         LiveButton(238,594,198,48,"Sign out & forget",12,()=>_ = ForgetAccount());
-        Label(24,676,412,96,vault.HasAccount?"Account saved securely on this device. "+vault.BiometricName+" unlocks it. Backgrounding locks the app; signing out removes the saved login.":
+        Button(24,656,412,44,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
+        Label(24,708,412,64,vault.HasAccount?"Account saved securely on this device. "+vault.BiometricName+" unlocks it. Backgrounding locks the app; signing out removes the saved login.":
             "Session-only login. To enable saved login, lock the app and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }
     private void LiveActivity()

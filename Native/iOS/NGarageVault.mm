@@ -118,6 +118,22 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             }
         });return;
     }
+    if([op isEqualToString:@"authenticate"]) {
+        // Device-owner check only: Face ID/Touch ID with the system passcode fallback. Touches no Keychain data.
+        initialize();LAContext *ctx=[LAContext new];NSError *error=nil;
+        id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSFaceIDUsageDescription"];
+        if(![usage isKindOfClass:NSString.class] || [(NSString *)usage length]==0){finish(ticket,NO,@"unavailable",nil);return;}
+        if(text.length==0 || text.length>200){finish(ticket,NO,@"invalid_data",nil);return;}
+        if(![ctx canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&error]){finish(ticket,NO,@"unavailable",nil);return;}
+        ctx.touchIDAuthenticationAllowableReuseDuration=0;
+        @synchronized(guard){if(ticket!=generation)return;activeContext=ctx;}
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [ctx evaluatePolicy:LAPolicyDeviceOwnerAuthentication localizedReason:text reply:^(BOOL success,NSError *error){
+                finish(ticket,success,success?@"":error.code==LAErrorUserCancel||error.code==LAErrorAppCancel||error.code==LAErrorSystemCancel?@"cancelled":@"auth_failed",nil);
+            }];
+        });
+        return;
+    }
     if(ng_vault_availability()<=0){finish(ticket,NO,@"unavailable",nil);return;}
     if(![op isEqualToString:@"save"] && ![op isEqualToString:@"unlock"]){finish(ticket,NO,@"invalid_data",nil);return;}
     if(text.length>65536){finish(ticket,NO,@"invalid_data",nil);return;}

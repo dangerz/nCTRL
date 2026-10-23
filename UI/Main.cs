@@ -1,6 +1,8 @@
 using Godot;
+using NGarage.Core;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 public partial class Main : Control
 {
@@ -55,6 +57,8 @@ public partial class Main : Control
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
+        disclaimer=Disclaimer.Restore(cfg.GetValue("disclaimer","version",0).AsInt32(),
+            cfg.GetValue("disclaimer","account","").AsString(),cfg.GetValue("disclaimer","accepted_at","").AsString());
     }
     private void SavePrefs()
     {
@@ -64,6 +68,11 @@ public partial class Main : Control
         cfg.SetValue("appearance","name",paintName);
         cfg.SetValue("appearance","garage",garageName);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
+        if(disclaimer!=null) {
+            cfg.SetValue("disclaimer","version",disclaimer.Version);
+            cfg.SetValue("disclaimer","account",disclaimer.AccountKey);
+            cfg.SetValue("disclaimer","accepted_at",disclaimer.AcceptedAt.ToString("O",CultureInfo.InvariantCulture));
+        }
         if(cfg.Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
     }
     private void PickPaint(string name,string hex)
@@ -85,9 +94,12 @@ public partial class Main : Control
         Label(24,19,310,20,garageName,13,Muted);
         Label(24,44,340,41,liveMode?"IONIQ 5 N":"nCTRL",29,White,true);
         Button(365,20,70,28,smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
-        if(screen=="Connect") ConnectionScreen();
+        // Nothing else is reachable until the current account has accepted the risk disclaimer.
+        if(DisclaimerRequired) DisclaimerScreen();
+        else if(screen=="Connect") ConnectionScreen();
         else if(screen=="Paint") Paint();
         else if(screen=="Appearance") Appearance();
+        else if(screen=="Disclaimer") DisclaimerView();
         else LiveScreen();
         if(liveMode)Nav();
         if(notice.Length>0)
@@ -163,7 +175,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Activity","Settings"};
-        string selected=screen=="Appearance"?"Settings":screen is "Paint" or "Climate" or "Locate"?"Car":screen;
+        string selected=screen is "Appearance" or "Disclaimer"?"Settings":screen is "Paint" or "Climate" or "Locate"?"Car":screen;
         for(int i=0;i<4;i++)
         {
             string name=names[i];int x=i*115;

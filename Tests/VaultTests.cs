@@ -34,7 +34,11 @@ static class VaultTests
         Check(!absent.Available&&!absent.HasAccount,"Unsupported platform has no storage fallback");
         await Rejected(()=>absent.SaveAsync(account,default),"unavailable");
         await Rejected(()=>absent.UnlockAsync(default),"unavailable");
+        await Rejected(()=>absent.AuthenticateAsync("Confirm",default),"unavailable");
         var bridge=new Bridge();var vault=new AccountVault(bridge);
+        await vault.AuthenticateAsync("Confirm",default);Check(!vault.HasAccount,"Device check needs no saved account and saves nothing");
+        bridge.Available=false;await vault.AuthenticateAsync("Confirm",default);Check(true,"Device check allows passcode when biometrics are unavailable");bridge.Available=true;
+        bridge.Fail=true;await Rejected(()=>vault.AuthenticateAsync("Confirm",default),"cancelled");bridge.Fail=false;
         await vault.SaveAsync(account,default);Check(vault.HasAccount,"Saved only after successful bridge response");
         Check(vault.BiometricName=="Face ID","iPhone biometric label");
         var read=await vault.UnlockAsync(default);Check(read.Password==account.Password,"Authenticated bridge data returned");

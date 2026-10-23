@@ -102,6 +102,13 @@ public sealed class AccountVault
         string data=await Request("unlock","",ct);
         return SavedAccount.Decode(data);
     }
+    // Device-owner check (biometrics with passcode fallback) for acknowledgements and overrides.
+    // Needs only the native bridge, not enrolled biometrics or a saved account.
+    public async Task AuthenticateAsync(string reason,CancellationToken ct)
+    {
+        if(!bridge.Present)throw new VaultException("unavailable");
+        await Request("authenticate",reason,ct);
+    }
     public async Task ForgetAsync(CancellationToken ct)
     {
         // Deletion must still work when enrollment was changed or biometrics are unavailable.

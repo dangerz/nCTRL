@@ -13,6 +13,7 @@ public partial class Main
     private void InitializeVault()
     {
         vault=new AccountVault(smoke?new UnavailableVaultBridge():NativeVaultBridge.Create());vaultReady=true;
+        deviceCheckRequired=OS.GetName() is "iOS" or "Android";
         if(vault.HasAccount){screen="Connect";manualAccountEntry=false;}
     }
     private void EnsureLive(int version)
@@ -22,7 +23,7 @@ public partial class Main
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection?.Dispose();connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;accountKey="";monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
+        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
         screen="Connect";notice="";noticeError=false;
         if(render&&IsInsideTree())Render();
     }
@@ -59,20 +60,26 @@ public partial class Main
         int version=liveEpoch;
         await RunLive(async()=>{
             var account=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
-            connection?.Dispose();var active=connectionFactory();connection=active;
-            var vehicles=await active.LoginAsync(account.Email,account.Password,account.Pin,liveLifetime.Token);EnsureLive(version);
-            accountKey=VehicleLink.AccountKey(account.Email);
-            enrollment=vehicles;selectedIndex=0;manualAccountEntry=false;screen="Connect";
-            notice="Unlocked and signed in. Select your vehicle.";
-            await RestoreLinkedVehicle(active,version);
+            if(HoldForDisclaimer(account.Email,account.Password,account.Pin,true,true))return;
+            await SignInSaved(account.Email,account.Password,account.Pin,version);
         },"Waiting for "+vault.BiometricName+"…");
+    }
+    private async Task SignInSaved(string email,string password,string pin,int version)
+    {
+        connection?.Dispose();var active=connectionFactory();connection=active;
+        var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
+        accountKey=VehicleLink.AccountKey(email);BindDisclaimer();
+        enrollment=vehicles;selectedIndex=0;manualAccountEntry=false;screen="Connect";
+        notice="Unlocked and signed in. Select your vehicle.";
+        await RestoreLinkedVehicle(active,version);
     }
     private async Task ForgetAccount()
     {
         if(liveBusy)return;
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
         EndLiveSession();
-        linkedVehicle="";SavePrefs();
+        // Signing out resets the risk acceptance; the next account must accept again.
+        linkedVehicle="";disclaimer=null;SavePrefs();
         if(!vault.Present){notice="Session cleared. This build has no saved account storage.";Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{

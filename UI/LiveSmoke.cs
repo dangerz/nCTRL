@@ -50,6 +50,8 @@ public partial class Main
             foreach(string route in new[]{"Car","Energy","Activity","Settings","Paint","Appearance","Climate","Locate"})
             {Navigate(route);AssertAccountOnly();}
             if(fixture.Requests!=0)throw new Exception("Startup/navigation sent an unsolicited request");
+            await Capture("09-disclaimer-test.png");
+            await PassDisclaimerFixture();
             Navigate("Connect");await Capture("10-bluelink-signin.png");
             foreach(string stage in new[]{"Authentication","Vehicle list"})
             {
@@ -102,6 +104,28 @@ public partial class Main
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
+    }
+    private Button FillDisclaimerFixture()
+    {
+        var submit=canvas.GetNodeOrNull<Button>("DisclaimerSubmit");
+        if(submit==null||canvas.GetNodeOrNull<Button>("SignIn")!=null||canvas.GetNodeOrNull<Button>("BiometricUnlock")!=null)
+            throw new Exception("Disclaimer gate is not the only reachable screen");
+        var phrase=canvas.GetNode<LineEdit>("DisclaimerPhrase");var check=canvas.GetNode<CheckBox>("DisclaimerCheck");
+        check.ButtonPressed=false;phrase.Text="";phrase.EmitSignal(LineEdit.SignalName.TextChanged,phrase.Text);
+        if(!submit.Disabled)throw new Exception("Disclaimer submit enabled before confirmation");
+        phrase.Text="I agreed";phrase.EmitSignal(LineEdit.SignalName.TextChanged,phrase.Text);check.ButtonPressed=true;
+        if(!submit.Disabled)throw new Exception("Wrong phrase enabled disclaimer submit");
+        phrase.Text=" i agree ";phrase.EmitSignal(LineEdit.SignalName.TextChanged,phrase.Text);check.ButtonPressed=false;
+        if(!submit.Disabled)throw new Exception("Unchecked box enabled disclaimer submit");
+        check.ButtonPressed=true;
+        if(submit.Disabled)throw new Exception("Matching phrase and checkbox did not enable disclaimer submit");
+        return submit;
+    }
+    private async Task PassDisclaimerFixture()
+    {
+        FillDisclaimerFixture().EmitSignal(Godot.Button.SignalName.Pressed);
+        while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+        if(DisclaimerRequired)throw new Exception("Disclaimer acceptance was not recorded");
     }
     private void AssertAccountOnly()
     {
