@@ -25,13 +25,16 @@ internal static class RequestJson
     internal static string Doors(string username,string vin,string pin)=>Object(w=>{
         w.WriteString("userName",username);w.WriteString("vin",vin);w.WriteString("pin",pin);
     });
-    internal static string Climate(int temperature,int generation)=>Object(w=>{
+    // heating1: 0 off, 3 steering wheel only (upstream HEAT_STATUS). Defrost and rear-window heat stay off.
+    internal static string Climate(int temperature,int generation,ClimateOptions? options=null)=>Object(w=>{
+        options??=new();
         w.WriteNumber("airCtrl",1);w.WriteStartObject("airTemp");
         w.WriteString("value",temperature.ToString(CultureInfo.InvariantCulture));w.WriteNumber("unit",1);w.WriteEndObject();
-        w.WriteBoolean("defrost",false);w.WriteNumber("heating1",0);
+        w.WriteBoolean("defrost",false);w.WriteNumber("heating1",options.SteeringWheel?3:0);
         if(generation==3){
             w.WriteNumber("igniOnDuration",5);w.WriteStartObject("seatHeaterVentInfo");
-            foreach(string seat in new[]{"drvSeatHeatState","astSeatHeatState","rlSeatHeatState","rrSeatHeatState"})w.WriteNumber(seat,0);
+            w.WriteNumber("drvSeatHeatState",SeatCodes.Code(options.DriverSeat));w.WriteNumber("astSeatHeatState",SeatCodes.Code(options.PassengerSeat));
+            w.WriteNumber("rlSeatHeatState",0);w.WriteNumber("rrSeatHeatState",0);
             w.WriteEndObject();
         }
     });

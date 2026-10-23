@@ -65,6 +65,9 @@ public partial class Main : Control
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
+        driverSeat=SeatPreference(cfg.GetValue("climate","driver_seat",0).AsInt32());
+        passengerSeat=SeatPreference(cfg.GetValue("climate","passenger_seat",0).AsInt32());
+        wheelHeat=cfg.GetValue("climate","steering_wheel",false).AsBool();
         disclaimer=Disclaimer.Restore(cfg.GetValue("disclaimer","version",0).AsInt32(),
             cfg.GetValue("disclaimer","account","").AsString(),cfg.GetValue("disclaimer","accepted_at","").AsString());
     }
@@ -76,6 +79,9 @@ public partial class Main : Control
         cfg.SetValue("appearance","name",paintName);
         cfg.SetValue("appearance","garage",garageName);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
+        cfg.SetValue("climate","driver_seat",(int)driverSeat);
+        cfg.SetValue("climate","passenger_seat",(int)passengerSeat);
+        cfg.SetValue("climate","steering_wheel",wheelHeat);
         if(disclaimer!=null) {
             cfg.SetValue("disclaimer","version",disclaimer.Version);
             cfg.SetValue("disclaimer","account",disclaimer.AccountKey);
@@ -83,6 +89,7 @@ public partial class Main : Control
         }
         if(cfg.Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
     }
+    private static SeatMode SeatPreference(int stored)=>Enum.IsDefined(typeof(SeatMode),stored)?(SeatMode)stored:SeatMode.Off;
     private void PickPaint(string name,string hex)
     {
         paintName = name; paintHex = hex; SavePrefs(); Render();

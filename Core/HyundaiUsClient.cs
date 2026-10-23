@@ -16,7 +16,9 @@ namespace NGarage.Core;
 public sealed record EnrolledVehicle(string Id, string Vin, string Name, string Model, int Generation, bool Electric);
 public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? TemperatureF,
     int? Battery, bool? PluggedIn, bool? Charging, double? RangeMiles, int? AcLimit, int? DcLimit,
-    string ReportedAt, DateTimeOffset RetrievedAt);
+    string ReportedAt, DateTimeOffset RetrievedAt,
+    // Seat codes as reported (see SeatCodes.Reported); null when Hyundai does not report them.
+    int? DriverSeat=null, int? PassengerSeat=null, bool? SteeringWheelHeat=null);
 public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt);
 public enum RemoteOutcome { Accepted, Confirmed, Failed, Unknown }
 public sealed record RemoteReceipt(RemoteOutcome Outcome, string Message, string? TransactionId);
@@ -149,7 +151,12 @@ public sealed class HyundaiUsClient : IDisposable
                     if(command.Value<62||command.Value>82)throw new BluelinkException("Choose 62–82°F.");
                     route="evc/fatc/"+(command.Enabled?"start":"stop");
                     if(command.Enabled)
-                        body=RequestJson.Climate(command.Value,Selected!.Generation);
+                    {
+                        // Upstream sends seat settings only for generation 3; never silently drop a request.
+                        if(command.Climate?.HasSeats==true&&Selected!.Generation!=3)
+                            throw new BluelinkException("Seat heating and ventilation need a generation 3 vehicle. Nothing was sent.");
+                        body=RequestJson.Climate(command.Value,Selected!.Generation,command.Climate);
+                    }
                     break;
                 case ActionKind.Charge:
                     NeedElectric();route="evc/charge/"+(command.Enabled?"start":"stop");break;
@@ -393,9 +400,11 @@ public sealed class HyundaiUsClient : IDisposable
         var temp=Integer(v,"airTemp.value");var tempUnit=Integer(v,"airTemp.unit");
         if(tempUnit==0&&temp!=null)temp=(int)Math.Round(temp.Value*1.8+32);
         if(tempUnit is not (0 or 1))temp=null;
+        static int? Seat(int? code)=>code is >=0 and <=8?code:null;
         return new(Boolean(v,"doorLock"),Boolean(v,"airCtrlOn"),temp,Percent(Integer(v,"evStatus.batteryStatus")),
             plugin is null?Boolean(v,"evStatus.batteryPlugin"):plugin>0,Boolean(v,"evStatus.batteryCharge"),range,ac,dc,
-            Text(v,"dateTime"),DateTimeOffset.UtcNow);
+            Text(v,"dateTime"),DateTimeOffset.UtcNow,Seat(Integer(v,"seatHeaterVentState.flSeatHeatState")),
+            Seat(Integer(v,"seatHeaterVentState.frSeatHeatState")),Boolean(v,"steerWheelHeat"));
     }
     private static int? Percent(int? n)=>n is >=0 and <=100?n:null;
     public static JsonElement At(JsonElement e,string path)

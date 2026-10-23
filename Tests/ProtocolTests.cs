@@ -133,7 +133,39 @@ static class ProtocolTests
             using var p=JsonDocument.Parse(f.Calls[^1].Body);var root=p.RootElement;
             Check(f.Calls[^1].Path.EndsWith("/evc/fatc/start")&&root.GetProperty("airTemp").GetProperty("value").GetString()=="75","EV climate route and temperature");
             Check(root.GetProperty("igniOnDuration").GetInt32()==5&&root.GetProperty("airTemp").GetProperty("unit").GetInt32()==1,"Generation 3 duration and Fahrenheit");
+            Check(root.GetProperty("heating1").GetInt32()==0&&root.GetProperty("seatHeaterVentInfo").GetProperty("drvSeatHeatState").GetInt32()==0,"Default climate keeps seats and steering wheel off");
         }
+        (c,f)=await Session();using(c)
+        {
+            f.Add("");await c.ExecuteAsync(new(ActionKind.Climate,76,true,new ClimateOptions(SeatMode.HeatHigh,SeatMode.CoolLow,true)),null,default);
+            using var p=JsonDocument.Parse(f.Calls[^1].Body);var root=p.RootElement;var seats=root.GetProperty("seatHeaterVentInfo");
+            Check(seats.GetProperty("drvSeatHeatState").GetInt32()==8&&seats.GetProperty("astSeatHeatState").GetInt32()==3,"Front seat heat and ventilation codes");
+            Check(seats.GetProperty("rlSeatHeatState").GetInt32()==0&&seats.GetProperty("rrSeatHeatState").GetInt32()==0,"Rear seats always stay off");
+            Check(root.GetProperty("heating1").GetInt32()==3&&!root.GetProperty("defrost").GetBoolean(),"Steering wheel only; defrost and rear window stay off");
+            Check(f.Calls.Count(x=>x.Method=="POST"&&x.Path.StartsWith("/ac/"))==1,"Seats and steering wheel ride on the single climate POST");
+        }
+        f=new Fake();f.Add(Token);f.Add(Enrollment.Replace("\"3\"","\"2\""));f.Add(Status);
+        using(c=new HyundaiUsClient(f))
+        {
+            var list=await c.LoginAsync("tester@example.invalid","test-password","1234",default);await c.SelectAsync(list[0],default);int n=f.Calls.Count;
+            var e=await Failure(()=>c.ExecuteAsync(new(ActionKind.Climate,72,true,new ClimateOptions(SeatMode.HeatLow)),null,default));
+            Check(e.Message.Contains("generation 3")&&f.Calls.Count==n,"Seat request on generation 2 is refused before sending");
+            f.Add("");await c.ExecuteAsync(new(ActionKind.Climate,72,true,new ClimateOptions(SteeringWheel:true)),null,default);
+            using var p=JsonDocument.Parse(f.Calls[^1].Body);
+            Check(p.RootElement.GetProperty("heating1").GetInt32()==3&&!p.RootElement.TryGetProperty("seatHeaterVentInfo",out _),"Generation 2 still sends steering wheel heat");
+        }
+        using(var json=JsonDocument.Parse("{\"vehicleStatus\":{\"seatHeaterVentState\":{\"flSeatHeatState\":8,\"frSeatHeatState\":3},\"steerWheelHeat\":1}}"))
+        {
+            var s=HyundaiUsClient.ParseState(json.RootElement);
+            Check(s.DriverSeat==8&&s.PassengerSeat==3&&s.SteeringWheelHeat==true,"Seat and steering wheel status parsing");
+            Check(SeatCodes.Reported(s.DriverSeat)=="Heat high"&&SeatCodes.Reported(s.PassengerSeat)=="Cool low"&&SeatCodes.Reported(2)=="Off"&&SeatCodes.Reported(null)=="—","Reported seat labels");
+        }
+        using(var json=JsonDocument.Parse("{\"vehicleStatus\":{\"seatHeaterVentState\":{\"flSeatHeatState\":42}}}"))
+        {
+            var s=HyundaiUsClient.ParseState(json.RootElement);
+            Check(s.DriverSeat==null&&s.PassengerSeat==null&&s.SteeringWheelHeat==null,"Unknown or missing seat codes stay unknown");
+        }
+        Check(SeatCodes.Code(SeatMode.Off)==0&&SeatCodes.Code(SeatMode.CoolMedium)==4&&SeatCodes.Code(SeatMode.HeatLow)==6&&SeatCodes.Code(SeatMode.HeatMedium)==7,"Seat request codes match upstream");
         foreach(var cmd in new[]{new VehicleCommand(ActionKind.Climate,72,false),new VehicleCommand(ActionKind.Charge,Enabled:true),new VehicleCommand(ActionKind.Charge,Enabled:false)})
         {
             (c,f)=await Session();using(c){f.Add("");await c.ExecuteAsync(cmd,null,default);

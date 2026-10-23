@@ -14,6 +14,9 @@ public partial class Main
     private IReadOnlyList<EnrolledVehicle>? enrollment;
     private bool liveMode,liveBusy;
     private int selectedIndex,liveAc=80,liveDc=80,liveTemperature=72;
+    // Last seat/steering-wheel choices, saved in preferences and sent with the next climate start.
+    private SeatMode driverSeat,passengerSeat;
+    private bool wheelHeat;
     // Set in _Ready so every client shares the persisted request budget.
     private Func<HyundaiUsClient> connectionFactory = null!;
     private bool monitoringCommand;
@@ -191,19 +194,39 @@ public partial class Main
         // Preserve server text rather than guessing the timezone of compact timestamps.
         return raw.Length>48?"Timestamp format unsupported":raw;
     }
+    private bool SeatsSupported=>connection?.Selected?.Generation==3;
+    private ClimateOptions CurrentClimateOptions()=>
+        new(SeatsSupported?driverSeat:SeatMode.Off,SeatsSupported?passengerSeat:SeatMode.Off,wheelHeat);
     private void LiveClimate()
     {
         var s=connection?.State;
         Title("CABIN, YOUR WAY.","Hyundai remote climate · electric vehicles");
-        Label(24,210,412,40,"Reported climate: "+OnOff(s?.ClimateOn,"On","Off"),15,White,true);
-        Label(24,254,412,30,"Reported setpoint: "+Value(s?.TemperatureF,"°F"),13,Muted);
-        Panel(24,317,412,160,new("#0e2031"));
-        Label(142,352,220,68,$"{liveTemperature}°F",40,White,true);
-        LiveButton(43,363,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
-        LiveButton(366,363,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
-        Label(24,505,412,70,"Starts climate with defrost and supplemental heaters off. Generation 3 requests a five-minute duration.",12,Muted,false,true);
-        CommandFeedback(RemoteButton(24,613,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true)),true),ActionKind.Climate,s?.ClimateOn==true,true);
-        CommandFeedback(RemoteButton(24,687,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false))),ActionKind.Climate,false,false);
+        Label(24,196,412,26,"Reported: climate "+OnOff(s?.ClimateOn,"on","off")+" · setpoint "+Value(s?.TemperatureF,"°F"),14,White,true);
+        if(s?.DriverSeat!=null||s?.PassengerSeat!=null||s?.SteeringWheelHeat!=null)
+            Label(24,224,412,22,"Seats: driver "+SeatCodes.Reported(s?.DriverSeat)+" · passenger "+SeatCodes.Reported(s?.PassengerSeat)+
+                " · wheel "+OnOff(s?.SteeringWheelHeat,"on","off"),11,Muted);
+        Panel(24,256,412,104,new("#0e2031"));
+        Label(142,274,220,68,$"{liveTemperature}°F",40,White,true);
+        LiveButton(43,282,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
+        LiveButton(366,282,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
+        Label(24,374,198,22,"DRIVER SEAT",11,Muted,true);Label(238,374,198,22,"PASSENGER SEAT",11,Muted,true);
+        SeatChoice(24,398,driverSeat,"DriverSeat").ItemSelected+=i=>{driverSeat=(SeatMode)(int)i;SavePrefs();};
+        SeatChoice(238,398,passengerSeat,"PassengerSeat").ItemSelected+=i=>{passengerSeat=(SeatMode)(int)i;SavePrefs();};
+        var wheel=new CheckBox {Name="SteeringWheelHeat",Position=new(24,452),Size=new(412,40),Text="Heated steering wheel",ButtonPressed=wheelHeat,Disabled=liveBusy};
+        wheel.AddThemeFontOverride("font",regular);wheel.AddThemeFontSizeOverride("font_size",13);
+        wheel.Toggled+=value=>{wheelHeat=value;SavePrefs();};canvas.AddChild(wheel);
+        Label(24,498,412,58,(SeatsSupported?"Seat and steering wheel choices are sent when climate starts or updates; rear seats stay off. ":
+            "Seat control needs a generation 3 vehicle; the steering wheel choice still applies. ")+
+            "Defrost stays off. Generation 3 requests a five-minute duration.",11,Muted,false,true);
+        CommandFeedback(RemoteButton(24,604,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true,CurrentClimateOptions())),true,"ClimateStart"),
+            ActionKind.Climate,s?.ClimateOn==true,true);
+        CommandFeedback(RemoteButton(24,672,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false))),ActionKind.Climate,false,false);
+    }
+    private OptionButton SeatChoice(int x,int y,SeatMode value,string name)
+    {
+        var b=new OptionButton{Name=name,Position=new(x,y),Size=new(198,44),Disabled=liveBusy||!SeatsSupported};
+        foreach(var mode in Enum.GetValues<SeatMode>())b.AddItem(SeatCodes.Label(mode));
+        b.Select((int)value);b.AddThemeFontOverride("font",regular);b.AddThemeFontSizeOverride("font_size",13);canvas.AddChild(b);return b;
     }
     private void LiveEnergy()
     {
@@ -256,9 +279,9 @@ public partial class Main
             Label(42,y+7,375,53,item.Title,12,White,true,true);Label(42,y+64,375,24,item.Detail,10,Muted);y+=111;}
 
     }
-    private Button RemoteButton(float x,float y,float w,float h,string text,int size,Action action,bool primary=false)
+    private Button RemoteButton(float x,float y,float w,float h,string text,int size,Action action,bool primary=false,string name="")
     {
-        var button=LiveButton(x,y,w,h,text,size,action,primary);
+        var button=LiveButton(x,y,w,h,text,size,action,primary,name);
         button.Disabled|=monitoringCommand;return button;
     }
     private void CommandFeedback(Button button,ActionKind kind,bool active,bool? enabled=null)

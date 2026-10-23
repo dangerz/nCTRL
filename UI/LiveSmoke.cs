@@ -21,11 +21,13 @@ public partial class Main
         public int Commands;
         public int Requests;
         public int Tokens;
+        public string LastBody="";
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             string route=request.RequestUri!.AbsolutePath;
             Requests++;if(route.EndsWith("/oauth/token"))Tokens++;
+            LastBody=request.Content==null?"":request.Content.ReadAsStringAsync(ct).GetAwaiter().GetResult();
             if((FailStage=="Authentication"&&route.EndsWith("/oauth/token"))||
                (FailStage=="Vehicle list"&&route.Contains("/enrollment/details/")))
             {
@@ -36,7 +38,7 @@ public partial class Main
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
                 "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
-                "/ac/v2/rcs/rdo/on"=>"",
+                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
                 "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
@@ -147,7 +149,18 @@ public partial class Main
             AssertAccountOnly();
             await SignIn("tester@example.invalid","fixture-password","1234");
             if(!liveMode||screen!="Car"||fixture.Commands!=1)throw new Exception("Remembered vehicle did not reconnect without commands");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle. No real API calls.");
+            // Seat and steering-wheel choices ride on the single climate start.
+            Navigate("Climate");
+            var driver=canvas.GetNode<OptionButton>("DriverSeat");driver.Select((int)SeatMode.HeatHigh);driver.EmitSignal(OptionButton.SignalName.ItemSelected,(long)SeatMode.HeatHigh);
+            var passenger=canvas.GetNode<OptionButton>("PassengerSeat");passenger.Select((int)SeatMode.CoolLow);passenger.EmitSignal(OptionButton.SignalName.ItemSelected,(long)SeatMode.CoolLow);
+            canvas.GetNode<CheckBox>("SteeringWheelHeat").ButtonPressed=true;
+            await Capture("30-climate-seats-test.png");
+            canvas.GetNode<Button>("ClimateStart").EmitSignal(Godot.Button.SignalName.Pressed);
+            while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(!fixture.LastBody.Contains("\"drvSeatHeatState\":8")||!fixture.LastBody.Contains("\"astSeatHeatState\":3")||
+               !fixture.LastBody.Contains("\"rlSeatHeatState\":0")||!fixture.LastBody.Contains("\"heating1\":3"))
+                throw new Exception("Climate start did not carry the chosen seats and steering wheel");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
