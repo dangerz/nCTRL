@@ -69,7 +69,7 @@ The release flow is: export from Godot, open the generated Xcode project, then *
 - **Application → Targeted Device Family:** iPhone. The UI is a fixed portrait phone layout.
 - **Application → Short Version:** blank, inheriting `application/config/version` from `project.godot`. **Application → Version** (the build number) must increase for every TestFlight upload of the same version.
 - **Privacy → User Defaults Access Reasons:** CA92.1 (“Access info from same app”). The iOS vault stores its install marker in `NSUserDefaults`.
-- **Plugins:** leave any legacy NGarageVault `.gdip` disabled. The enabled **nCTRL Secure Vault** editor addon adds `NSFaceIDUsageDescription` and `ITSAppUsesNonExemptEncryption = false` (the app uses only standard HTTPS) to Info.plist.
+- **Plugins:** leave any legacy NGarageVault `.gdip` disabled. The enabled **nCTRL Secure Vault** editor addon adds `NSFaceIDUsageDescription` to Info.plist; without it the app cannot use Face ID and stays locked at the disclaimer. Godot's iOS template already sets `ITSAppUsesNonExemptEncryption = false` (the app uses only standard HTTPS); the addon must not repeat template keys. After exporting, confirm `NSFaceIDUsageDescription` is present in the generated `nCTRL/nCTRL-Info.plist`.
 - Keep signing credentials in Godot's `.godot/export_credentials.cfg`, which is git-ignored, never in tracked files.
 
 ## Storage, request limits and errors

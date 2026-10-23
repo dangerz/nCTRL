@@ -14,10 +14,10 @@ public partial class VaultAndroidExport : EditorExportPlugin
     public override bool _SupportsPlatform(EditorExportPlatform platform)=>platform is EditorExportPlatformAndroid or EditorExportPlatformIos;
     public override void _ExportBegin(string[] features,bool isDebug,string path,uint flags)
     {
+        // Face ID text only. Godot's iOS template already sets ITSAppUsesNonExemptEncryption=false;
+        // repeating a template key here dropped this whole fragment from the exported Info.plist.
         if(GetExportPlatform() is EditorExportPlatformIos)
-            // HTTPS only (exempt encryption): skips the App Store Connect compliance question per upload.
-            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to unlock your saved Hyundai account in nCTRL on this device.</string>"+
-                "<key>ITSAppUsesNonExemptEncryption</key><false/>");
+            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to unlock your saved Hyundai account in nCTRL on this device.</string>");
     }
     public override string[] _GetAndroidLibraries(EditorExportPlatform platform,bool debug)
         =>new[]{"res://addons/ngarage_vault/NGarageVault.aar"};
