@@ -9,6 +9,7 @@
 .import/
 export.cfg
 export_credentials.cfg
+Native/iOS/build/
 *.tmp
 
 # Imported translations (automatically generated from CSV files)

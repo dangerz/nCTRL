@@ -84,7 +84,9 @@ public sealed class HyundaiUsClient : IDisposable
         catch(HttpRequestException) { Clear();throw new BluelinkException(stage+": Connection failed. No automatic retry was sent."); }
         catch(OperationCanceledException) when(!ct.IsCancellationRequested)
         { Clear();throw new BluelinkException(stage+": Request timed out. No automatic retry was sent."); }
-        catch { Clear(); throw; }
+        catch(BluelinkException) { Clear();throw; }
+        catch(OperationCanceledException) { Clear();throw; }
+        catch(Exception ex) { Clear();throw new BluelinkException(stage+": "+SafeFailure.Describe(ex)); }
         finally { gate.Release(); }
     }
     public async Task SelectAsync(EnrolledVehicle vehicle,CancellationToken ct)
@@ -131,27 +133,18 @@ public sealed class HyundaiUsClient : IDisposable
                 throw new BluelinkException("A command is awaiting confirmation. Check its status before sending another.");
             if(DateTimeOffset.UtcNow<nextCommand)throw new BluelinkException("Wait 30 seconds between remote commands.");
             await EnsureToken(ct);
-            string route;object? body=null;
+            string route;string? body=null;
             switch(command.Kind)
             {
                 case ActionKind.Lock: case ActionKind.Unlock:
                     route="rcs/rdo/"+(command.Kind==ActionKind.Lock?"off":"on");
-                    body=new {userName=username,vin=Selected!.Vin};break;
+                    body=RequestJson.Doors(username,Selected!.Vin);break;
                 case ActionKind.Climate:
                     NeedElectric();
                     if(command.Value<62||command.Value>82)throw new BluelinkException("Choose 62–82°F.");
                     route="evc/fatc/"+(command.Enabled?"start":"stop");
                     if(command.Enabled)
-                    {
-                        var climate=new Dictionary<string,object> {
-                            ["airCtrl"]=1,["airTemp"]=new {value=command.Value.ToString(CultureInfo.InvariantCulture),unit=1},
-                            ["defrost"]=false,["heating1"]=0};
-                        if(Selected!.Generation==3) {
-                            climate["igniOnDuration"]=5;
-                            climate["seatHeaterVentInfo"]=new {drvSeatHeatState=0,astSeatHeatState=0,rlSeatHeatState=0,rrSeatHeatState=0};
-                        }
-                        body=climate;
-                    }
+                        body=RequestJson.Climate(command.Value,Selected!.Generation);
                     break;
                 case ActionKind.Charge:
                     NeedElectric();route="evc/charge/"+(command.Enabled?"start":"stop");break;
@@ -160,7 +153,7 @@ public sealed class HyundaiUsClient : IDisposable
                     if(!ValidLimit(command.Value)||dcLimit is null||!ValidLimit(dcLimit.Value))
                         throw new BluelinkException("Choose both AC and DC targets: 50–100% in 10% steps.");
                     route="evc/charge/targetsoc/set";
-                    body=new {targetSOClist=new[]{new {plugType=0,targetSOClevel=dcLimit.Value},new {plugType=1,targetSOClevel=command.Value}}};break;
+                    body=RequestJson.ChargeLimits(command.Value,dcLimit.Value);break;
                 default:throw new BluelinkException("Unsupported remote command.");
             }
             nextCommand=DateTimeOffset.UtcNow.AddSeconds(30);
@@ -235,15 +228,14 @@ public sealed class HyundaiUsClient : IDisposable
     }
     private async Task TokenAsync(bool renewing,CancellationToken ct)
     {
-        var body=new Dictionary<string,string>{{"username",username},{"password",password}};
-        if(renewing&&refresh.Length>0){body["grant_type"]="refresh_token";body["refresh_token"]=refresh;}
+        string body=RequestJson.Token(username,password,renewing?refresh:"");
         var r=await RequestAsync(HttpMethod.Post,"/v2/ac/oauth/token",body,false,false,ct,stage:"Authentication");
         var token=Text(r.Body,"access_token");var seconds=Number(r.Body,"expires_in");
         if(token.Length==0||seconds is null||!double.IsFinite(seconds.Value)||seconds<=0)throw new BluelinkException("Authentication: No supported session returned. MFA/challenge flows are not supported by this US adapter.");
         access=token;refresh=Text(r.Body,"refresh_token");expires=DateTimeOffset.UtcNow.AddSeconds(Math.Min(seconds.Value,86400));
     }
     private sealed record Reply(JsonElement Body,string? TransactionId);
-    private async Task<Reply> RequestAsync(HttpMethod method,string path,object? body,bool authenticated,bool vehicle,
+    private async Task<Reply> RequestAsync(HttpMethod method,string path,string? body,bool authenticated,bool vehicle,
         CancellationToken ct,Dictionary<string,string>? extra=null,string stage="Request")
     {
         if(DateTimeOffset.UtcNow<blockedUntil)throw new BluelinkException(stage+": Hyundai rate limit active. Wait before trying again.");
@@ -267,7 +259,7 @@ public sealed class HyundaiUsClient : IDisposable
         }
         if(extra!=null)foreach(var pair in extra)headers[pair.Key]=pair.Value;
         foreach(var pair in headers)request.Headers.Add(pair.Key,pair.Value);
-        if(body!=null)request.Content=new StringContent(JsonSerializer.Serialize(body),Encoding.UTF8,"application/json");
+        if(body!=null)request.Content=new StringContent(body,Encoding.UTF8,"application/json");
         using var response=await http.SendAsync(request,HttpCompletionOption.ResponseContentRead,ct);
         string text=await response.Content.ReadAsStringAsync(ct);
         JsonElement json=default;

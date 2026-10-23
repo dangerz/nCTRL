@@ -5,6 +5,8 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
   <ItemGroup><Compile Remove="Tests/**/*.cs" /></ItemGroup>
+  <Import Project="Native/iOS/Vault.targets" />
 </Project>

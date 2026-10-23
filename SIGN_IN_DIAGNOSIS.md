@@ -34,7 +34,19 @@ These are compatibility changes based on the working local example, not a demons
 
 ## Minimal live verification
 
-Build/open nCTRL and sign in once on its opening account screen. Stop at vehicle selection. This sends only the token/enrollment requests; no vehicle command is needed.
+### Mobile-only failure investigated October 23, 2026
+
+The owner reports that sign-in works in the editor but shows the generic “Could not complete the request” message on a physical iPhone. The checkout serialized all POST bodies through `JsonSerializer.Serialize(object)`, requiring runtime reflection. Godot 4.7.2's installed iOS SDK enables NativeAOT; .NET's trimmed builds disable JSON reflection by default ([Microsoft compatibility documentation](https://learn.microsoft.com/en-us/dotnet/core/compatibility/serialization/8.0/publishtrimmed)).
+
+The unchanged source passed its 134 desktop checks, then threw `InvalidOperationException` in the authentication request when run with JSON reflection disabled. This is a reproduced client defect before an HTTP request is sent, not evidence of a Hyundai 502. Explicit `Utf8JsonWriter` payloads now cover authentication, renewal, door commands, climate and charge targets. Both project and tests explicitly disable JSON reflection so desktop tests expose future regressions. All 179 revised offline checks pass under that restriction.
+
+Unexpected login exceptions now retain the Authentication/Vehicle list stage and a fixed safe category such as `runtime-state` or `platform-unsupported`; original messages, inner exceptions and raw type names are withheld. HTTP/API diagnostics and manual recovery remain intact. The iOS secure-vault packaging is separately revised in `SECURE_LOGIN.md`.
+
+This identifies and fixes a reproducible cause consistent with the report. It does **not** prove that the user's installed iPhone build encountered precisely this exception or that live sign-in is resolved. No real credentials/API requests were used.
+
+### One sign-in attempt on the rebuilt phone app
+
+Freshly export/build/install nCTRL using `SECURE_LOGIN.md`, then sign in once on its opening account screen. Stop at vehicle selection. This sends only token/enrollment requests; no vehicle command is needed. If saving is selected, complete the local biometric save prompt. Successful saving can be checked by backgrounding/reopening the app and unlocking the saved account; stop again at vehicle selection.
 
 If it fails, report only the displayed error text beginning **Authentication:** or **Vehicle list:** (including HTTP/API codes, if present). Do not provide credentials, screenshots containing your email, request/response dumps, tokens, PINs or full VINs. If vehicle selection appears, report that outcome; it verifies this sign-in attempt, not remote commands or mobile secure storage.
 

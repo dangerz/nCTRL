@@ -28,17 +28,16 @@ Saving first authenticates the owner, then creates or updates the protected Keyc
 
 ### Build on a Mac
 
-The repository does **not** include a compiled iOS vault binary. Run on a Mac with Xcode command-line tools:
+The vault is now compiled and statically linked into the C# NativeAOT framework during Godot's iOS export. `IoniqN.csproj` imports `Native/iOS/Vault.targets`, which runs `build-aot.sh` for the selected device/simulator architecture and binds the six C bridge functions using DirectPInvoke. A failed native compile/link stops export. This replaces the previous optional `.gdip` integration, which could be omitted from an otherwise successful export or leave `__Internal` imports unresolved at runtime.
 
-```sh
-bash Native/iOS/build.sh
-```
+1. On your Mac, open this updated project with Godot .NET 4.7 and Xcode selected via `xcode-select`. Build the C# project so the editor addon loads.
+2. Keep **nCTRL Secure Vault** enabled under Project Settings → Plugins (now enabled in `project.godot`). It supplies `NSFaceIDUsageDescription` to the exported Info.plist. Android also uses this addon for its AAR.
+3. If you previously built/enabled the separate **NGarageVault** under the iOS export preset's Plugins section, disable that legacy export plugin. Do not package both copies. `Native/iOS/build.sh` and the `.gdip` remain only for legacy integrations; they are no longer the nCTRL build path.
+4. Export a fresh iOS Xcode project, targeting **iOS 15+**, and build/install the signed app. Keep your existing bundle identifier, signing team and Keychain access group. No Keychain Sharing entitlement is needed for the app-private item. Rebuilding an older exported Xcode project alone will not incorporate the updated C# framework or plist.
 
-This creates `ios/plugins/ngarage_vault/NGarageVault.xcframework` (arm64 iOS device and Apple Silicon simulator) and copies its `.gdip` descriptor. It requires no Python runtime or custom Godot engine build. The native library has a small C ABI accessed from C#; it does not register a Godot singleton.
+The AOT build script supports `ios-arm64`, `iossimulator-arm64` and `iossimulator-x64`. The generated archives live in ignored `Native/iOS/build/aot` directories. No custom Godot engine, Python runtime, server or separately downloaded vault binary is needed.
 
-In Godot's iOS export options, enable **NGarageVault**. The descriptor adds Foundation, Security, LocalAuthentication and UIKit, preserves the native entry points, and supplies `NSFaceIDUsageDescription`. Use your own bundle identifier, signing team and provisioning profile. No Keychain Sharing entitlement is required for this app-private item. Use iOS 15 or newer for this bridge. The provided script targets arm64 simulators; Intel Mac simulators require adding an x86_64 simulator slice.
-
-Build the complete signed app and test the checklist below. The native iOS source has not been compiled or executed in this Windows validation environment; plugin linking, Face ID permission behavior, AOT interop and lifecycle behavior still require Xcode/device verification. If the bridge is absent, secure saving is unavailable and manual login stays memory-only.
+The iOS source and new build integration **have not been compiled or run on a Mac/device here**. MSBuild evaluation confirms the iOS archive, direct imports and framework dependencies; Windows C# builds do not verify Apple linking. Face ID permission, Keychain enforcement and lifecycle behavior still need the device checklist below. The app now distinguishes missing bridge/permission text from missing passcode, unenrolled biometrics and biometric lockout. Manual login always stays memory-only when secure saving is unavailable.
 
 ## Android implementation
 
@@ -77,12 +76,13 @@ While unlocked, credentials exist in process memory because Hyundai's token refr
 
 Validation repeated in the Windows checkout:
 
-- C# application and C# Android export plugin compile.
-- Android native plugin Java compile against Android 35 and Godot 4.7 APIs.
-- 18 secure-login coordinator checks with a fake native bridge, in addition to 116 protocol checks (134 total); obsolete simulated-client checks were removed.
+- C# Debug and ExportRelease application/export-plugin builds pass with zero warnings/errors (October 23, 2026).
+- 32 secure-login coordinator checks with a fake native bridge, plus 147 protocol checks (179 total), with JSON reflection explicitly disabled. These cover safe mobile runtime diagnostics, capability failures and existing no-retry/credential-handling behavior.
+- The previous Android Java/AAR validation remains unchanged; Android export/device checks have not been performed.
+- iOS MSBuild settings were evaluated for NativeAOT linkage. Apple native compilation and a signed export remain unverified; Windows Git Bash could not start in this sandbox, so the new shell script could not be executed here either.
 - Debug-only security smoke remains available for save preference, background lock, cancelled biometric unlock, mocked unlock, stale-unlock rejection and account removal. The current Godot smoke launch stalled during .NET initialization before app execution; current rendered flows remain unverified. Prior rendered results are not native/device verification; see README for details.
 
-The nCTRL rename preserves all secure-storage identifiers and encryption settings, including the legacy Android AES-GCM associated-data text. The bundled Android AAR includes the new prompt titles; rebuild the iOS plugin for the new prompt/Face ID description. Keep the app's existing package/bundle identity and signing configuration when upgrading. Changing those may require users to sign in and securely save the account again. No plaintext or cross-identity credential migration is performed. See README for appearance preference compatibility.
+The nCTRL rename and new iOS linkage preserve all secure-storage identifiers and encryption settings, including the iOS Keychain service/account, fresh-install marker and legacy Android AES-GCM associated-data text. No credential migration is required when upgrading with the same app identity/signing. Keep the existing package/bundle identity and signing configuration; changing those may require signing in and securely saving again. No plaintext or cross-identity credential migration is performed. See README for appearance preference compatibility.
 
 The mock tests validate application logic only. They do not demonstrate actual Keychain/Keystore enforcement or real biometrics. Before treating the feature as device-verified, test on signed iOS and Android builds:
 
@@ -109,4 +109,5 @@ Screenshots `19`–`21` use a fake vault and have a TEST badge. They are not scr
 - Android biometric cryptography: https://developer.android.com/identity/sign-in/biometric-auth
 - Android Keystore authentication parameters: https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder
 - Godot iOS plugins: https://docs.godotengine.org/en/stable/tutorials/platform/ios/ios_plugin.html
+- .NET NativeAOT direct interop/static linking: https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/interop
 - Godot Android plugins: https://docs.godotengine.org/en/stable/tutorials/platform/android/android_plugin.html

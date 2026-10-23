@@ -9,11 +9,12 @@ public static class NativeVaultBridge
     {
         if(OS.GetName()=="iOS") {
             try {var bridge=new IosVaultBridge();bridge.Availability();return bridge;}
-            catch(DllNotFoundException){}catch(EntryPointNotFoundException){}
+            catch(DllNotFoundException){return new UnavailableVaultBridge(-6);}
+            catch(EntryPointNotFoundException){return new UnavailableVaultBridge(-6);}
         }
         if(OS.GetName()=="Android" && Engine.HasSingleton("NGarageVault"))
             return new AndroidVaultBridge(Engine.GetSingleton("NGarageVault"));
-        return new UnavailableVaultBridge();
+        return new UnavailableVaultBridge(OS.GetName()=="Android"?-6:0);
     }
     private sealed class AndroidVaultBridge(GodotObject plugin) : IVaultBridge
     {

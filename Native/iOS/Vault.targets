@@ -1,0 +1,18 @@
+<Project>
+  <!-- Link the vault into Godot's C# NativeAOT framework, not an optional app plugin.
+       Restrict DirectPInvoke to our symbols: Godot has other __Internal imports. -->
+  <PropertyGroup Condition="'$(GodotTargetPlatform)' == 'ios'">
+    <NctrlVaultOutput>$(MSBuildThisFileDirectory)build/aot/$(RuntimeIdentifier)/$(Configuration)</NctrlVaultOutput>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(GodotTargetPlatform)' == 'ios'">
+    <DirectPInvoke Include="__Internal!ng_vault_availability;__Internal!ng_vault_has_account;__Internal!ng_vault_start;__Internal!ng_vault_take_result;__Internal!ng_vault_free;__Internal!ng_vault_cancel" />
+    <NativeLibrary Include="$(NctrlVaultOutput)/NGarageVault.a" />
+    <LinkerArg Include="-framework Foundation;-framework Security;-framework LocalAuthentication;-framework UIKit" />
+  </ItemGroup>
+  <Target Name="BuildNctrlIosVault" BeforeTargets="IlcCompile"
+          Condition="'$(GodotTargetPlatform)' == 'ios'">
+    <Error Condition="!$([MSBuild]::IsOSPlatform('OSX'))" Text="The nCTRL iOS vault must be built on a Mac with Xcode during iOS export." />
+    <Exec Command="bash &quot;$(MSBuildThisFileDirectory)build-aot.sh&quot; &quot;$(RuntimeIdentifier)&quot; &quot;$(NctrlVaultOutput)&quot;" />
+    <Error Condition="!Exists('$(NctrlVaultOutput)/NGarageVault.a')" Text="The required nCTRL iOS vault library was not built." />
+  </Target>
+</Project>

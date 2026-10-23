@@ -30,6 +30,10 @@ window/handheld/orientation=1
 
 project/assembly_name="IoniqN"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/ngarage_vault/plugin.cfg")
+
 [input_devices]
 
 pointing/emulate_touch_from_mouse=true

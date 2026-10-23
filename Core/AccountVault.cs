@@ -56,17 +56,18 @@ public sealed class VaultException : Exception
 public interface IVaultBridge
 {
     bool Present { get; }
-    // 0 unavailable, 1 Touch ID, 2 Face ID, 3 Android strong biometrics.
+    // Positive: 1 Touch ID, 2 Face ID, 3 Android strong. Zero: unavailable.
+    // Negative: -1 passcode missing, -2 not enrolled, -3 locked out, -4 iOS usage text missing, -6 bridge missing.
     int Availability();
     bool HasAccount();
     void Start(string operation,string payload);
     string TakeResult();
     void Cancel();
 }
-public sealed class UnavailableVaultBridge : IVaultBridge
+public sealed class UnavailableVaultBridge(int reason=0) : IVaultBridge
 {
     public bool Present=>false;
-    public int Availability()=>0;
+    public int Availability()=>reason;
     public bool HasAccount()=>false;
     public void Start(string operation,string payload)=>throw new VaultException("unavailable");
     public string TakeResult()=>"";
@@ -81,6 +82,15 @@ public sealed class AccountVault
     public bool Available=>bridge.Present&&bridge.Availability()>0;
     public bool HasAccount=>bridge.Present&&bridge.HasAccount();
     public string BiometricName=>bridge.Availability() switch {1=>"Touch ID",2=>"Face ID",_=>"biometrics"};
+    public string UnavailableReason=>bridge.Availability() switch {
+        -1=>"Set a device passcode in Settings to use secure saved login.",
+        -2=>"Set up Face ID or Touch ID in Settings to use secure saved login.",
+        -3=>"Biometrics are locked out. Unlock your device with its passcode, then reopen nCTRL.",
+        -4=>"This iOS build is missing its Face ID permission description. Re-export with nCTRL Secure Vault enabled.",
+        -6=>"This build is missing the native secure-storage bridge. Install a rebuilt mobile app.",
+        _=>Present?"Biometrics are unavailable. Check biometric enrollment and app permission in Settings.":
+            "Secure saved login is available in supported phone builds. Manual login here is session-only."
+    };
     public async Task SaveAsync(SavedAccount account,CancellationToken ct)
     {
         if(!Available)throw new VaultException("unavailable");

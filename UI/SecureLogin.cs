@@ -41,7 +41,7 @@ public partial class Main
         unlock.Disabled=liveBusy||!vault.Available;
         LiveButton(24,635,412,46,"Sign in manually",13,()=>{manualAccountEntry=true;Render();});
         LiveButton(24,704,412,46,"Forget saved account",13,()=>_ = ForgetAccount());
-        if(!vault.Available&&notice.Length==0)Label(24,778,412,62,"Biometrics are unavailable or have changed. Sign in manually or remove the saved account.",12,Muted,false,true);
+        if(!vault.Available&&notice.Length==0)Label(24,778,412,62,vault.UnavailableReason,12,Muted,false,true);
     }
     private async Task UnlockAccount()
     {

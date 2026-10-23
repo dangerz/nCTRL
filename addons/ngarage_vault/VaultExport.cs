@@ -11,7 +11,12 @@ public partial class VaultExport : EditorPlugin
 public partial class VaultAndroidExport : EditorExportPlugin
 {
     public override string _GetName()=>"NGarageVault";
-    public override bool _SupportsPlatform(EditorExportPlatform platform)=>platform is EditorExportPlatformAndroid;
+    public override bool _SupportsPlatform(EditorExportPlatform platform)=>platform is EditorExportPlatformAndroid or EditorExportPlatformIos;
+    public override void _ExportBegin(string[] features,bool isDebug,string path,uint flags)
+    {
+        if(GetExportPlatform() is EditorExportPlatformIos)
+            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to unlock your saved Hyundai account in nCTRL on this device.</string>");
+    }
     public override string[] _GetAndroidLibraries(EditorExportPlatform platform,bool debug)
         =>new[]{"res://addons/ngarage_vault/NGarageVault.aar"};
 }

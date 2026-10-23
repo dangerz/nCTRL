@@ -21,7 +21,7 @@ public partial class Main
             if(Hold)return;
             if(CancelNext){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
             if(op=="save")saved=data;if(op=="forget")saved=null;
-            result=JsonSerializer.Serialize(new{ok=true,code="",data=op=="unlock"?saved:""});
+            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?saved:"");});
         }
         public string TakeResult(){var s=result;result="";return s;}
         public void Cancel(){result="";}

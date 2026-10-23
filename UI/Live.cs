@@ -51,7 +51,7 @@ public partial class Main
         remember.AddThemeFontOverride("font",regular);remember.AddThemeFontSizeOverride("font_size",13);
         remember.Toggled+=value=>rememberDevice=value;canvas.AddChild(remember);
         Label(24,519,412,70,vault.Available?"Saved credentials stay on this phone and require biometrics to unlock. The app locks when backgrounded.":
-            "Secure storage is unavailable in this build or on this device. Manual login is session-only; nothing is saved.",12,Muted,false,true);
+            vault.UnavailableReason+" Nothing will be saved.",12,Muted,false,true);
         LiveButton(24,610,412,53,liveBusy?"Signing in…":"Sign in to Hyundai",15,()=>{
             string e=email.Text,p=pass.Text,s=servicePin.Text;
             pass.Text="";servicePin.Text="";
@@ -67,9 +67,10 @@ public partial class Main
     private async Task SignIn(string email,string password,string pin,bool remember=false)
     {
         if(liveBusy)return;
-        connection?.Dispose();var active=connectionFactory();connection=active;enrollment=null;
         int version=liveEpoch;
         await RunLive(async()=>{
+            connection?.Dispose();connection=null;enrollment=null;
+            var active=connectionFactory();connection=active;
             var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
             enrollment=vehicles;selectedIndex=0;screen="Connect";notice="Signed in. Select your vehicle.";
             try {
@@ -115,7 +116,7 @@ public partial class Main
         catch(BluelinkException ex){notice=ex.Message;noticeError=true;}
         catch(OperationCanceledException){notice="Request interrupted. For a command, the outcome may be unknown. Refresh before retrying.";noticeError=true;}
         catch(HttpRequestException){notice="Could not reach Hyundai. Check your connection. No automatic retry was sent.";noticeError=true;}
-        catch(Exception){notice="Could not complete the request. No automatic retry was sent.";noticeError=true;}
+        catch(Exception ex){notice=progress.TrimEnd('…','.')+": "+SafeFailure.Describe(ex);noticeError=true;}
         finally {
             if(version==liveEpoch) {
             if(liveMode && noticeError)history.Add((notice,DateTime.Now.ToString("h:mm tt")+" · Request not confirmed",false));

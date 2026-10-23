@@ -14,6 +14,7 @@ static NSUInteger generation;
 static BOOL busy;
 static NSMutableArray<UIView *> *privacyViews;
 static NSMutableArray *observers;
+static void installPrivacyCover(void);
 static NSString *const service=@"com.ngarage.bluelink.credentials.v1";
 static NSMutableDictionary *query(void) {
     return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
@@ -24,6 +25,7 @@ static void initialize(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         guard=[NSObject new];privacyViews=[NSMutableArray new];observers=[NSMutableArray new];
+        installPrivacyCover();
         // Keychain items may survive uninstall. Clear an orphan on a fresh install.
         NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
         if(![defaults boolForKey:@"NGVaultInstalledV1"]) {
@@ -49,7 +51,17 @@ static NSString *errorCode(OSStatus status) {
 }
 NG_EXPORT int ng_vault_availability(void) {
     initialize();LAContext *ctx=[LAContext new];NSError *error=nil;
-    if(![ctx canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&error])return 0;
+    // Report packaging separately; never start Face ID without its required usage text.
+    id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSFaceIDUsageDescription"];
+    if(![usage isKindOfClass:NSString.class] || [(NSString *)usage length]==0)return -4;
+    if(![ctx canEvaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics error:&error]) {
+        switch(error.code) {
+            case LAErrorPasscodeNotSet:return -1;
+            case LAErrorBiometryNotEnrolled:return -2;
+            case LAErrorBiometryLockout:return -3;
+            default:return 0;
+        }
+    }
     return ctx.biometryType==LABiometryTypeFaceID?2:ctx.biometryType==LABiometryTypeTouchID?1:0;
 }
 NG_EXPORT int ng_vault_has_account(void) {
@@ -89,7 +101,7 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             }
         });return;
     }
-    if(ng_vault_availability()==0){finish(ticket,NO,@"unavailable",nil);return;}
+    if(ng_vault_availability()<=0){finish(ticket,NO,@"unavailable",nil);return;}
     if(![op isEqualToString:@"save"] && ![op isEqualToString:@"unlock"]){finish(ticket,NO,@"invalid_data",nil);return;}
     if(text.length>65536){finish(ticket,NO,@"invalid_data",nil);return;}
     LAContext *ctx=[LAContext new];ctx.localizedFallbackTitle=@"";ctx.touchIDAuthenticationAllowableReuseDuration=0;
@@ -136,9 +148,9 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             }];
     });
 }
-// Godot's generated plugin initialization code uses C++ linkage.
-void ng_vault_init(void) {
-    initialize();dispatch_async(dispatch_get_main_queue(), ^{
+static void installPrivacyCover(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(observers.count>0)return;
         NSNotificationCenter *nc=NSNotificationCenter.defaultCenter;
         id hide=[nc addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){
             for(UIScene *scene in UIApplication.sharedApplication.connectedScenes)if([scene isKindOfClass:UIWindowScene.class]) {
@@ -155,6 +167,8 @@ void ng_vault_init(void) {
         [observers addObject:hide];[observers addObject:reveal];
     });
 }
+// Retained for older .gdip consumers; the AOT bridge initializes itself on first use.
+void ng_vault_init(void) { initialize(); }
 void ng_vault_deinit(void) {
     ng_vault_cancel();dispatch_async(dispatch_get_main_queue(), ^{
         for(id observer in observers)[NSNotificationCenter.defaultCenter removeObserver:observer];[observers removeAllObjects];

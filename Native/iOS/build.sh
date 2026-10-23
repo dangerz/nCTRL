@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+echo "Legacy .gdip build only. nCTRL now builds the vault automatically during C# iOS export; do not enable both integrations." >&2
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 project_dir="$(cd "$script_dir/../.." && pwd)"
 build_dir="$script_dir/build"

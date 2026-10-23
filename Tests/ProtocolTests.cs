@@ -47,8 +47,37 @@ static class ProtocolTests
         Check(list.Count==1&&list[0].Electric&&list[0].Generation==3,"Enrollment parsing");
         await c.SelectAsync(list[0],default);return(c,f);
     }
+    private static async Task MobilePayloadsAndFailures()
+    {
+        const string secret="quote\" slash\\ newline\n日本語";
+        var f=new Fake();f.Add(Token);f.Add(Enrollment.Replace("\"3\"","\"2\""));f.Add(Status);f.Add("");
+        using(var client=new HyundaiUsClient(f)) {
+            var vehicles=await client.LoginAsync("tester@example.invalid",secret,"1234",default);
+            using var json=JsonDocument.Parse(f.Calls[0].Body);
+            Check(json.RootElement.GetProperty("password").GetString()==secret,"JSON preserves password Unicode and escaping");
+            Check(json.RootElement.EnumerateObject().Count()==2,"Initial auth sends only username/password");
+            await client.SelectAsync(vehicles[0],default);
+            await client.ExecuteAsync(new(ActionKind.Climate,72,true),null,default);
+            using var climate=JsonDocument.Parse(f.Calls[^1].Body);
+            Check(!climate.RootElement.TryGetProperty("igniOnDuration",out _)&&!climate.RootElement.TryGetProperty("seatHeaterVentInfo",out _),"Generation 2 omits generation 3 climate fields");
+            Check(!climate.RootElement.GetProperty("defrost").GetBoolean()&&climate.RootElement.GetProperty("heating1").GetInt32()==0,"Climate heater defaults preserved");
+        }
+        foreach(bool enrollmentFailure in new[]{false,true})
+        foreach(Exception failure in new Exception[]{new InvalidOperationException(secret),new PlatformNotSupportedException(secret),new TypeInitializationException(secret,new Exception(secret)),new Exception(secret)}) {
+            f=new Fake();if(enrollmentFailure)f.Add(Token);f.Replies.Enqueue(()=>throw failure);
+            using var client=new HyundaiUsClient(f);
+            var error=await Failure(()=>client.LoginAsync("tester@example.invalid",secret,"1234",default));
+            Check(error.Message.StartsWith(enrollmentFailure?"Vehicle list:":"Authentication:")&&!error.ToString().Contains(secret)&&error.InnerException==null,"Unexpected runtime error keeps stage and withholds private details");
+            Check(!client.IsAuthenticated&&f.Calls.Count==(enrollmentFailure?2:1),"Runtime error clears session without retries");
+            f.Add(Token);f.Add(Enrollment);
+            Check((await client.LoginAsync("tester@example.invalid",secret,"1234",default)).Count==1,"Manual recovery after runtime error");
+        }
+        Check(SafeFailure.Describe(new InvalidOperationException(secret)).Contains("runtime-state")&&SafeFailure.Describe(new PlatformNotSupportedException(secret)).Contains("platform-unsupported"),"Runtime diagnostics identify safe error categories");
+    }
     public static async Task Run()
     {
+        Check(!JsonSerializer.IsReflectionEnabledByDefault,"Tests enforce mobile JSON reflection restrictions");
+        await MobilePayloadsAndFailures();
         var (c,f)=await Session();using(c)
         {
             Check(f.Calls[0].Path=="/v2/ac/oauth/token"&&f.Calls[0].Method=="POST","Login endpoint");
@@ -61,6 +90,8 @@ static class ProtocolTests
             var initial=c.State;f.Add("",tid:"transaction-1");
             var receipt=await c.ExecuteAsync(new(ActionKind.Unlock),null,default);
             Check(f.Calls[^1].Path.EndsWith("/rcs/rdo/on")&&f.Calls[^1].Headers["APPCLOUD-VIN"]=="TESTVIN0000000001","Unlock route and VIN");
+            using var doors=JsonDocument.Parse(f.Calls[^1].Body);
+            Check(doors.RootElement.GetProperty("userName").GetString()=="tester@example.invalid"&&doors.RootElement.GetProperty("vin").GetString()=="TESTVIN0000000001","Door payload in reflection-disabled runtime");
             Check(receipt.Outcome==RemoteOutcome.Accepted&&c.State==initial,"Acceptance never changes vehicle state");
             var calls=f.Calls.Count;await Reject(()=>c.ExecuteAsync(new(ActionKind.Unlock),null,default),"Duplicate command");Check(f.Calls.Count==calls,"Duplicate not submitted");
             f.Add("{\"status\":\"SUCCESS\"}");receipt=await c.CheckCommandAsync(default);
@@ -170,7 +201,7 @@ static class ProtocolTests
         }
         foreach(string unsafeCode in new[]{"tester@example.invalid","1234","TESTVIN0000000001","https://example.invalid/account","test-access"})
         {
-            f=new Fake();f.Add(JsonSerializer.Serialize(new {errorCode=unsafeCode,errorMessage=unsafeCode}));
+            f=new Fake();f.Add(RequestJson.Object(w=>{w.WriteString("errorCode",unsafeCode);w.WriteString("errorMessage",unsafeCode);}));
             using(c=new HyundaiUsClient(f))
             {
                 var e=await Failure(()=>c.LoginAsync("tester@example.invalid","test-password","1234",default));

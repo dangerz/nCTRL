@@ -11,13 +11,14 @@ static class VaultTests
         public bool Present=>true;
         public bool Available=true,Saved,Hang,Fail;
         public int Starts,Cancels;
+        public int Status=2;
         public string? Data;
         string result="";
-        public int Availability()=>Available?2:0;
+        public int Availability()=>Available?Status:0;
         public bool HasAccount()=>Saved;
         public void Start(string op,string payload){Starts++;if(Hang)return;if(Fail){result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
             if(op=="save"){Data=payload;Saved=true;}if(op=="forget"){Data=null;Saved=false;}
-            result=JsonSerializer.Serialize(new{ok=true,code="",data=op=="unlock"?Data:""});}
+            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?Data:"");});}
         public string TakeResult(){var r=result;result="";return r;}
         public void Cancel(){Cancels++;result="";}
     }
@@ -45,6 +46,16 @@ static class VaultTests
             try{await vault.UnlockAsync(cts.Token);throw new Exception("No cancellation");}
             catch(OperationCanceledException){Check(bridge.Cancels==1,"Cancellation cancels native operation");}}
         bridge.Hang=false;await vault.SaveAsync(account,default);Check(vault.HasAccount,"Serialized gate recovers after cancellation");
+        foreach(var reason in new[]{(-1,"passcode"),(-2,"Set up"),(-3,"locked out"),(-4,"permission description")}) {
+            bridge.Status=reason.Item1;int starts=bridge.Starts;
+            Check(!vault.Available&&vault.UnavailableReason.Contains(reason.Item2),"Native capability failure has an actionable label");
+            await Rejected(()=>vault.UnlockAsync(default),"unavailable");
+            Check(bridge.Starts==starts,"Unavailable capability never starts biometric authentication");
+        }
+        await vault.ForgetAsync(default);Check(!vault.HasAccount,"Missing Face ID usage text still allows forgetting an account");
+        bridge.Status=2;await vault.SaveAsync(account,default);
+        var missingBridge=new AccountVault(new UnavailableVaultBridge(-6));
+        Check(!missingBridge.Available&&missingBridge.UnavailableReason.Contains("native secure-storage bridge"),"Missing bridge distinguished from biometrics unavailable");
         int before=bridge.Starts;using(var cts=new CancellationTokenSource()){cts.Cancel();try{await vault.UnlockAsync(cts.Token);}catch(OperationCanceledException){}Check(bridge.Starts==before,"Pre-cancelled operation never starts native request");}
         try{SavedAccount.Decode("{\"version\":2}");throw new Exception("Accepted invalid format");}catch(VaultException){Check(true,"Reject unsupported schema");}
         try{SavedAccount.Decode("secret malformed payload");throw new Exception("Accepted malformed payload");}catch(VaultException e){Check(!e.Message.Contains("secret"),"Malformed response never reflected in error");}
