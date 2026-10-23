@@ -164,6 +164,9 @@ public partial class Main
         var s=connection?.State;
         Label(24,106,412,24,"YOUR HYUNDAI · LAST REPORTED",10,Muted,true);
         Hero(139,215);
+        // Car screen only: animated door and climate state over the artwork.
+        canvas.AddChild(new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=car.GetSize(),
+            Lock=VehicleIndicators.Lock(s?.Locked),Climate=VehicleIndicators.Climate(s?.ClimateOn,s?.TemperatureF)});
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
         Label(288,403,150,42,s?.RangeMiles is double range?$"{range:0} mi":"—",28,White,true);

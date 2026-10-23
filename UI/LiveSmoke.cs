@@ -92,12 +92,25 @@ public partial class Main
             Navigate("Settings");canvas.GetNode<Button>("ViewLimits").EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Limits"||canvas.GetNodeOrNull<Button>("LimitsBack")==null)throw new Exception("Request limits screen missing");
             await Capture("26-request-limits-test.png");
+            Navigate("Car");
             PickPaint("Ecotonic Gray","747c79");notice="";Render();await Capture("12-connected-test.png");
+            // Car art follows the reported state (locked, climate off), and every effect renders.
+            var overlay=canvas.GetNode<StatusOverlay>("StatusOverlay");
+            if(overlay.Lock!=LockEffect.Locked||overlay.Climate!=ClimateEffect.None)throw new Exception("Car art does not reflect reported lock and climate state");
+            foreach(var (lockEffect,climateEffect,file) in new[]{(LockEffect.Locked,ClimateEffect.Heat,"27-art-locked-heat-test.png"),
+                (LockEffect.Unlocked,ClimateEffect.Frost,"28-art-unlocked-frost-test.png"),(LockEffect.None,ClimateEffect.Airflow,"29-art-airflow-test.png")}) {
+                overlay.Lock=lockEffect;overlay.Climate=climateEffect;
+                for(int i=0;i<20;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+                await Capture(file);
+            }
+            Render();
             foreach(var child in canvas.GetChildren())
                 if(child is Button b&&b.Text.Contains("paint",StringComparison.OrdinalIgnoreCase))
                     throw new Exception("Car screen still offers paint customization");
             // Paint is reached only through Settings → Appearance, and returns there.
-            Navigate("Settings");canvas.GetNode<Button>("SettingsAppearance").EmitSignal(Godot.Button.SignalName.Pressed);
+            Navigate("Settings");
+            if(canvas.GetNodeOrNull("StatusOverlay")!=null)throw new Exception("Car-art animation keeps running off the Car screen");
+            canvas.GetNode<Button>("SettingsAppearance").EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Appearance")throw new Exception("Settings does not open Appearance");
             canvas.GetNode<Button>("SettingsPaint").EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Paint")throw new Exception("Appearance does not open car color");
