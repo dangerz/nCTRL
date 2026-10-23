@@ -314,7 +314,7 @@ public sealed class HyundaiUsClient : IDisposable
     public static LiveVehicleState ParseState(JsonElement json)
     {
         var v=At(json,"vehicleStatus");
-        if(v.ValueKind!=JsonValueKind.Object)throw new BluelinkException("Vehicle status format is unsupported. No demo values were substituted.");
+        if(v.ValueKind!=JsonValueKind.Object)throw new BluelinkException("Vehicle status format is unsupported. No new vehicle state was loaded.");
         int? ac=null,dc=null;
         var targets=At(v,"evStatus.reservChargeInfos.targetSOClist");
         if(targets.ValueKind==JsonValueKind.Array)foreach(var t in targets.EnumerateArray()){

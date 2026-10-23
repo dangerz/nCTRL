@@ -8,13 +8,13 @@ N Performance styling, pixel Ioniq 5 N, six presets including **Ecotonic Gray**,
 
 1. Install **Godot 4.7 .NET** and the .NET 8 SDK for a desktop preview.
 2. Import `project.godot`, build, and press **F5**. First build restores the Godot NuGet packages. `IoniqN.sln` retains its internal name for compatibility; the app is nCTRL.
-3. Open **Settings → Connect Hyundai / Bluelink (USA)**.
+3. The app opens directly to **Connect your Hyundai**, or biometric unlock if an account is saved.
 4. Enter your US Bluelink email, password and four-digit Bluelink service PIN **inside the app**. Do not put credentials into the source code or a chat message.
 5. On a supported phone, leave **Save account with Face ID / biometrics** selected and authenticate to store the account securely. Subsequent launches show biometric unlock. Desktop builds remain session-only.
 6. Select your enrolled vehicle. The app reads its cached status; connecting does not send a remote vehicle command.
 7. A **LIVE** badge indicates the connected UI. Controls require confirmation and display the selected vehicle's name and VIN suffix before submission.
 
-Demo mode remains available. A saved phone account opens the locked login screen. **Lock app** clears the active session but retains protected credentials; **Sign out & forget** also deletes the saved account. Backgrounding ends the live session. An expired or denied session can be re-entered by unlocking or signing in manually. The adapter does not silently switch a live dashboard to demo data on an error.
+There is no simulated vehicle mode. Startup, locking, backgrounding and sign-out all return to the account screen. Vehicle navigation appears only after you select an enrolled vehicle and its status loads. A saved phone account opens the locked login screen. **Lock app** clears the active session but retains protected credentials; **Sign out & forget** also deletes the saved account. Backgrounding ends the live session. An expired or denied session can be re-entered by unlocking or signing in manually. Failed refreshes preserve the last known vehicle state.
 
 ## Implemented live functions
 
@@ -66,10 +66,10 @@ Opening Maps sends the requested coordinates to the map provider. It happens onl
 - `Core/HyundaiUsClient.cs`: injectable .NET HTTP transport, session management, enrollment/status mapping, commands, tracking and location.
 - `Core/AccountVault.cs`, `UI/SecureLogin.cs`, `UI/NativeVaultBridge.cs`: biometric saved-login coordination and platform interop.
 - `Native/iOS`, `Native/Android`, `addons/ngarage_vault`: native secure storage, build scripts and Android export support.
-- `Core/Vehicle.cs`: shared command types and the original isolated demo client.
-- `UI/Main.cs`: shared styling, appearance and demo screens.
+- `Core/Vehicle.cs`: shared live vehicle command types.
+- `UI/Main.cs`: account-first navigation, shared styling and appearance settings.
 - `UI/Live.cs`: account connection, live status, controls and confirmation screens.
-- `UI/LiveSmoke.cs`: explicitly invoked offline UI smoke fixture; never used in ordinary sign-in.
+- `UI/LiveSmoke.cs`: explicitly invoked offline UI smoke fixture, compiled only in debug builds; never used in ordinary sign-in.
 - `Assets/Paint.gdshader`: body recoloring tuned to this sprite. Existing saved Cyber Gray preferences migrate to Ecotonic Gray.
 - `Tests/`: dependency-free console behavior and protocol checks using fake HTTP responses.
 - `Preview/`: captured screens. Connected-flow screenshots have a **TEST** badge and synthetic data; they are not proof of a real vehicle connection.
@@ -80,10 +80,10 @@ Protocol attribution and the reference revision are in `THIRD_PARTY_NOTICES.md`.
 
 Current Windows checkout validation (October 22, 2026, US Eastern):
 
-- **150 offline checks passed: 16 vehicle behavior, 116 protocol, 18 secure-login coordinator.** Protocol regressions cover both sign-in stages, HTTP and JSON 502, sanitized transport/timeouts and malicious error-code strings, manual recovery, explicit challenges, fiveN request headers/path punctuation, escaped path delimiters, preserved state after failed refresh, and unknown command outcomes without retries.
-- Standard .NET 8.0.100/MSBuild build of `IoniqN.csproj` against Godot 4.7.2 succeeded with zero warnings/errors, including the C# export plugin. The default SDK attempted unavailable NuGet resolution; validation used the installed .NET 8 SDK and cached dependencies. The project target/framework was not changed.
+- **134 offline checks passed: 116 protocol and 18 secure-login coordinator.** The 16 checks for the removed simulated client were deleted with that client. Protocol regressions cover both sign-in stages, HTTP and JSON 502, sanitized transport/timeouts and malicious error-code strings, manual recovery, explicit challenges, fiveN request headers/path punctuation, escaped path delimiters, preserved state after failed refresh, and unknown command outcomes without retries.
+- Standard .NET 8.0.100/MSBuild Debug and ExportRelease builds of `IoniqN.csproj` against Godot 4.7.2 succeeded with zero warnings/errors, including the C# export plugin. ExportRelease metadata was checked to ensure the synthetic HTTP/native-vault fixtures and smoke methods are absent. The default SDK attempted unavailable NuGet resolution; validation used the installed .NET 8 SDK and cached dependencies. The project target/framework was not changed.
 - Android vault Java compiled with JDK 17 against Android 35 and official Godot `4.7.0.stable`; the bundled AAR was rebuilt with those classes while retaining its manifest/resources. A full Gradle app export/install was not performed.
-- Rendered smoke was attempted with Godot `4.7.2.stable.mono.official.ed1daf0bf`, but stalled at `.NET: Initializing module...` before the app loaded and was stopped. The sandbox also denied shader-cache writes to `user://`. Current UI runtime/rendering is **unverified**, including the added authentication/enrollment 502 recovery fixture. Prior rendered results are historical only.
+- Rendered smoke was attempted with Godot `4.7.2.stable.mono.official.ed1daf0bf`, but stalled at `.NET: Initializing module...` before the app loaded and was stopped. The sandbox also denied shader-cache writes to `user://`. The new headless account-flow smoke attempt also did not finish engine startup and was stopped. Current UI runtime/rendering is **unverified**, including account-only navigation and authentication/enrollment 502 recovery. Prior rendered results are historical only.
 - No real account credentials, real vehicle commands, mobile exports, iOS native builds or physical-device biometric tests were used in this validation.
 
 On a normal development machine:
@@ -93,15 +93,14 @@ dotnet build IoniqN.csproj
 dotnet run --project Tests/CoreTests.csproj
 ```
 
-After building, use your Godot .NET executable:
+After a Debug build, use your Godot .NET executable (smoke fixtures are excluded from ExportRelease):
 
 ```sh
-godot --path . -- --smoke-test
 godot --path . -- --live-smoke-test
 godot --path . -- --secure-smoke-test
 ```
 
-The live and security tests use fake HTTP handlers, a fake native vault and a reserved `.invalid` address. None of the smoke tests makes real Hyundai requests. They require a display, save screenshots to Godot's user-data folder, exit with code 0 on success, and leave appearance preferences untouched. To save screenshots elsewhere, create the destination first and append `--smoke-output=C:/absolute/path` after `--`. Screenshot write failures now fail the smoke test instead of silently passing.
+The live and security tests use fake HTTP handlers, a fake native vault and a reserved `.invalid` address. None of the smoke tests makes real Hyundai requests. With a display, they save screenshots to Godot's user-data folder. With `--headless`, they check behavior without screenshots or visual verification. They exit with code 0 on success and leave appearance preferences untouched. Startup, pre-selection navigation, background locking and sign-out are checked to ensure vehicle screens stay inaccessible without a selected vehicle. To save screenshots elsewhere, create the destination first and append `--smoke-output=C:/absolute/path` after `--`. Screenshot write failures now fail the smoke test instead of silently passing.
 
 ## Mobile work remaining
 

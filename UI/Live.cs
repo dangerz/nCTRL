@@ -35,7 +35,7 @@ public partial class Main
             vehicles.Disabled=liveBusy;canvas.AddChild(vehicles);
             Label(24,359,412,100,"Selecting a vehicle reads its last reported status. Remote commands are sent only when you use a control and confirm the request.",14,Muted,false,true);
             LiveButton(24,510,412,52,liveBusy?"Reading vehicle…":"Connect selected vehicle",14,()=>_ = ChooseVehicle(),true,"ChooseVehicle");
-            LiveButton(24,581,412,44,"Cancel and lock session",13,()=>EndLiveSession(true));
+            LiveButton(24,581,412,44,"Cancel and lock session",13,()=>EndLiveSession());
             return;
         }
         Label(24,204,412,23,"BLUELINK EMAIL",11,Muted,true);
@@ -102,7 +102,7 @@ public partial class Main
     private void Disconnect()
     {
         if(liveBusy)return;
-        EndLiveSession(false);notice="Session locked. Saved login, if any, remains protected.";Render();
+        EndLiveSession();notice="Session locked. Saved login, if any, remains protected.";Render();
     }
     private async Task RunLive(Func<Task> work,string progress)
     {
@@ -206,12 +206,12 @@ public partial class Main
         Title("YOUR CONNECTED GARAGE.","Hyundai USA · device security");
         Label(24,210,412,60,$"{v?.Name}\nVIN …{v?.Vin[^6..]}",17,White,true,true);
         Label(24,295,412,62,"Session: "+(connection?.IsAuthenticated==true?"Signed in":"Expired / denied — sign in again"),14,Muted,false,true);
-        Button(24,381,412,48,"Car color  /  "+paintName+"  ›",13,()=>Navigate("Paint"));
+        Button(24,381,412,48,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"));
         LiveButton(24,452,412,48,"Refresh cached status",13,()=>_ = RefreshLive(false));
         LiveButton(24,523,412,48,"Wake vehicle and refresh",13,()=>{
             ConfirmAction("Wake vehicle?","This asks Hyundai to contact your car for fresh status.",()=>_ = RefreshLive(true));
         });
-        LiveButton(24,594,198,48,"Lock app",13,()=>EndLiveSession(true));
+        LiveButton(24,594,198,48,"Lock app",13,()=>EndLiveSession());
         LiveButton(238,594,198,48,"Sign out & forget",12,()=>_ = ForgetAccount());
         Label(24,676,412,96,vault.HasAccount?"Account saved securely on this device. "+vault.BiometricName+" unlocks it. Backgrounding locks the app; signing out removes the saved login.":
             "Session-only login. To enable saved login, lock the app and sign in with Save account selected on a supported phone.",12,Muted,false,true);

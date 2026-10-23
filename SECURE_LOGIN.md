@@ -4,7 +4,7 @@ This revision adds secure phone-side credential persistence, biometric unlock, b
 
 ## What the user does
 
-1. Open Settings → Connect Hyundai / Bluelink (USA).
+1. Open nCTRL; it starts on the sign-in or saved-account unlock screen.
 2. Enter email, password and the four-digit Bluelink service PIN. On a supported phone, **Save account with Face ID / Touch ID / biometrics** is selected by default and can be turned off.
 3. After Hyundai accepts the account, complete the OS biometric prompt to save it. If saving fails or is cancelled, the current manual sign-in can continue for that session; the UI reports that it was not saved. An existing saved login is unchanged by a failed replacement.
 4. On subsequent launches, tap **Unlock with Face ID** (or the available biometric). The native vault releases the credentials only after authentication, then the app logs into Hyundai and shows vehicle selection.
@@ -79,8 +79,8 @@ Validation repeated in the Windows checkout:
 
 - C# application and C# Android export plugin compile.
 - Android native plugin Java compile against Android 35 and Godot 4.7 APIs.
-- 18 secure-login coordinator checks with a fake native bridge, in addition to 132 vehicle/protocol checks (150 total).
-- Rendered security smoke remains available for save preference, background lock, cancelled biometric unlock, mocked unlock, stale-unlock rejection and account removal. The current Godot smoke launch stalled during .NET initialization before app execution; current rendered flows remain unverified. Prior rendered results are not native/device verification; see README for details.
+- 18 secure-login coordinator checks with a fake native bridge, in addition to 116 protocol checks (134 total); obsolete simulated-client checks were removed.
+- Debug-only security smoke remains available for save preference, background lock, cancelled biometric unlock, mocked unlock, stale-unlock rejection and account removal. The current Godot smoke launch stalled during .NET initialization before app execution; current rendered flows remain unverified. Prior rendered results are not native/device verification; see README for details.
 
 The nCTRL rename preserves all secure-storage identifiers and encryption settings, including the legacy Android AES-GCM associated-data text. The bundled Android AAR includes the new prompt titles; rebuild the iOS plugin for the new prompt/Face ID description. Keep the app's existing package/bundle identity and signing configuration when upgrading. Changing those may require users to sign in and securely save the account again. No plaintext or cross-identity credential migration is performed. See README for appearance preference compatibility.
 

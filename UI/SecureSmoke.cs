@@ -1,3 +1,4 @@
+#if DEBUG
 using Godot;
 using NGarage.Core;
 using System;
@@ -36,18 +37,22 @@ public partial class Main
             await ChooseVehicle();
             _Notification((int)NotificationApplicationPaused);
             if(connection!=null||liveMode||enrollment!=null||screen!="Connect")throw new Exception("Background did not clear session");
+            AssertAccountOnly();
             await Capture("20-biometric-unlock-test.png");
             fake.CancelNext=true;await UnlockAccount();
             if(connection!=null||enrollment!=null||!vault.HasAccount)throw new Exception("Cancelled biometric leaked account access");
             await UnlockAccount();if(enrollment==null)throw new Exception("Unlock failed");
             await ChooseVehicle();Navigate("Settings");await Capture("21-secure-settings-test.png");
-            EndLiveSession(true);fake.Hold=true;
+            EndLiveSession();fake.Hold=true;
             var waiting=UnlockAccount();_Notification((int)NotificationApplicationPaused);await waiting;
             if(connection!=null||liveMode||liveBusy)throw new Exception("Late unlock restored locked session");
             fake.Hold=false;
             await ForgetAccount();if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
+            AssertAccountOnly();
             GD.Print("SECURE SMOKE PASS: save, background lock, biometric cancellation, unlock, stale-result rejection, forget. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }
 }
+
+#endif

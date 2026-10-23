@@ -34,7 +34,7 @@ These are compatibility changes based on the working local example, not a demons
 
 ## Minimal live verification
 
-Build/open nCTRL, go to **Settings → Connect Hyundai / Bluelink (USA)**, and sign in once inside the app. Stop at vehicle selection. This sends only the token/enrollment requests; no vehicle command is needed.
+Build/open nCTRL and sign in once on its opening account screen. Stop at vehicle selection. This sends only the token/enrollment requests; no vehicle command is needed.
 
 If it fails, report only the displayed error text beginning **Authentication:** or **Vehicle list:** (including HTTP/API codes, if present). Do not provide credentials, screenshots containing your email, request/response dumps, tokens, PINs or full VINs. If vehicle selection appears, report that outcome; it verifies this sign-in attempt, not remote commands or mobile secure storage.
 

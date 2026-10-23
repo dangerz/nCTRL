@@ -11,11 +11,10 @@ config_version=5
 [application]
 
 config/name="nCTRL"
-; Preserve the previous desktop user:// location across the display-name change.
-config/use_custom_user_dir=true
-config/custom_user_dir_name="Godot/app_userdata/N Garage"
 config/description="Ioniq 5 N companion with Hyundai USA connectivity and device-secured login."
 run/main_scene="res://Main.tscn"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="Godot/app_userdata/N Garage"
 config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 
 [display]

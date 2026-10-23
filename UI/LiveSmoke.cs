@@ -1,3 +1,4 @@
+#if DEBUG
 using Godot;
 using NGarage.Core;
 using System;
@@ -14,10 +15,12 @@ public partial class Main
     private sealed class ScreenFixture : HttpMessageHandler
     {
         public int Commands;
+        public int Requests;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             string route=request.RequestUri!.AbsolutePath;
+            Requests++;
             if((FailStage=="Authentication"&&route.EndsWith("/oauth/token"))||
                (FailStage=="Vehicle list"&&route.Contains("/enrollment/details/")))
             {
@@ -42,6 +45,10 @@ public partial class Main
         try
         {
             var fixture=new ScreenFixture();connectionFactory=()=>new HyundaiUsClient(fixture);
+            AssertAccountOnly();
+            foreach(string route in new[]{"Car","Energy","Activity","Settings","Paint","Appearance","Climate","Locate"})
+            {Navigate(route);AssertAccountOnly();}
+            if(fixture.Requests!=0)throw new Exception("Startup/navigation sent an unsolicited request");
             Navigate("Connect");await Capture("10-bluelink-signin.png");
             foreach(string stage in new[]{"Authentication","Vehicle list"})
             {
@@ -54,6 +61,7 @@ public partial class Main
             }
             await SignIn("tester@example.invalid","fixture-password","1234");
             if(enrollment?.Count!=1)throw new Exception("Enrollment screen not loaded");
+            Navigate("Car");AssertAccountOnly();
             notice="";Render();await Capture("11-vehicle-selection-test.png");
             await ChooseVehicle();
             if(!liveMode||connection?.State?.Battery!=78||fixture.Commands!=0)throw new Exception("Connect failed or sent a command");
@@ -62,6 +70,8 @@ public partial class Main
             Navigate("Energy");await Capture("14-live-energy-test.png");
             Navigate("Climate");await Capture("15-live-climate-test.png");
             Navigate("Settings");await Capture("16-live-settings-test.png");
+            Navigate("Appearance");
+            if(canvas.GetNodeOrNull<LineEdit>("GarageName")==null)throw new Exception("Garage appearance editor missing");
             Navigate("Car");ConfirmLive(new(ActionKind.Unlock),"Unlock the vehicle?");
             ConfirmationDialog? dialog=null;
             foreach(var child in GetChildren())if(child is ConfirmationDialog d)dialog=d;
@@ -75,9 +85,28 @@ public partial class Main
             Navigate("Activity");await Capture("18-live-activity-test.png");
             Disconnect();
             if(liveMode||connection!=null)throw new Exception("Disconnect failed");
+            AssertAccountOnly();
             GD.Print("LIVE SMOKE PASS: offline authentication/enrollment 502 recovery, sign-in, selection, screens, confirmation, tracking, disconnect. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }
+    private void AssertAccountOnly()
+    {
+        if(screen!="Connect"||liveMode||canvas.GetNodeOrNull<Button>("NavCar")!=null||connection?.Selected!=null)
+            throw new Exception("Vehicle UI is accessible without a selected live vehicle");
+    }
+    private async Task Capture(string filename)
+    {
+        // Headless runs verify UI/session behavior only; they do not claim visual coverage.
+        if(DisplayServer.GetName()=="headless")return;
+        await ToSignal(RenderingServer.Singleton,RenderingServer.SignalName.FramePostDraw);
+        string directory="user://";
+        foreach(string arg in OS.GetCmdlineUserArgs())
+            if(arg.StartsWith("--smoke-output="))directory=arg.Substring("--smoke-output=".Length).TrimEnd('/','\\')+"/";
+        if(GetViewport().GetTexture().GetImage().SavePng(directory+filename)!=Error.Ok)
+            throw new Exception("Could not write smoke-test screenshot.");
+    }
 }
+
+#endif

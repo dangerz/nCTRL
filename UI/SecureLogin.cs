@@ -12,25 +12,25 @@ public partial class Main
     private bool vaultReady;
     private void InitializeVault()
     {
-        vault=new AccountVault(NativeVaultBridge.Create());vaultReady=true;
+        vault=new AccountVault(smoke?new UnavailableVaultBridge():NativeVaultBridge.Create());vaultReady=true;
         if(vault.HasAccount){screen="Connect";manualAccountEntry=false;}
     }
     private void EnsureLive(int version)
     {if(version!=liveEpoch || liveLifetime.IsCancellationRequested)throw new OperationCanceledException();}
-    private void EndLiveSession(bool showLogin)
+    private void EndLiveSession()
     {
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection?.Dispose();connection=null;enrollment=null;liveMode=false;liveBusy=false;
         history.Clear();manualAccountEntry=false;
-        screen=showLogin?"Connect":"Settings";notice="";noticeError=false;
+        screen="Connect";notice="";noticeError=false;
         foreach(var child in GetChildren())if(child is ConfirmationDialog dialog){dialog.Hide();dialog.QueueFree();}
         if(IsInsideTree())Render();
     }
     public override void _Notification(int what)
     {
         // Focus loss also occurs during Face ID, so only actual backgrounding ends the session.
-        if(what==NotificationApplicationPaused && vaultReady)EndLiveSession(true);
+        if(what==NotificationApplicationPaused && vaultReady)EndLiveSession();
     }
     private void SavedLoginScreen()
     {
@@ -58,7 +58,7 @@ public partial class Main
     {
         if(liveBusy)return;
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        EndLiveSession(true);
+        EndLiveSession();
         if(!vault.Present){notice="Session cleared. This build has no saved account storage.";Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{
