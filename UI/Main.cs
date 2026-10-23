@@ -173,7 +173,8 @@ public partial class Main : Control
             if(canvas.GetNodeOrNull<TextureRect>("CarArtwork")?.Material is ShaderMaterial mat)
                 mat.SetShaderParameter("paint",value);
         };
-        picker.PopupClosed += ()=> { SavePrefs(); Render(); };
+        // Rebuild on the next frame: freeing the picker while its popup is still closing crashes Godot.
+        picker.PopupClosed += ()=> { SavePrefs(); Callable.From(Render).CallDeferred(); };
         canvas.AddChild(picker);
         Button(214,714,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"PaintDone");
         if(notice.Length==0) Label(24,794,410,40,"Preview colors are illustrative, not factory paint matching.",11,Muted,false,true);

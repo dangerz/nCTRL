@@ -122,6 +122,19 @@ public partial class Main
             canvas.GetNode<Button>("SettingsPaint").EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Paint")throw new Exception("Appearance does not open car color");
             await Capture("13-ecotonic-gray.png");
+            // Custom color, as a user does it: open the picker, tap a color, tap outside to close.
+            var picker=canvas.GetNode<ColorPickerButton>("CustomPaint");
+            await Tap(picker.GlobalPosition+picker.Size/2);
+            var popup=picker.GetPopup();
+            if(!popup.Visible)throw new Exception("Custom color picker did not open");
+            await Tap(popup.Position+new Vector2(40,40));
+            await Capture("32-custom-color-open-test.png");
+            await Tap(new Vector2(440,120));
+            for(int i=0;i<10;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            // The screen is rebuilt after the picker closes, so the old popup is freed by now.
+            if(GodotObject.IsInstanceValid(popup)&&popup.Visible||screen!="Paint"||paintName!="Custom color"||canvas.GetNodeOrNull<ColorPickerButton>("CustomPaint")==null)
+                throw new Exception("Custom color was not applied after closing the picker");
+            await Capture("33-custom-color-applied-test.png");
             canvas.GetNode<Button>("PaintDone").EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Appearance")throw new Exception("Paint Done does not return to Appearance");
             Navigate("Energy");await Capture("14-live-energy-test.png");
@@ -199,6 +212,15 @@ public partial class Main
         FillDisclaimerFixture().EmitSignal(Godot.Button.SignalName.Pressed);
         while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
         if(DisclaimerRequired)throw new Exception("Disclaimer acceptance was not recorded");
+    }
+    private async Task Tap(Vector2 at)
+    {
+        var down=new InputEventMouseButton {ButtonIndex=MouseButton.Left,Pressed=true,Position=at,GlobalPosition=at,ButtonMask=MouseButtonMask.Left};
+        GetViewport().PushInput(down,true);
+        await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+        var up=new InputEventMouseButton {ButtonIndex=MouseButton.Left,Pressed=false,Position=at,GlobalPosition=at};
+        GetViewport().PushInput(up,true);
+        for(int i=0;i<3;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
     }
     private void AssertAccountOnly()
     {
