@@ -21,7 +21,9 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
     int? DriverSeat=null, int? PassengerSeat=null, bool? SteeringWheelHeat=null,
     VehicleHealth? Health=null,
     // Location included in the status report, if any. Used only for ignored-place checks; never shown or saved.
-    VehicleLocation? StatusLocation=null);
+    VehicleLocation? StatusLocation=null,
+    // While charging: power in kW and Hyundai's estimate of minutes left for the current charge.
+    double? ChargingPowerKw=null, int? ChargeMinutesLeft=null);
 // RetrievedAt is when nCTRL received it, for deciding whether a location is fresh enough to trust.
 public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt, DateTimeOffset RetrievedAt=default);
 // Openings and warnings as reported; null means Hyundai did not report that item.
@@ -446,7 +448,10 @@ public sealed class HyundaiUsClient : IDisposable
         return new(Boolean(v,"doorLock"),Boolean(v,"airCtrlOn"),temp,Percent(Integer(v,"evStatus.batteryStatus")),
             plugin is null?Boolean(v,"evStatus.batteryPlugin"):plugin>0,Boolean(v,"evStatus.batteryCharge"),range,ac,dc,
             Text(v,"dateTime"),DateTimeOffset.UtcNow,Seat(Integer(v,"seatHeaterVentState.flSeatHeatState")),
-            Seat(Integer(v,"seatHeaterVentState.frSeatHeatState")),Boolean(v,"steerWheelHeat"),health,located);
+            Seat(Integer(v,"seatHeaterVentState.frSeatHeatState")),Boolean(v,"steerWheelHeat"),health,located,
+            Number(v,"evStatus.realTimePower") is double kw&&kw>=0&&kw<1000?kw:null,
+            // remainTime2.atc is in minutes (unit 1); other units are not interpreted.
+            Integer(v,"evStatus.remainTime2.atc.unit") is null or 1&&Integer(v,"evStatus.remainTime2.atc.value") is int left&&left is >0 and <10000?left:null);
     }
     private static int? Percent(int? n)=>n is >=0 and <=100?n:null;
     public static JsonElement At(JsonElement e,string path)

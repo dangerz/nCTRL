@@ -25,6 +25,8 @@ public partial class Main
         public string LastBody="",LastPath="";
         // Turns the reported car unlocked, with a door and a window open and a weak 12-volt battery.
         public bool Unhealthy;
+        // Turns the reported car into one that is charging at 7.2 kW with 95 minutes left.
+        public bool Charging;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
@@ -41,7 +43,7 @@ public partial class Main
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
                 "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"battery\":{\"batSoc\":87},\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0},\"tirePressure\":{\"tirePressureFrontLeft\":36,\"tirePressureFrontRight\":36,\"tirePressureRearLeft\":35,\"tirePressureRearRight\":29},\"tirePressureLamp\":{\"tirePressureWarningLampAll\":1,\"tirePressureWarningLampRearRight\":1},\"vehicleLocation\":{\"coord\":{\"lat\":40.111111,\"lon\":-74.222222}},\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
-                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl"=>"",
+                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl" or "/ac/v2/evc/charge/targetsoc/set"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
                 "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
@@ -49,8 +51,13 @@ public partial class Main
             if(Unhealthy&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"doorLock\":true","\"doorLock\":false").Replace("\"batSoc\":87","\"batSoc\":41")
                     .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":0,\"frontRight\":1},\"windowOpen\":{\"backLeft\":1,\"backRight\":1},\"hoodOpen\":true");
+            if(Charging&&route.EndsWith("/vehicleStatus"))
+                body=body.Replace("\"batteryCharge\":false","\"batteryCharge\":true,\"realTimePower\":7.2,\"remainTime2\":{\"atc\":{\"value\":95,\"unit\":1}}")
+                    .Replace("2026-10-22T10:00:00Z",DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
             if(route.EndsWith("/rdo/on")){Commands++;response.Headers.Add("tmsTid","fixture-command");}
+            // Tracked, so the follow-up check confirms on its first try instead of reading status for two minutes.
+            if(route.EndsWith("/fatc/start")||route.EndsWith("/targetsoc/set"))response.Headers.Add("tmsTid","fixture-command");
             return Task.FromResult(response);
         }
     }
@@ -205,6 +212,28 @@ public partial class Main
             if(!fixture.LastBody.Contains("\"drvSeatHeatState\":8")||!fixture.LastBody.Contains("\"astSeatHeatState\":3")||
                !fixture.LastBody.Contains("\"rlSeatHeatState\":0")||!fixture.LastBody.Contains("\"heating1\":3"))
                 throw new Exception("Climate start did not carry the chosen seats and steering wheel");
+            // Climate presets: Warm up starts climate with its saved settings; Save as stores the current ones.
+            await WaitForCommandChecks();
+            Navigate("Climate");
+            canvas.GetNode<Button>("PresetWarm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(!fixture.LastPath.EndsWith("/fatc/start")||!fixture.LastBody.Contains("\"value\":\"76\"")||!fixture.LastBody.Contains("\"drvSeatHeatState\":8")||
+               !fixture.LastBody.Contains("\"astSeatHeatState\":8")||!fixture.LastBody.Contains("\"heating1\":3")||!fixture.LastBody.Contains("\"defrost\":true"))
+                throw new Exception("Warm up did not start climate with its preset");
+            await Capture("43-climate-presets-test.png");
+            await WaitForCommandChecks();
+            liveTemperature=70;Render();canvas.GetNode<Button>("SaveWarm").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(warmPreset.TemperatureF!=70||!canvas.GetNode<Button>("PresetWarm").Text.Contains("70°F"))throw new Exception("Save as Warm up did not store the current settings");
+            // Charge presets: Road trip sends 100% for both targets in one request.
+            Navigate("Energy");
+            canvas.GetNode<Button>("PresetRoadTrip").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(!fixture.LastPath.EndsWith("/targetsoc/set")||fixture.LastBody.Split("\"targetSOClevel\":100").Length!=3)
+                throw new Exception("Road trip did not send 100% AC and DC targets");
+            if(canvas.GetNode<Button>("PresetDaily").Text.Contains("…")||!canvas.GetNode<Button>("PresetRoadTrip").Text.Contains("…"))
+                throw new Exception("Command feedback is not limited to the preset that was tapped");
+            await Capture("44-charge-presets-test.png");
+            await WaitForCommandChecks();
             // Car health: the strip, Check your car with Lock, and a wake confirmation that sends nothing when cancelled.
             fixture.Unhealthy=true;
             await RefreshLive(false);
@@ -254,7 +283,18 @@ public partial class Main
             for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             Navigate("Car");
             if(ignoredPlaces.Count!=0||!canvas.GetNode<Button>("AlertStrip").Text.Contains("Doors unlocked"))throw new Exception("Deleting the place did not bring the alert back");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places. No real API calls.");
+            // Charging ETA from Hyundai's minutes-left estimate, on Energy and the Car screen.
+            fixture.Charging=true;
+            await RefreshLive(false);
+            if(pendingOverride!=null)canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||connection?.State?.Charging!=true);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            Navigate("Energy");
+            var eta=canvas.GetNodeOrNull<Label>("ChargeEta")?.Text??"";
+            if(!eta.Contains("Charging at 7.2 kW")||!eta.Contains("full at"))throw new Exception("Energy screen does not show charging power and finish time");
+            await Capture("45-charging-eta-test.png");
+            Navigate("Car");
+            if(canvas.GetNodeOrNull<Label>("CarChargeEta")?.Text.StartsWith("Full at")!=true)throw new Exception("Car screen does not show when charging finishes");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
@@ -280,6 +320,11 @@ public partial class Main
         FillDisclaimerFixture().EmitSignal(Godot.Button.SignalName.Pressed);
         while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
         if(DisclaimerRequired)throw new Exception("Disclaimer acceptance was not recorded");
+    }
+    private async Task WaitForCommandChecks()
+    {
+        for(int i=0;i<200&&(liveBusy||monitoringCommand);i++)await ToSignal(GetTree().CreateTimer(0.25),SceneTreeTimer.SignalName.Timeout);
+        if(monitoringCommand)throw new Exception("Command checks did not finish");
     }
     private async Task Tap(Vector2 at)
     {

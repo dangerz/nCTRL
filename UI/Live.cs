@@ -16,7 +16,9 @@ public partial class Main
     private int selectedIndex,liveAc=80,liveDc=80,liveTemperature=72;
     // Last seat/steering-wheel choices, saved in preferences and sent with the next climate start.
     private SeatMode driverSeat,passengerSeat;
-    private bool wheelHeat;
+    private bool wheelHeat,climateDefrost;
+    // One-tap climate starts, editable with Save as; kept in preferences.
+    private ClimatePreset warmPreset=ClimatePreset.WarmUp,coolPreset=ClimatePreset.CoolDown;
     // Set in _Ready so every client shares the persisted request budget.
     private Func<HyundaiUsClient> connectionFactory = null!;
     private bool monitoringCommand;
@@ -26,6 +28,7 @@ public partial class Main
     private const ulong FlashEffectMs=4000;
     private ActionKind? feedbackKind;
     private bool feedbackEnabled;
+    private int feedbackValue;
     private Task commandMonitor=Task.CompletedTask;
     private static string Value(int? value,string suffix="")=>value is null?"—":value+suffix;
     private static string OnOff(bool? value,string yes,string no)=>value is null?"Unknown":value.Value?yes:no;
@@ -191,6 +194,7 @@ public partial class Main
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
         Label(288,403,150,42,s?.RangeMiles is double range?$"{range:0} mi":"—",28,White,true);
+        if(ChargeEta(s) is string eta)Label(294,440,142,16,char.ToUpperInvariant(eta[0])+eta[1..],10,Blue,true).Name="CarChargeEta";
         for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:new("#243446"));
         HealthStrip(s);
         Label(24,509,412,36,"Reported: "+ReportedTime(s?.ReportedAt),11,Muted,false,true);
@@ -225,7 +229,7 @@ public partial class Main
     }
     private bool SeatsSupported=>VehicleGeneration==3;
     private ClimateOptions CurrentClimateOptions()=>
-        new(SeatsSupported?driverSeat:SeatMode.Off,SeatsSupported?passengerSeat:SeatMode.Off,wheelHeat);
+        new(SeatsSupported?driverSeat:SeatMode.Off,SeatsSupported?passengerSeat:SeatMode.Off,wheelHeat,climateDefrost);
     private void LiveClimate()
     {
         var s=CurrentState;
@@ -241,15 +245,36 @@ public partial class Main
         Label(24,374,198,22,"DRIVER SEAT",11,Muted,true);Label(238,374,198,22,"PASSENGER SEAT",11,Muted,true);
         SeatChoice(24,398,driverSeat,"DriverSeat").ItemSelected+=i=>{driverSeat=(SeatMode)(int)i;SavePrefs();};
         SeatChoice(238,398,passengerSeat,"PassengerSeat").ItemSelected+=i=>{passengerSeat=(SeatMode)(int)i;SavePrefs();};
-        var wheel=new CheckBox {Name="SteeringWheelHeat",Position=new(24,452),Size=new(412,40),Text="Heated steering wheel",ButtonPressed=wheelHeat,Disabled=liveBusy};
+        var wheel=new CheckBox {Name="SteeringWheelHeat",Position=new(24,452),Size=new(210,40),Text="Heated steering wheel",ButtonPressed=wheelHeat,Disabled=liveBusy};
         wheel.AddThemeFontOverride("font",regular);wheel.AddThemeFontSizeOverride("font_size",13);
         wheel.Toggled+=value=>{wheelHeat=value;SavePrefs();};canvas.AddChild(wheel);
-        Label(24,498,412,58,(SeatsSupported?"Seat and steering wheel choices are sent when climate starts or updates; rear seats stay off. ":
-            "Seat control needs a generation 3 vehicle; the steering wheel choice still applies. ")+
-            "Defrost stays off. Generation 3 requests a five-minute duration.",11,Muted,false,true);
+        var defrost=new CheckBox {Name="Defrost",Position=new(238,452),Size=new(198,40),Text="Front defrost",ButtonPressed=climateDefrost,Disabled=liveBusy};
+        defrost.AddThemeFontOverride("font",regular);defrost.AddThemeFontSizeOverride("font_size",13);
+        defrost.Toggled+=value=>{climateDefrost=value;SavePrefs();};canvas.AddChild(defrost);
+        // Presets start climate right away with their saved settings.
+        foreach(var (preset,x,name) in new[]{(warmPreset,24,"PresetWarm"),(coolPreset,238,"PresetCool")})
+            CommandFeedback(RemoteButton(x,498,198,44,$"{preset.Name}  ·  {preset.TemperatureF}°F",13,()=>StartClimatePreset(preset),false,name),ActionKind.Climate,false,true,preset.TemperatureF);
+        Label(24,546,412,52,(SeatsSupported?"Seats, steering wheel and defrost are sent with each climate start; rear seats and rear-window heat stay off. ":
+            "Seat control needs a generation 3 vehicle; the steering wheel and defrost still apply. ")+
+            "Generation 3 requests a five-minute duration.",10,Muted,false,true);
         CommandFeedback(RemoteButton(24,604,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true,CurrentClimateOptions())),true,"ClimateStart"),
             ActionKind.Climate,s?.ClimateOn==true,true);
         CommandFeedback(RemoteButton(24,672,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false))),ActionKind.Climate,false,false);
+        Button(24,728,198,36,"Save as Warm up",11,()=>SaveClimatePreset(true),false,"SaveWarm");
+        Button(238,728,198,36,"Save as Cool down",11,()=>SaveClimatePreset(false),false,"SaveCool");
+    }
+    private void StartClimatePreset(ClimatePreset preset)
+    {
+        if(liveBusy||monitoringCommand)return;
+        liveTemperature=preset.TemperatureF;driverSeat=preset.DriverSeat;passengerSeat=preset.PassengerSeat;
+        wheelHeat=preset.SteeringWheel;climateDefrost=preset.Defrost;SavePrefs();
+        _ = SendLive(new(ActionKind.Climate,preset.TemperatureF,true,preset.Options(SeatsSupported)));
+    }
+    private void SaveClimatePreset(bool warm)
+    {
+        var current=(warm?warmPreset:coolPreset).With(liveTemperature,(int)driverSeat,(int)passengerSeat,wheelHeat,climateDefrost);
+        if(warm)warmPreset=current;else coolPreset=current;
+        SavePrefs();notice="Saved as "+current.Name+".";noticeError=false;Render();
     }
     private OptionButton SeatChoice(int x,int y,SeatMode value,string name)
     {
@@ -261,22 +286,37 @@ public partial class Main
     {
         var s=CurrentState;
         Title("POWER YOUR NEXT DRIVE.","Hyundai charging controls · last reported status");
-        Label(24,207,412,42,Value(s?.Battery,"%")+"  ·  "+OnOff(s?.Charging,"Charging","Not charging"),25,Blue,true);
-        Label(24,254,412,26,"Cable: "+OnOff(s?.PluggedIn,"Connected","Disconnected"),13,Muted);
-        Label(24,295,412,26,$"Reported targets  AC {Value(s?.AcLimit,"%")}  /  DC {Value(s?.DcLimit,"%")}",13,Muted);
-        Label(24,343,412,26,"Choose both targets before saving",13,White,true);
-        var ac=LimitChoice(24,388,198,liveAc);var dc=LimitChoice(238,388,198,liveDc);
-        Label(24,438,198,22,"AC TARGET",11,Muted,true);Label(238,438,198,22,"DC TARGET",11,Muted,true);
+        Label(24,204,412,42,Value(s?.Battery,"%")+"  ·  "+OnOff(s?.Charging,"Charging","Not charging"),25,Blue,true);
+        Label(24,248,412,22,"Cable: "+OnOff(s?.PluggedIn,"Connected","Disconnected"),13,Muted);
+        // Hyundai's estimate while charging: power and when the current charge should finish.
+        string? eta=ChargeEta(s);
+        if(eta!=null||s?.Charging==true&&s.ChargingPowerKw!=null)
+            Label(24,272,412,22,(s?.ChargingPowerKw is double kw?$"Charging at {kw:0.#} kW":"Charging")+(eta!=null?" · "+eta:""),13,White,true).Name="ChargeEta";
+        Label(24,298,412,22,$"Reported targets  AC {Value(s?.AcLimit,"%")}  /  DC {Value(s?.DcLimit,"%")}",13,Muted);
+        // One tap sends both targets.
+        foreach(var (preset,x,name) in new[]{(ChargePreset.Daily,24,"PresetDaily"),(ChargePreset.RoadTrip,238,"PresetRoadTrip")})
+            CommandFeedback(RemoteButton(x,330,198,44,preset.Name,13,()=>{liveAc=preset.Ac;liveDc=preset.Dc;_ = SendLive(new(ActionKind.ChargeLimit,preset.Ac),preset.Dc);},
+                s?.AcLimit==preset.Ac&&s?.DcLimit==preset.Dc,name),ActionKind.ChargeLimit,false,null,preset.Ac);
+        Label(24,386,412,20,"OR CHOOSE TARGETS",11,Muted,true);
+        var ac=LimitChoice(24,410,198,liveAc);var dc=LimitChoice(238,410,198,liveDc);
+        Label(24,456,198,20,"AC TARGET",11,Muted,true);Label(238,456,198,20,"DC TARGET",11,Muted,true);
         ac.ItemSelected+=i=>{liveAc=50+(int)i*10;};
         dc.ItemSelected+=i=>{liveDc=50+(int)i*10;};
-        CommandFeedback(RemoteButton(24,490,412,49,"Set AC and DC targets",13,()=>{
+        CommandFeedback(RemoteButton(24,484,412,46,"Set AC and DC targets",13,()=>{
             _ = SendLive(new(ActionKind.ChargeLimit,liveAc),liveDc);
         }),ActionKind.ChargeLimit,false);
-        Label(24,552,412,44,"Tap Set AC and DC targets to apply both displayed selections.",11,Muted,false,true);
-        CommandFeedback(RemoteButton(24,622,198,52,"Start charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:true)),true),ActionKind.Charge,false,true);
-        CommandFeedback(RemoteButton(238,622,198,52,"Stop charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:false))),ActionKind.Charge,false,false);
+        CommandFeedback(RemoteButton(24,552,198,52,"Start charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:true)),true),ActionKind.Charge,false,true);
+        CommandFeedback(RemoteButton(238,552,198,52,"Stop charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:false))),ActionKind.Charge,false,false);
         LiveButton(24,708,412,46,"Update",13,()=>_ = RefreshLive(false));
         Label(24,758,412,18,Updated(s?.RetrievedAt),11,Muted);
+    }
+    // "full at 6:40 AM" (or with the weekday when it isn't today), from Hyundai's minutes-left estimate.
+    private static string? ChargeEta(LiveVehicleState? s)
+    {
+        // An estimate that has already passed came from an old report; don't show it as current.
+        if(ChargeEstimate.FullAt(s) is not DateTimeOffset at||at<=DateTimeOffset.UtcNow)return null;
+        var local=at.ToLocalTime();
+        return "full at "+(local.Date==DateTimeOffset.Now.Date?local.ToString("h:mm tt"):local.ToString("ddd h:mm tt"));
     }
     private OptionButton LimitChoice(int x,int y,int w,int value)
     {
@@ -315,7 +355,8 @@ public partial class Main
         var button=LiveButton(x,y,w,h,text,size,action,primary,name);
         button.Disabled|=monitoringCommand;return button;
     }
-    private void CommandFeedback(Button button,ActionKind kind,bool active,bool? enabled=null)
+    // value limits the …/✓/!/? mark to the button whose command value was sent (presets of the same kind).
+    private void CommandFeedback(Button button,ActionKind kind,bool active,bool? enabled=null,int? value=null)
     {
         if(active) {
             foreach(string state in new[]{"normal","hover","pressed","disabled"})
@@ -324,7 +365,7 @@ public partial class Main
             button.AddThemeColorOverride("font_disabled_color",White);
         }
         bool match=feedbackKind==kind || kind==ActionKind.Lock&&feedbackKind==ActionKind.Unlock;
-        if(!match || enabled!=null&&enabled!=feedbackEnabled)return;
+        if(!match || enabled!=null&&enabled!=feedbackEnabled || value!=null&&value!=feedbackValue)return;
         button.Text+=monitoringCommand?" …":connection?.Pending?.Outcome switch {
             RemoteOutcome.Confirmed=>" ✓",RemoteOutcome.Failed=>" !",RemoteOutcome.Unknown=>" ?",_=>""};
         button.TooltipText=connection?.Pending?.Message??"";
@@ -349,7 +390,7 @@ public partial class Main
             } finally {
                 if(version==liveEpoch&&active.Pending!=null&&!ReferenceEquals(previousReceipt,active.Pending)) {
                     feedbackKind=cmd.Kind;
-                    feedbackEnabled=cmd.Enabled;
+                    feedbackEnabled=cmd.Enabled;feedbackValue=cmd.Value;
                     monitoringCommand=true;
                     commandMonitor=MonitorLive(active,cmd,dc,before,version,token);
                 }

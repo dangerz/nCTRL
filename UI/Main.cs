@@ -70,6 +70,8 @@ public partial class Main : Control
         driverSeat=SeatPreference(cfg.GetValue("climate","driver_seat",0).AsInt32());
         passengerSeat=SeatPreference(cfg.GetValue("climate","passenger_seat",0).AsInt32());
         wheelHeat=cfg.GetValue("climate","steering_wheel",false).AsBool();
+        climateDefrost=cfg.GetValue("climate","defrost",false).AsBool();
+        warmPreset=LoadPreset(cfg,"preset_warm",ClimatePreset.WarmUp);coolPreset=LoadPreset(cfg,"preset_cool",ClimatePreset.CoolDown);
         disclaimer=Disclaimer.Restore(cfg.GetValue("disclaimer","version",0).AsInt32(),
             cfg.GetValue("disclaimer","account","").AsString(),cfg.GetValue("disclaimer","accepted_at","").AsString());
     }
@@ -84,6 +86,12 @@ public partial class Main : Control
         cfg.SetValue("climate","driver_seat",(int)driverSeat);
         cfg.SetValue("climate","passenger_seat",(int)passengerSeat);
         cfg.SetValue("climate","steering_wheel",wheelHeat);
+        cfg.SetValue("climate","defrost",climateDefrost);
+        foreach(var (section,preset) in new[]{("preset_warm",warmPreset),("preset_cool",coolPreset)}) {
+            cfg.SetValue(section,"temperature",preset.TemperatureF);cfg.SetValue(section,"driver_seat",(int)preset.DriverSeat);
+            cfg.SetValue(section,"passenger_seat",(int)preset.PassengerSeat);cfg.SetValue(section,"steering_wheel",preset.SteeringWheel);
+            cfg.SetValue(section,"defrost",preset.Defrost);
+        }
         if(disclaimer!=null) {
             cfg.SetValue("disclaimer","version",disclaimer.Version);
             cfg.SetValue("disclaimer","account",disclaimer.AccountKey);
@@ -91,6 +99,10 @@ public partial class Main : Control
         }
         if(cfg.Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
     }
+    private static ClimatePreset LoadPreset(ConfigFile cfg,string section,ClimatePreset defaults)=>!cfg.HasSection(section)?defaults:
+        defaults.With(cfg.GetValue(section,"temperature",defaults.TemperatureF).AsInt32(),cfg.GetValue(section,"driver_seat",(int)defaults.DriverSeat).AsInt32(),
+            cfg.GetValue(section,"passenger_seat",(int)defaults.PassengerSeat).AsInt32(),cfg.GetValue(section,"steering_wheel",defaults.SteeringWheel).AsBool(),
+            cfg.GetValue(section,"defrost",defaults.Defrost).AsBool());
     private static SeatMode SeatPreference(int stored)=>Enum.IsDefined(typeof(SeatMode),stored)?(SeatMode)stored:SeatMode.Off;
     private void PickPaint(string name,string hex)
     {

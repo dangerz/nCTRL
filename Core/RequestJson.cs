@@ -25,7 +25,7 @@ internal static class RequestJson
     internal static string Doors(string username,string vin,string pin)=>Object(w=>{
         w.WriteString("userName",username);w.WriteString("vin",vin);w.WriteString("pin",pin);
     });
-    // heating1: 0 off, 3 steering wheel only (upstream HEAT_STATUS). Defrost and rear-window heat stay off.
+    // heating1: 0 off, 3 steering wheel only (upstream HEAT_STATUS). Front defrost is optional; rear-window heat stays off.
     // Flash lights and horn & lights: upstream sends only the account and VIN (no service PIN in the body).
     internal static string HornLights(string username,string vin)=>Object(w=>{
         w.WriteString("userName",username);w.WriteString("vin",vin);
@@ -34,7 +34,7 @@ internal static class RequestJson
         options??=new();
         w.WriteNumber("airCtrl",1);w.WriteStartObject("airTemp");
         w.WriteString("value",temperature.ToString(CultureInfo.InvariantCulture));w.WriteNumber("unit",1);w.WriteEndObject();
-        w.WriteBoolean("defrost",false);w.WriteNumber("heating1",options.SteeringWheel?3:0);
+        w.WriteBoolean("defrost",options.Defrost);w.WriteNumber("heating1",options.SteeringWheel?3:0);
         if(generation==3){
             w.WriteNumber("igniOnDuration",5);w.WriteStartObject("seatHeaterVentInfo");
             w.WriteNumber("drvSeatHeatState",SeatCodes.Code(options.DriverSeat));w.WriteNumber("astSeatHeatState",SeatCodes.Code(options.PassengerSeat));

@@ -145,6 +145,18 @@ static class ProtocolTests
             Check(root.GetProperty("heating1").GetInt32()==3&&!root.GetProperty("defrost").GetBoolean(),"Steering wheel only; defrost and rear window stay off");
             Check(f.Calls.Count(x=>x.Method=="POST"&&x.Path.StartsWith("/ac/"))==1,"Seats and steering wheel ride on the single climate POST");
         }
+        (c,f)=await Session();using(c)
+        {
+            f.Add("");await c.ExecuteAsync(new(ActionKind.Climate,76,true,ClimatePreset.WarmUp.Options(true)),null,default);
+            using var p=JsonDocument.Parse(f.Calls[^1].Body);var root=p.RootElement;var seats=root.GetProperty("seatHeaterVentInfo");
+            Check(root.GetProperty("defrost").GetBoolean()&&root.GetProperty("heating1").GetInt32()==3&&root.GetProperty("airTemp").GetProperty("value").GetString()=="76"&&
+                seats.GetProperty("drvSeatHeatState").GetInt32()==8&&seats.GetProperty("astSeatHeatState").GetInt32()==8,"Warm up preset: 76°F, both seats heat high, wheel, front defrost");
+        }
+        (c,f)=await Session();using(c)
+        {
+            f.Add("");await c.ExecuteAsync(new(ActionKind.ChargeLimit,ChargePreset.RoadTrip.Ac),ChargePreset.RoadTrip.Dc,default);
+            Check(f.Calls[^1].Body.Contains("\"targetSOClevel\":100")&&!f.Calls[^1].Body.Contains("\"targetSOClevel\":80"),"Road trip preset sends 100% AC and DC");
+        }
         f=new Fake();f.Add(Token);f.Add(Enrollment.Replace("\"3\"","\"2\""));f.Add(Status);
         using(c=new HyundaiUsClient(f))
         {

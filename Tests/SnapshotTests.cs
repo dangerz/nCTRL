@@ -28,6 +28,8 @@ static class SnapshotTests
         Check(healthBack?.State.Health==health,"Health and openings round-trip");
         Check(healthBack?.State.StatusLocation==null&&!healthJson.Contains("40.11")&&!healthJson.Contains("74.22"),"The status location is never saved");
         Check(VehicleSnapshot.Decode(json)?.State.Health==null,"Snapshots saved before health existed still open");
+        var charging=VehicleSnapshot.Decode((snapshot with {State=state with {Charging=true,ChargingPowerKw=7.2,ChargeMinutesLeft=95}}).Encode());
+        Check(charging?.State.ChargingPowerKw==7.2&&charging.State.ChargeMinutesLeft==95&&VehicleSnapshot.Decode(json)?.State.ChargeMinutesLeft==null,"Charging power and minutes left round-trip; older snapshots have none");
         var ignored=VehicleSnapshot.Decode((withHealth with {AtIgnoredPlace=true}).Encode());
         Check(ignored?.AtIgnoredPlace==true&&VehicleSnapshot.Decode(json)?.AtIgnoredPlace==false,"Only a yes/no ignored-place flag is saved; older snapshots read as no");
         Console.WriteLine($"PASS: {count} vehicle-snapshot checks.");
