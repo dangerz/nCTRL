@@ -31,6 +31,14 @@ static class ProtocolTests
             if(r.RequestUri!.Host!="api.telematics.hyundaiusa.com"||r.RequestUri.Scheme!="https")throw new Exception("Unexpected origin");
             Calls.Add(new(r.RequestUri.AbsolutePath,r.Method.Method,r.Content==null?"":await r.Content.ReadAsStringAsync(ct),r.Headers.ToDictionary(x=>x.Key,x=>string.Join(",",x.Value),StringComparer.OrdinalIgnoreCase)));
             Calls[^1].Headers["user-agent"]=r.Headers.UserAgent.ToString();
+            if(r.RequestUri.AbsolutePath.StartsWith("/ac/v2/")&&!r.RequestUri.AbsolutePath.Contains("/enrollment/")) {
+                Check(!new[]{"origin","referer","encryptFlag","accept-language","sec-fetch-mode","accept-encoding"}.Any(Calls[^1].Headers.ContainsKey),"Vehicle requests use fiveN minimal header profile");
+                Check(Calls[^1].Headers["user-agent"]=="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","All vehicle requests use fiveN user agent");
+                if(r.Method==HttpMethod.Post) {
+                    bool doors=r.RequestUri.AbsolutePath.Contains("/rcs/rdo/");
+                    Check(Calls[^1].Headers.Count==(doors?17:16)&&Calls[^1].Headers.ContainsKey("username")&&Calls[^1].Headers.ContainsKey("accessToken")&&Calls[^1].Headers.ContainsKey("blueLinkServicePin"),"Every command uses fiveN common account/vehicle/PIN headers; APPCLOUD-VIN is door-only");
+                }
+            }
             if(Replies.Count==0)throw new Exception("Unexpected request / retry");return Replies.Dequeue()();
         }
     }
@@ -39,10 +47,10 @@ static class ProtocolTests
     static async Task Reject(Func<Task> f,string name){try{await f();}catch(BluelinkException){count++;return;}throw new Exception("Expected rejection: "+name);}
     static async Task<BluelinkException> Failure(Func<Task> action)
     {try{await action();}catch(BluelinkException e){return e;}throw new Exception("Expected sanitized failure");}
-    static async Task<(HyundaiUsClient,Fake)> Session()
+    static async Task<(HyundaiUsClient,Fake)> Session(TimeProvider? clock=null)
     {
         var f=new Fake();f.Add(Token);f.Add(Enrollment);f.Add(Status);
-        var c=new HyundaiUsClient(f);
+        var c=new HyundaiUsClient(f,clock);
         var list=await c.LoginAsync("tester@example.invalid","test-password","1234",default);
         Check(list.Count==1&&list[0].Electric&&list[0].Generation==3,"Enrollment parsing");
         await c.SelectAsync(list[0],default);return(c,f);
@@ -76,6 +84,7 @@ static class ProtocolTests
     }
     public static async Task Run()
     {
+        await AutomaticFollowup();
         Check(!JsonSerializer.IsReflectionEnabledByDefault,"Tests enforce mobile JSON reflection restrictions");
         await MobilePayloadsAndFailures();
         var (c,f)=await Session();using(c)
@@ -92,6 +101,7 @@ static class ProtocolTests
             Check(f.Calls[^1].Path.EndsWith("/rcs/rdo/on")&&f.Calls[^1].Headers["APPCLOUD-VIN"]=="TESTVIN0000000001","Unlock route and VIN");
             using var doors=JsonDocument.Parse(f.Calls[^1].Body);
             Check(doors.RootElement.GetProperty("userName").GetString()=="tester@example.invalid"&&doors.RootElement.GetProperty("vin").GetString()=="TESTVIN0000000001","Door payload in reflection-disabled runtime");
+            Check(doors.RootElement.GetProperty("pin").GetString()=="1234"&&doors.RootElement.EnumerateObject().Count()==3,"Unlock body matches fiveN including service PIN");
             Check(receipt.Outcome==RemoteOutcome.Accepted&&c.State==initial,"Acceptance never changes vehicle state");
             Check(receipt.Message.Contains("HTTP 200")&&receipt.Message.Contains("completion pending")&&!receipt.Message.Contains("transaction-1"),"Command receipt displays HTTP acceptance and pending completion without tracking secrets");
             var calls=f.Calls.Count;await Reject(()=>c.ExecuteAsync(new(ActionKind.Unlock),null,default),"Duplicate command");Check(f.Calls.Count==calls,"Duplicate not submitted");
@@ -103,6 +113,8 @@ static class ProtocolTests
         {
             f.Add("{}");await c.ExecuteAsync(new(ActionKind.Lock),null,default);
             Check(f.Calls[^1].Path.EndsWith("/rcs/rdo/off"),"Lock endpoint");
+            using var lockBody=JsonDocument.Parse(f.Calls[^1].Body);
+            Check(lockBody.RootElement.GetProperty("pin").GetString()=="1234"&&f.Calls[^1].Headers["blueLinkServicePin"]=="1234","Lock sends fiveN PIN in body and header");
             Check(c.Pending?.TransactionId==null&&c.Pending?.Outcome==RemoteOutcome.Accepted,"Empty tracking ID supported");
             Check(c.Pending!.Message.Contains("completion unverified"),"Untracked acceptance does not claim car response");
         }
@@ -263,5 +275,63 @@ static class ProtocolTests
             }
         }
         Console.WriteLine($"PASS: {count} offline Hyundai protocol checks (no real API requests).");
+    }
+
+    sealed class Clock : TimeProvider
+    {
+        DateTimeOffset now=DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow()=>now;
+        public Task Advance(TimeSpan duration,CancellationToken ct){ct.ThrowIfCancellationRequested();now+=duration;return Task.CompletedTask;}
+    }
+    static async Task AutomaticFollowup()
+    {
+        foreach(string scenario in new[]{"tracked","tracking-unavailable","untracked","stale","already-matched","failed","502","denied","cancelled"})
+        {
+            var clock=new Clock();var (c,f)=await Session(clock);using(c)
+            {
+                var before=c.State;
+                var cmd=new VehicleCommand(ActionKind.Climate,75,true);
+                f.Add("",tid:scenario is "tracked" or "tracking-unavailable" or "failed"?"fixture-tracking":null);
+                await c.ExecuteAsync(cmd,null,default);
+                Check(f.Calls.Count(x=>x.Path.Contains("/evc/")&&x.Method=="POST")==1&&f.Calls[^1].Path.EndsWith("/fatc/start"),"Climate On sends exactly one climate POST, never charging");
+                Check(!f.Calls[^1].Body.Contains("charge",StringComparison.OrdinalIgnoreCase),"Climate payload has no charge command fields");
+                string changed=Status.Replace("10:00:00","10:01:00").Replace("\"airCtrlOn\":false","\"airCtrlOn\":true").Replace("\"72\"","\"75\"");
+                if(scenario=="tracked") {f.Add("{\"status\":\"SUCCESS\"}");f.Add(changed);}
+                else if(scenario=="tracking-unavailable") {f.Add("",HttpStatusCode.BadGateway);f.Add(changed);}
+                else if(scenario=="failed") f.Add("{\"status\":\"ERROR\"}");
+                else if(scenario=="untracked")f.Add(changed);
+                else if(scenario=="denied")f.Add("",HttpStatusCode.TooManyRequests);
+                else if(scenario=="502")for(int i=0;i<8;i++)f.Add("",HttpStatusCode.BadGateway);
+                else if(scenario=="stale")for(int i=0;i<8;i++)f.Add(Status);
+                else if(scenario=="already-matched") {
+                    before=HyundaiUsClient.ParseState(JsonDocument.Parse(changed.Replace("10:01:00","10:00:00")).RootElement);
+                    for(int i=0;i<8;i++)f.Add(changed);
+                }
+                int updates=0,calls=f.Calls.Count;
+                using var cancel=new CancellationTokenSource();
+                if(scenario=="cancelled")cancel.Cancel();
+                try {await c.MonitorCommandAsync(cmd,null,before,()=>updates++,cancel.Token,clock.Advance);}
+                catch(OperationCanceledException) when(scenario=="cancelled") { }
+                Check(f.Calls.Count(x=>x.Method=="POST"&&x.Path.StartsWith("/ac/"))==1,"Automatic follow-up never retries commands: "+scenario);
+                Check(f.Calls.Skip(calls).All(x=>x.Method=="GET"&&x.Headers["refresh"]=="false"),"Follow-up only reads cached state/tracking: "+scenario);
+                if(scenario is "tracked" or "tracking-unavailable" or "untracked")Check(c.Pending?.Outcome==RemoteOutcome.Confirmed&&c.State?.ClimateOn==true&&updates==1,"Automatic completion and state update: "+scenario);
+                else if(scenario=="failed")Check(c.Pending?.Outcome==RemoteOutcome.Failed&&c.State==before,"Failure preserves state");
+                else if(scenario=="cancelled")Check(f.Calls.Count==calls&&updates==0,"Cancelled monitor sends no reads or updates");
+                else Check(c.Pending?.Outcome==RemoteOutcome.Unknown,"No fabricated completion: "+scenario);
+                if(scenario is "502" or "denied" or "stale")Check(c.State==before||c.State?.ReportedAt==before?.ReportedAt,"Failed/stale reads preserve reported values");
+                if(scenario=="denied")Check(f.Calls.Count==calls+1,"Rate limiting ends automatic checks");
+            }
+        }
+        using var doc=JsonDocument.Parse(Status);var original=HyundaiUsClient.ParseState(doc.RootElement);
+        foreach(var pair in new[]{
+            (new VehicleCommand(ActionKind.Unlock),original with {Locked=false,ReportedAt="new"},(int?)null),
+            (new VehicleCommand(ActionKind.Lock),original with {Locked=true,ReportedAt="new"},(int?)null),
+            (new VehicleCommand(ActionKind.Charge,Enabled:true),original with {Charging=true,ReportedAt="new"},(int?)null),
+            (new VehicleCommand(ActionKind.ChargeLimit,90),original with {AcLimit=90,DcLimit=100,ReportedAt="new"},(int?)100)})
+        {
+            var start=pair.Item1.Kind==ActionKind.Lock?original with {Locked=false}:original;
+            Check(HyundaiUsClient.ChangedToRequestedState(pair.Item1,pair.Item3,start,pair.Item2),"Requested transition recognized: "+pair.Item1.Kind);
+            Check(!HyundaiUsClient.ChangedToRequestedState(pair.Item1,pair.Item3,start,pair.Item2 with {ReportedAt=start.ReportedAt}),"Old timestamp cannot confirm: "+pair.Item1.Kind);
+        }
     }
 }

@@ -5,7 +5,7 @@
     <NctrlVaultOutput>$(MSBuildThisFileDirectory)build/aot/$(RuntimeIdentifier)/$(Configuration)</NctrlVaultOutput>
   </PropertyGroup>
   <ItemGroup Condition="'$(GodotTargetPlatform)' == 'ios'">
-    <DirectPInvoke Include="__Internal!ng_vault_availability;__Internal!ng_vault_has_account;__Internal!ng_vault_start;__Internal!ng_vault_take_result;__Internal!ng_vault_free;__Internal!ng_vault_cancel;__Internal!ng_vault_resume" />
+    <DirectPInvoke Include="__Internal!ng_vault_availability;__Internal!ng_vault_has_account;__Internal!ng_vault_start;__Internal!ng_vault_take_result;__Internal!ng_vault_free;__Internal!ng_vault_cancel;__Internal!ng_vault_resume;__Internal!ng_vault_open_map" />
     <NativeLibrary Include="$(NctrlVaultOutput)/NGarageVault.a" />
     <LinkerArg Include="-framework Foundation;-framework Security;-framework LocalAuthentication;-framework UIKit" />
   </ItemGroup>

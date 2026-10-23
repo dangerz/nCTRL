@@ -7,5 +7,6 @@ static class Program
         await ProtocolTests.Run();
         await VaultTests.Run();
         VehicleLinkTests.Run();
+        await MapTests.Run();
     }
 }

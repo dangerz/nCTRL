@@ -33,6 +33,7 @@ public partial class Main
                 "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
                 "/ac/v2/rcs/rdo/on"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
+                "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
             };
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
@@ -73,14 +74,23 @@ public partial class Main
             Navigate("Appearance");
             if(canvas.GetNodeOrNull<LineEdit>("GarageName")==null)throw new Exception("Garage appearance editor missing");
             Navigate("Car");
+            await OpenVehicleLocation();
+            if(connection!.Location==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null||fixture.Commands!=0)
+                throw new Exception("Location entry did not automatically load map without a command");
+            await Capture("19-vehicle-map-test.png");Navigate("Car");
             var door=canvas.GetNode<Button>("DoorControl");
+            if(door.GetThemeStylebox("normal") is not StyleBoxFlat style||style.BgColor!=Red)
+                throw new Exception("Locked door control is missing the N red accent");
+            foreach(var child in canvas.GetChildren())
+                if(child is Button b&&b.Text.Contains("Check last command",StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("Manual command check is still visible");
             if(door.Text!="Unlock"||door.Disabled)throw new Exception("Combined door button does not match reported lock state");
             door.EmitSignal(Godot.Button.SignalName.Pressed);
             while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             foreach(var child in GetChildren())if(child is ConfirmationDialog)throw new Exception("Direct control opened a confirmation");
             if(fixture.Commands!=1||connection!.State!.Locked!=true)throw new Exception("Command count or optimistic update error");
             await Capture("17-command-accepted-test.png");
-            await CheckLive();
+            await commandMonitor;
             if(connection.Pending?.Outcome!=RemoteOutcome.Confirmed)throw new Exception("Command confirmation missing");
             Navigate("Activity");await Capture("18-live-activity-test.png");
             Disconnect();

@@ -4,9 +4,26 @@
 #import <UIKit/UIKit.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 // C ABI bridge: no managed callbacks or credential logging. All results are consumed once.
 #define NG_EXPORT extern "C" __attribute__((visibility("default"), used))
+// No canOpenURL probe/Info.plist allowlist needed: the completion callback tells
+// us whether the system could dispatch to its default navigation application.
+NG_EXPORT void ng_vault_open_map(double latitude, double longitude) {
+    if (!isfinite(latitude) || !isfinite(longitude) || fabs(latitude)>90 || fabs(longitude)>180) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *point=[[NSString alloc] initWithFormat:@"%.8f,%.8f"
+            locale:[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"],latitude,longitude];
+        NSURL *preferred=[NSURL URLWithString:[@"geo-navigation:///place?coordinate=" stringByAppendingString:point]];
+        NSURL *fallback=[NSURL URLWithString:[NSString stringWithFormat:@"https://maps.apple.com/?ll=%@&q=Vehicle&z=16",point]];
+        [[UIApplication sharedApplication] openURL:preferred options:@{} completionHandler:^(BOOL opened) {
+            if (!opened) dispatch_async(dispatch_get_main_queue(), ^{
+                [[UIApplication sharedApplication] openURL:fallback options:@{} completionHandler:nil];
+            });
+        }];
+    });
+}
 static NSObject *guard;
 static NSData *resultData;
 static LAContext *activeContext;

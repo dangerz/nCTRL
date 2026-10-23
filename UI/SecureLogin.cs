@@ -22,7 +22,7 @@ public partial class Main
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection?.Dispose();connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;accountKey="";lastCheck=default;
+        history.Clear();manualAccountEntry=false;accountKey="";monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
         screen="Connect";notice="";noticeError=false;
         if(render&&IsInsideTree())Render();
     }

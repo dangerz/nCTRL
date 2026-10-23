@@ -28,7 +28,7 @@ Saving first authenticates the owner, then creates or updates the protected Keyc
 
 ### Build on a Mac
 
-The vault is now compiled and statically linked into the C# NativeAOT framework during Godot's iOS export. `IoniqN.csproj` imports `Native/iOS/Vault.targets`, which runs `build-aot.sh` for the selected device/simulator architecture and binds the seven C bridge functions (including foreground cover cleanup) using DirectPInvoke. A failed native compile/link stops export. This replaces the previous optional `.gdip` integration, which could be omitted from an otherwise successful export or leave `__Internal` imports unresolved at runtime.
+The vault is now compiled and statically linked into the C# NativeAOT framework during Godot's iOS export. `IoniqN.csproj` imports `Native/iOS/Vault.targets`, which runs `build-aot.sh` for the selected device/simulator architecture and binds the eight C bridge functions (including foreground cover cleanup and system maps handoff) using DirectPInvoke. A failed native compile/link stops export. This replaces the previous optional `.gdip` integration, which could be omitted from an otherwise successful export or leave `__Internal` imports unresolved at runtime.
 
 1. On your Mac, open this updated project with Godot .NET 4.7 and Xcode selected via `xcode-select`. Build the C# project so the editor addon loads.
 2. Keep **nCTRL Secure Vault** enabled under Project Settings → Plugins (now enabled in `project.godot`). It supplies `NSFaceIDUsageDescription` to the exported Info.plist. Android also uses this addon for its AAR.
@@ -70,14 +70,14 @@ Desktop builds have no credential-storage backend. They disable the save option 
 
 Cancelling a biometric prompt returns to the locked flow; no Hyundai login is initiated. Locking during an in-flight unlock/login cancels the operation and invalidates its session generation, so a late result cannot reopen the live session. Removing saved data is allowed even if biometrics are no longer available. If deletion fails, the error is shown and deletion can be retried.
 
-While unlocked, credentials exist in process memory because Hyundai's token refresh protocol requires the password. Tokens, vehicle state and location are not persisted. Managed strings cannot be guaranteed to be cryptographically zeroized; the implementation drops references on lock/sign-out. Native temporary byte buffers are cleared where possible. Errors are sanitized, and no credentials or raw API responses are logged.
+While unlocked, credentials exist in process memory because Hyundai's token refresh protocol requires the password. Tokens, vehicle state and exact location are not persisted. Public map tiles are cached in user://map-cache for at least seven days and can reveal the viewed area; they contain no credentials or vehicle marker. Viewing the map shares the area with OpenStreetMap, and opening an external map shares the vehicle coordinates with that app. Managed strings cannot be guaranteed to be cryptographically zeroized; the implementation drops references on lock/sign-out. Native temporary byte buffers are cleared where possible. Errors are sanitized, and no credentials or raw API responses are logged.
 
 ## Validation and remaining device checks
 
 Validation repeated in the Windows checkout:
 
 - C# Debug and ExportRelease application/export-plugin builds pass with zero warnings/errors (October 23, 2026).
-- 32 secure-login coordinator checks with a fake native bridge, plus 149 protocol and 11 remembered-vehicle/door-control checks (192 total), with JSON reflection explicitly disabled. These cover safe mobile runtime diagnostics, capability failures and existing no-retry/credential-handling behavior.
+- 32 secure-login coordinator checks with a fake native bridge, plus 227 protocol and 11 remembered-vehicle/door-control checks (270 total), with JSON reflection explicitly disabled. These cover safe mobile runtime diagnostics, capability failures and existing no-retry/credential-handling behavior.
 - The previous Android Java/AAR validation remains unchanged; Android export/device checks have not been performed.
 - iOS MSBuild settings were evaluated for NativeAOT linkage. Apple native compilation and a signed export remain unverified; Windows Git Bash could not start in this sandbox, so the new shell script could not be executed here either.
 - Debug-only security smoke remains available for save preference, background lock, cancelled biometric unlock, mocked unlock, stale-unlock rejection and account removal. The latest Godot smoke launch failed with missing .NET assemblies and crashed before app test execution; current resume/rendered flows remain unverified. Prior rendered results are not native/device verification; see README for details.

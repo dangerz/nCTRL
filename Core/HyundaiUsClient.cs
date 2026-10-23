@@ -33,6 +33,7 @@ public sealed class HyundaiUsClient : IDisposable
 {
     private const string Origin = "https://api.telematics.hyundaiusa.com";
     private readonly HttpClient http;
+    private readonly TimeProvider clock;
     private readonly SemaphoreSlim gate = new(1, 1);
     private string username="", password="", pin="", access="", refresh="";
     private DateTimeOffset expires, blockedUntil, nextCommand, nextRead, nextWake, nextLocation;
@@ -41,6 +42,7 @@ public sealed class HyundaiUsClient : IDisposable
     public LiveVehicleState? State { get; private set; }
     public RemoteReceipt? Pending { get; private set; }
     public VehicleLocation? Location { get; private set; }
+    public bool CanRequestLocation=>clock.GetUtcNow()>=nextLocation;
     private DateTimeOffset submittedAt;
 
     public HyundaiUsClient() : this(new HttpClientHandler {
@@ -48,8 +50,8 @@ public sealed class HyundaiUsClient : IDisposable
         AllowAutoRedirect=false, AutomaticDecompression=DecompressionMethods.None
     }) { }
     // Injection is for deterministic offline protocol tests; host remains fixed.
-    public HyundaiUsClient(HttpMessageHandler handler)
-    { http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(45),MaxResponseContentBufferSize=2*1024*1024}; }
+    public HyundaiUsClient(HttpMessageHandler handler,TimeProvider? clock=null)
+    { this.clock=clock??TimeProvider.System;http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(45),MaxResponseContentBufferSize=2*1024*1024}; }
 
     public async Task<IReadOnlyList<EnrolledVehicle>> LoginAsync(string email,string secret,string servicePin,CancellationToken ct)
     {
@@ -97,7 +99,7 @@ public sealed class HyundaiUsClient : IDisposable
             await EnsureToken(ct);
             Selected=vehicle;State=null;Location=null;Pending=null;
             State=await ReadCore(false,ct);
-            nextRead=DateTimeOffset.UtcNow.AddSeconds(15);
+            nextRead=clock.GetUtcNow().AddSeconds(15);
         }
         catch { Selected=null;State=null;throw; }
         finally { gate.Release(); }
@@ -108,11 +110,11 @@ public sealed class HyundaiUsClient : IDisposable
         try
         {
             NeedVehicle();
-            if(DateTimeOffset.UtcNow < (wakeVehicle?nextWake:nextRead))
+            if(clock.GetUtcNow() < (wakeVehicle?nextWake:nextRead))
                 throw new BluelinkException(wakeVehicle?"Wait two minutes between wake requests.":"Wait 15 seconds between status requests.");
             await EnsureToken(ct);
-            nextRead=DateTimeOffset.UtcNow.AddSeconds(15);
-            if(wakeVehicle)nextWake=DateTimeOffset.UtcNow.AddMinutes(2);
+            nextRead=clock.GetUtcNow().AddSeconds(15);
+            if(wakeVehicle)nextWake=clock.GetUtcNow().AddMinutes(2);
             State=await ReadCore(wakeVehicle,ct);return State;
         }
         finally { gate.Release(); }
@@ -129,16 +131,16 @@ public sealed class HyundaiUsClient : IDisposable
         try
         {
             NeedVehicle();
-            if(Pending?.Outcome is RemoteOutcome.Accepted && DateTimeOffset.UtcNow-submittedAt<TimeSpan.FromMinutes(2))
-                throw new BluelinkException("A command is awaiting confirmation. Check its status before sending another.");
-            if(DateTimeOffset.UtcNow<nextCommand)throw new BluelinkException("Wait 30 seconds between remote commands.");
+            if(Pending?.Outcome is RemoteOutcome.Accepted && clock.GetUtcNow()-submittedAt<TimeSpan.FromMinutes(2))
+                throw new BluelinkException("A command is being checked automatically. Please wait.");
+            if(clock.GetUtcNow()<nextCommand)throw new BluelinkException("Wait 30 seconds between remote commands.");
             await EnsureToken(ct);
             string route;string? body=null;
             switch(command.Kind)
             {
                 case ActionKind.Lock: case ActionKind.Unlock:
                     route="rcs/rdo/"+(command.Kind==ActionKind.Lock?"off":"on");
-                    body=RequestJson.Doors(username,Selected!.Vin);break;
+                    body=RequestJson.Doors(username,Selected!.Vin,pin);break;
                 case ActionKind.Climate:
                     NeedElectric();
                     if(command.Value<62||command.Value>82)throw new BluelinkException("Choose 62–82°F.");
@@ -156,8 +158,8 @@ public sealed class HyundaiUsClient : IDisposable
                     body=RequestJson.ChargeLimits(command.Value,dcLimit.Value);break;
                 default:throw new BluelinkException("Unsupported remote command.");
             }
-            nextCommand=DateTimeOffset.UtcNow.AddSeconds(30);
-            submittedAt=DateTimeOffset.UtcNow;
+            nextCommand=clock.GetUtcNow().AddSeconds(30);
+            submittedAt=clock.GetUtcNow();
             Pending=null;
             try
             {
@@ -165,7 +167,7 @@ public sealed class HyundaiUsClient : IDisposable
                     command.Kind is ActionKind.Lock or ActionKind.Unlock?new Dictionary<string,string>{{"APPCLOUD-VIN",Selected!.Vin}}:null,stage:"Command");
                 // HTTP success is acceptance, not evidence of vehicle state.
                 Pending=new(RemoteOutcome.Accepted,$"Hyundai accepted the request (HTTP {reply.HttpStatus}). "+(reply.TransactionId is null?
-                    "No tracking ID; completion unverified. Refresh vehicle status.":"Vehicle completion pending. Tap Check last command."),reply.TransactionId);
+                    "No tracking ID; completion unverified. Checking state automatically.":"Vehicle completion pending; checking automatically."),reply.TransactionId);
             }
             catch(OperationCanceledException) {
                 Pending=new(RemoteOutcome.Unknown,"Request interrupted; outcome unknown. Check vehicle status before retrying.",null);throw;
@@ -196,20 +198,85 @@ public sealed class HyundaiUsClient : IDisposable
                 Outcome=status=="SUCCESS"?RemoteOutcome.Confirmed:status=="ERROR"?RemoteOutcome.Failed:RemoteOutcome.Accepted,
                 Message=status=="SUCCESS"?"Hyundai confirmed completion. Refresh for reported vehicle state.":
                     status=="ERROR"?"Hyundai reported command failure.":"Command still pending or status unavailable. No retry was sent."};
-            if(DateTimeOffset.UtcNow-submittedAt>TimeSpan.FromMinutes(2)&&Pending.Outcome==RemoteOutcome.Accepted)
+            if(clock.GetUtcNow()-submittedAt>TimeSpan.FromMinutes(2)&&Pending.Outcome==RemoteOutcome.Accepted)
                 Pending=Pending with {Outcome=RemoteOutcome.Unknown,Message="Confirmation timed out. Refresh state before deciding to retry."};
             return Pending;
         }
         finally { gate.Release(); }
     }
+    // Read-only follow-up. Never resubmits a command, even after transport failure.
+    // The UI owns cancellation and prevents a second command while this is running.
+    public Task MonitorCommandAsync(VehicleCommand command,int? dcLimit,LiveVehicleState? before,
+        Action updated,CancellationToken ct)=>MonitorCommandAsync(command,dcLimit,before,updated,ct,
+            (duration,token)=>Task.Delay(duration,clock,token));
+
+    internal async Task MonitorCommandAsync(VehicleCommand command,int? dcLimit,LiveVehicleState? before,
+        Action updated,CancellationToken ct,Func<TimeSpan,CancellationToken,Task> delay)
+    {
+        if(Pending==null)return;
+        for(int attempt=0;attempt<8;attempt++)
+        {
+            await delay(TimeSpan.FromSeconds(15),ct);
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if(Pending?.TransactionId!=null && Pending.Outcome is RemoteOutcome.Accepted or RemoteOutcome.Unknown)
+                {
+                    try {await CheckCommandAsync(ct);}
+                    catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
+                    catch(BluelinkException ex) when(ex.HttpStatus is 401 or 403 or 429){throw;}
+                    catch(Exception ex) when(ex is BluelinkException or HttpRequestException or OperationCanceledException)
+                    { /* Tracking may be unavailable; still try the cached vehicle report. */ }
+                }
+                if(Pending?.Outcome==RemoteOutcome.Failed){updated();return;}
+                // Cached read only; does not wake the vehicle or send another POST.
+                if(clock.GetUtcNow()>=nextRead)await ReadAsync(false,ct);
+                if(Pending?.Outcome!=RemoteOutcome.Confirmed && ChangedToRequestedState(command,dcLimit,before,State))
+                    Pending=Pending! with {Outcome=RemoteOutcome.Confirmed,
+                        Message="Updated vehicle report matches the requested state."};
+                updated();
+                if(Pending?.Outcome==RemoteOutcome.Confirmed)
+                {
+                    // Keep controls disabled until the existing command cooldown expires.
+                    var remaining=nextCommand-clock.GetUtcNow();
+                    if(remaining>TimeSpan.Zero)await delay(remaining,ct);
+                    return;
+                }
+            }
+            catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
+            catch(BluelinkException ex) when(ex.HttpStatus is 401 or 403 or 429){break;}
+            catch(Exception ex) when(ex is BluelinkException or HttpRequestException or OperationCanceledException)
+            { /* Keep the last report. Only subsequent scheduled GETs may run. */ }
+        }
+        if(Pending!=null && Pending.Outcome is RemoteOutcome.Accepted or RemoteOutcome.Unknown)
+            Pending=Pending with {Outcome=RemoteOutcome.Unknown,
+                Message="Automatic checks ended; completion remains unverified. No command was retried."};
+        updated();
+    }
+
+    internal static bool ChangedToRequestedState(VehicleCommand command,int? dc,LiveVehicleState? before,LiveVehicleState? after)
+    {
+        // A newly downloaded copy of an old report is not completion evidence.
+        if(before==null||after==null||string.IsNullOrWhiteSpace(after.ReportedAt)||after.ReportedAt==before.ReportedAt)return false;
+        return command.Kind switch {
+            ActionKind.Lock=>before.Locked==false&&after.Locked==true,
+            ActionKind.Unlock=>before.Locked==true&&after.Locked==false,
+            ActionKind.Climate=>before.ClimateOn==!command.Enabled&&after.ClimateOn==command.Enabled ||
+                command.Enabled&&after.ClimateOn==true&&before.TemperatureF!=command.Value&&after.TemperatureF==command.Value,
+            ActionKind.Charge=>before.Charging==!command.Enabled&&after.Charging==command.Enabled,
+            ActionKind.ChargeLimit=>(before.AcLimit!=command.Value||before.DcLimit!=dc)&&after.AcLimit==command.Value&&after.DcLimit==dc,
+            _=>false
+        };
+    }
+
     public async Task<VehicleLocation> LocateAsync(CancellationToken ct)
     {
         await gate.WaitAsync(ct);
         try
         {
             NeedVehicle();
-            if(DateTimeOffset.UtcNow<nextLocation)throw new BluelinkException("Wait an hour between location requests to limit vehicle wakeups.");
-            await EnsureToken(ct);nextLocation=DateTimeOffset.UtcNow.AddHours(1);
+            if(clock.GetUtcNow()<nextLocation)throw new BluelinkException("Wait an hour between location requests to limit vehicle wakeups.");
+            await EnsureToken(ct);nextLocation=clock.GetUtcNow().AddHours(1);
             var r=await RequestAsync(HttpMethod.Get,"/ac/v2/rcs/rfc/findMyCar",null,true,true,ct);
             var lat=Number(r.Body,"coord.lat");var lon=Number(r.Body,"coord.lon");
             if(lat is null||lon is null||Math.Abs(lat.Value)>90||Math.Abs(lon.Value)>180)
@@ -224,7 +291,7 @@ public sealed class HyundaiUsClient : IDisposable
     private async Task EnsureToken(CancellationToken ct)
     {
         if(access.Length==0)throw new BluelinkException("Sign in to Bluelink again.");
-        if(DateTimeOffset.UtcNow>=expires.AddSeconds(-60))await TokenAsync(true,ct);
+        if(clock.GetUtcNow()>=expires.AddSeconds(-60))await TokenAsync(true,ct);
     }
     private async Task TokenAsync(bool renewing,CancellationToken ct)
     {
@@ -232,17 +299,16 @@ public sealed class HyundaiUsClient : IDisposable
         var r=await RequestAsync(HttpMethod.Post,"/v2/ac/oauth/token",body,false,false,ct,stage:"Authentication");
         var token=Text(r.Body,"access_token");var seconds=Number(r.Body,"expires_in");
         if(token.Length==0||seconds is null||!double.IsFinite(seconds.Value)||seconds<=0)throw new BluelinkException("Authentication: No supported session returned. MFA/challenge flows are not supported by this US adapter.");
-        access=token;refresh=Text(r.Body,"refresh_token");expires=DateTimeOffset.UtcNow.AddSeconds(Math.Min(seconds.Value,86400));
+        access=token;refresh=Text(r.Body,"refresh_token");expires=clock.GetUtcNow().AddSeconds(Math.Min(seconds.Value,86400));
     }
     private sealed record Reply(JsonElement Body,string? TransactionId,int HttpStatus);
     private async Task<Reply> RequestAsync(HttpMethod method,string path,string? body,bool authenticated,bool vehicle,
         CancellationToken ct,Dictionary<string,string>? extra=null,string stage="Request")
     {
-        if(DateTimeOffset.UtcNow<blockedUntil)throw new BluelinkException(stage+": Hyundai rate limit active. Wait before trying again.");
+        if(clock.GetUtcNow()<blockedUntil)throw new BluelinkException(stage+": Hyundai rate limit active. Wait before trying again.");
         using var request=new HttpRequestMessage(method,Origin+path);
-        // Token/enrollment use the minimal request profile from the user's working fiveN
-        // CommsManager. Keep vehicle request headers unchanged. This is a compatibility
-        // adjustment, not proof of the cause of a live 502.
+        // Use fiveN CommsManager's minimal common header profile for all requests.
+        // Door commands also match its body PIN; other command payloads are endpoint-specific.
         var headers=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase){
             ["accept"]="application/json, text/plain, */*",
             ["user-agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -253,9 +319,7 @@ public sealed class HyundaiUsClient : IDisposable
         if(authenticated){headers["username"]=username;headers["accessToken"]=access;}
         if(vehicle){
             NeedVehicle();headers["registrationId"]=Selected!.Id;headers["vin"]=Selected.Vin;headers["gen"]=Selected.Generation.ToString(CultureInfo.InvariantCulture);
-            headers["blueLinkServicePin"]=pin;headers["accept-language"]="en-US,en;q=0.9";
-            headers["origin"]=Origin;headers["referer"]=Origin+"/login";headers["encryptFlag"]="false";
-            headers["user-agent"]+=" (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36";
+            headers["blueLinkServicePin"]=pin;
         }
         if(extra!=null)foreach(var pair in extra)headers[pair.Key]=pair.Value;
         foreach(var pair in headers)request.Headers.Add(pair.Key,pair.Value);
@@ -278,7 +342,7 @@ public sealed class HyundaiUsClient : IDisposable
         int status=(int)response.StatusCode;
         BluelinkException Failure(string detail)=>new($"{stage}: HTTP {status}"+
             (apiError?code is int n?$"; API code {n}":"; API error (code withheld)":"")+". "+detail,status,code);
-        if(response.StatusCode==HttpStatusCode.TooManyRequests){blockedUntil=DateTimeOffset.UtcNow.Add(response.Headers.RetryAfter?.Delta??TimeSpan.FromMinutes(5));throw Failure("Hyundai is rate limiting requests. No automatic retry was sent.");}
+        if(response.StatusCode==HttpStatusCode.TooManyRequests){blockedUntil=clock.GetUtcNow().Add(response.Headers.RetryAfter?.Delta??TimeSpan.FromMinutes(5));throw Failure("Hyundai is rate limiting requests. No automatic retry was sent.");}
         if(response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){access="";refresh="";throw Failure("Hyundai denied access. Sign-in or account challenges may be required; challenges are not supported. No retry was sent.");}
         if(!response.IsSuccessStatusCode)throw Failure("Hyundai request failed; the cause is not established. No automatic retry was sent.");
         if(malformed)throw Failure("Unsupported response. No automatic retry was sent.");

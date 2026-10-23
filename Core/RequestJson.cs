@@ -22,8 +22,8 @@ internal static class RequestJson
         w.WriteString("username",username);w.WriteString("password",password);
         if(refresh.Length>0){w.WriteString("grant_type","refresh_token");w.WriteString("refresh_token",refresh);}
     });
-    internal static string Doors(string username,string vin)=>Object(w=>{
-        w.WriteString("userName",username);w.WriteString("vin",vin);
+    internal static string Doors(string username,string vin,string pin)=>Object(w=>{
+        w.WriteString("userName",username);w.WriteString("vin",vin);w.WriteString("pin",pin);
     });
     internal static string Climate(int temperature,int generation)=>Object(w=>{
         w.WriteNumber("airCtrl",1);w.WriteStartObject("airTemp");

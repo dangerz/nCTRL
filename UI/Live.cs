@@ -15,7 +15,10 @@ public partial class Main
     private bool liveMode,liveBusy;
     private int selectedIndex,liveAc=80,liveDc=80,liveTemperature=72;
     private Func<HyundaiUsClient> connectionFactory = () => new HyundaiUsClient();
-    private DateTimeOffset lastCheck;
+    private bool monitoringCommand;
+    private ActionKind? feedbackKind;
+    private bool feedbackEnabled;
+    private Task commandMonitor=Task.CompletedTask;
     private static string Value(int? value,string suffix="")=>value is null?"—":value+suffix;
     private static string OnOff(bool? value,string yes,string no)=>value is null?"Unknown":value.Value?yes:no;
     private Button LiveButton(float x,float y,float w,float h,string text,int size,Action action,bool primary=false,string name="")
@@ -162,12 +165,13 @@ public partial class Main
         var doorAction=VehicleLink.DoorAction(s?.Locked);
         var door=LiveButton(24,563,200,49,doorAction==ActionKind.Unlock?"Unlock":doorAction==ActionKind.Lock?"Lock":"Door status unknown",13,
             ()=>{if(doorAction is ActionKind action)_ = SendLive(new(action));},false,"DoorControl");
-        door.Disabled=liveBusy||doorAction==null;
-        Button(236,563,94,49,"Climate",13,()=>Navigate("Climate"));
-        Button(342,563,94,49,"Charge",13,()=>Navigate("Energy"));
+        door.Disabled=liveBusy||monitoringCommand||doorAction==null;
+        CommandFeedback(door,ActionKind.Lock,s?.Locked==true);
+        CommandFeedback(Button(236,563,94,49,"Climate",13,()=>Navigate("Climate")),ActionKind.Climate,s?.ClimateOn==true);
+        CommandFeedback(Button(342,563,94,49,"Charge",13,()=>Navigate("Energy")),ActionKind.Charge,false);
         LiveButton(24,636,200,46,"Refresh cached status",12,()=>_ = RefreshLive(false));
-        Button(236,636,200,46,"Vehicle location  ›",12,()=>Navigate("Locate"));
-        LiveButton(24,704,412,46,"Check last command",13,()=>_ = CheckLive());
+        Button(236,636,200,46,"Vehicle location  ›",12,()=>_ = OpenVehicleLocation());
+
         if(notice.Length==0)Label(24,778,412,65,connection?.Pending?.Message??"Cached status may lag the vehicle. Missing data is shown as — or Unknown.",11,Muted,false,true);
     }
     private static string ReportedTime(string? raw)
@@ -187,8 +191,8 @@ public partial class Main
         LiveButton(43,363,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
         LiveButton(366,363,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
         Label(24,505,412,70,"Starts climate with defrost and supplemental heaters off. Generation 3 requests a five-minute duration.",12,Muted,false,true);
-        LiveButton(24,613,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true)),true);
-        LiveButton(24,687,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false)));
+        CommandFeedback(RemoteButton(24,613,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true)),true),ActionKind.Climate,s?.ClimateOn==true,true);
+        CommandFeedback(RemoteButton(24,687,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false))),ActionKind.Climate,false,false);
     }
     private void LiveEnergy()
     {
@@ -202,12 +206,12 @@ public partial class Main
         Label(24,438,198,22,"AC TARGET",11,Muted,true);Label(238,438,198,22,"DC TARGET",11,Muted,true);
         ac.ItemSelected+=i=>{liveAc=50+(int)i*10;};
         dc.ItemSelected+=i=>{liveDc=50+(int)i*10;};
-        LiveButton(24,490,412,49,"Set AC and DC targets",13,()=>{
+        CommandFeedback(RemoteButton(24,490,412,49,"Set AC and DC targets",13,()=>{
             _ = SendLive(new(ActionKind.ChargeLimit,liveAc),liveDc);
-        });
+        }),ActionKind.ChargeLimit,false);
         Label(24,552,412,44,"Tap Set AC and DC targets to apply both displayed selections.",11,Muted,false,true);
-        LiveButton(24,622,198,52,"Start charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:true)),true);
-        LiveButton(238,622,198,52,"Stop charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:false)));
+        CommandFeedback(RemoteButton(24,622,198,52,"Start charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:true)),true),ActionKind.Charge,false,true);
+        CommandFeedback(RemoteButton(238,622,198,52,"Stop charging",14,()=>_ = SendLive(new(ActionKind.Charge,Enabled:false))),ActionKind.Charge,false,false);
         LiveButton(24,708,412,46,"Refresh cached status",13,()=>_ = RefreshLive(false));
     }
     private OptionButton LimitChoice(int x,int y,int w,int value)
@@ -237,44 +241,69 @@ public partial class Main
         for(int i=history.Count-1;i>=Math.Max(0,history.Count-4);i--){var item=history[i];
             Panel(24,y,412,99,new("#0e2031"),false);Rect(24,y,3,99,item.Ok?Blue:Red);
             Label(42,y+7,375,53,item.Title,12,White,true,true);Label(42,y+64,375,24,item.Detail,10,Muted);y+=111;}
-        LiveButton(24,704,412,43,"Check last command",13,()=>_ = CheckLive());
+
     }
-    private void LiveLocation()
+    private Button RemoteButton(float x,float y,float w,float h,string text,int size,Action action,bool primary=false)
     {
-        Title("FIND YOUR HYUNDAI.","Location is requested only when you tap below.");
-        var loc=connection?.Location;
-        Label(24,225,412,150,loc is null?"No location requested this session.":
-            $"Latitude  {loc.Latitude:F6}\nLongitude  {loc.Longitude:F6}\nReported: {ReportedTime(loc.ReportedAt)}",18,White,true,true);
-        LiveButton(24,440,412,52,"Request vehicle location",14,()=>_ = RunLive(async()=>{
-            int version=liveEpoch;await connection!.LocateAsync(liveLifetime.Token);EnsureLive(version);notice="Location received from Hyundai.";
-        },"Requesting location from Hyundai…"),true);
-        if(loc!=null)Button(24,521,412,48,"Open location in maps",14,()=>{
-            var point=loc.Latitude.ToString(CultureInfo.InvariantCulture)+","+loc.Longitude.ToString(CultureInfo.InvariantCulture);
-            OS.ShellOpen("https://www.google.com/maps/search/?api=1&query="+Uri.EscapeDataString(point));
-        });
-        Label(24,607,412,105,"Location may be the last reported position. Requests are limited to one per hour. Opening Maps shares these coordinates with your map provider.",13,Muted,false,true);
+        var button=LiveButton(x,y,w,h,text,size,action,primary);
+        button.Disabled|=monitoringCommand;return button;
     }
-    private Task SendLive(VehicleCommand cmd,int? dc=null)
+    private void CommandFeedback(Button button,ActionKind kind,bool active,bool? enabled=null)
     {
-        int version=liveEpoch;
-        return RunLive(async()=>{
-            EnsureLive(version);var receipt=await connection!.ExecuteAsync(cmd,dc,liveLifetime.Token);EnsureLive(version);
-            notice=receipt.Message;noticeError=receipt.Outcome is RemoteOutcome.Failed or RemoteOutcome.Unknown;
-            history.Add((receipt.Message,DateTime.Now.ToString("h:mm tt")+" · "+cmd.Kind,!noticeError));
+        if(active) {
+            foreach(string state in new[]{"normal","hover","pressed","disabled"})
+                button.AddThemeStyleboxOverride(state,Style(Red,Red));
+            button.AddThemeColorOverride("font_color",White);
+            button.AddThemeColorOverride("font_disabled_color",White);
+        }
+        bool match=feedbackKind==kind || kind==ActionKind.Lock&&feedbackKind==ActionKind.Unlock;
+        if(!match || enabled!=null&&enabled!=feedbackEnabled)return;
+        button.Text+=monitoringCommand?" …":connection?.Pending?.Outcome switch {
+            RemoteOutcome.Confirmed=>" ✓",RemoteOutcome.Failed=>" !",RemoteOutcome.Unknown=>" ?",_=>""};
+        button.TooltipText=connection?.Pending?.Message??"";
+    }
+    private async Task SendLive(VehicleCommand cmd,int? dc=null)
+    {
+        if(liveBusy||monitoringCommand||connection==null)return;
+        int version=liveEpoch;var active=connection;var before=active.State;var token=liveLifetime.Token;
+        var previousReceipt=active.Pending;
+        await RunLive(async()=>{
+            try {
+                var receipt=await active.ExecuteAsync(cmd,dc,token);EnsureLive(version);
+                notice=receipt.Message;noticeError=receipt.Outcome is RemoteOutcome.Failed or RemoteOutcome.Unknown;
+                history.Add((receipt.Message,DateTime.Now.ToString("h:mm tt")+" · "+cmd.Kind,!noticeError));
+            } finally {
+                if(version==liveEpoch&&active.Pending!=null&&!ReferenceEquals(previousReceipt,active.Pending)) {
+                    feedbackKind=cmd.Kind;
+                    feedbackEnabled=cmd.Enabled;
+                    monitoringCommand=true;
+                    commandMonitor=MonitorLive(active,cmd,dc,before,version,token);
+                }
+            }
         },"Sending command to Hyundai…");
+    }
+    private async Task MonitorLive(HyundaiUsClient active,VehicleCommand cmd,int? dc,LiveVehicleState? before,int version,CancellationToken token)
+    {
+        try {
+            await active.MonitorCommandAsync(cmd,dc,before,()=>{
+                EnsureLive(version);
+                // Other user operations own their notice while busy.
+                if(!liveBusy){notice=active.Pending?.Message??"";noticeError=active.Pending?.Outcome is RemoteOutcome.Failed or RemoteOutcome.Unknown;Render();}
+            },token);
+        } catch(OperationCanceledException) { }
+        catch(Exception) {
+            if(version==liveEpoch){notice="Automatic status checks stopped; completion unverified. No command was retried.";noticeError=true;}
+        } finally {
+            if(version==liveEpoch) {
+                monitoringCommand=false;
+                if(active.Pending is {} result)history.Add((result.Message,DateTime.Now.ToString("h:mm tt")+" · "+cmd.Kind,result.Outcome==RemoteOutcome.Confirmed));
+                if(history.Count>30)history.RemoveRange(0,history.Count-30);
+                if(IsInsideTree())Render();
+            }
+        }
     }
     private Task RefreshLive(bool wake)=>RunLive(async()=>{
         int version=liveEpoch;await connection!.ReadAsync(wake,liveLifetime.Token);EnsureLive(version);
         notice="Hyundai status received. Check the reported timestamp.";
     },wake?"Requesting fresh vehicle status…":"Reading Hyundai’s cached status…");
-    private async Task CheckLive()
-    {
-        if(DateTimeOffset.UtcNow-lastCheck<TimeSpan.FromSeconds(5)){notice="Wait five seconds between command status checks.";Render();return;}
-        lastCheck=DateTimeOffset.UtcNow;
-        await RunLive(async()=>{
-            int version=liveEpoch;var r=await connection!.CheckCommandAsync(liveLifetime.Token);EnsureLive(version);notice=r.Message;
-            noticeError=r.Outcome is RemoteOutcome.Failed or RemoteOutcome.Unknown;
-            history.Add((r.Message,DateTime.Now.ToString("h:mm tt")+" · Command status",!noticeError));
-        },"Checking command status…");
-    }
 }

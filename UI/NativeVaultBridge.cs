@@ -5,6 +5,14 @@ using System.Runtime.InteropServices;
 
 public static class NativeVaultBridge
 {
+    public static bool OpenVehicleMap(double latitude,double longitude)
+    {
+        if(OS.GetName()!="iOS")return false;
+        try {ng_vault_open_map(latitude,longitude);return true;}
+        catch(DllNotFoundException){return false;}
+        catch(EntryPointNotFoundException){return false;}
+    }
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_vault_open_map(double latitude,double longitude);
     public static void RestoreForeground()
     {
         if(OS.GetName()!="iOS")return;
