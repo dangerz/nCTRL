@@ -16,7 +16,10 @@ public partial class Main
         await UpdateVehicleLocation(connection?.Location==null||connection.CanRequestLocation);
     }
     private Task UpdateVehicleLocation(bool request=true)=>RunLive(async()=>{
-        int version=liveEpoch;var active=connection!;var token=liveLifetime.Token;
+        int version=liveEpoch;var token=liveLifetime.Token;
+        // A new location request is a request like any other: the first one of a session asks for Face ID.
+        var active=request?(await AcquireSession(version)).Client:connection;
+        if(active==null)return;
         if(request)await active.LocateAsync(token);
         EnsureLive(version);
         var location=active.Location;
@@ -41,7 +44,7 @@ public partial class Main
         } catch(OperationCanceledException){throw;}
         catch(Exception) {EnsureLive(version);mapStatus="Map unavailable. Tap to open your maps app.";}
         notice="Showing Hyundai’s reported location; it may lag the vehicle.";
-    },"Requesting vehicle location…",()=>UpdateVehicleLocation(true));
+    },request&&NeedsFaceId?"Waiting for "+vault.BiometricName+"…":"Requesting vehicle location…",()=>UpdateVehicleLocation(true));
 
     private void LiveLocation()
     {

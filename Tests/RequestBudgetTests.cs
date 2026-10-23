@@ -114,6 +114,8 @@ static class RequestBudgetTests
             int sent=hyundai.Sent;
             await RefusedAsync(()=>second.LoginAsync("tester@example.invalid","test-password","1234",default),"Sign-in cooldown spans clients");
             Check(hyundai.Sent==sent,"Refused sign-in sends nothing");
+            await second.LoginAsync("tester@example.invalid","test-password","1234",default,implicitSignIn:true);
+            Check(hyundai.Sent==sent+2,"A saved-account sign-in inside a user action is not refused by the sign-in cooldown");
             clock.Now+=TimeSpan.FromSeconds(60);
             var list=await second.LoginAsync("tester@example.invalid","test-password","1234",default);
             await second.SelectAsync(list[0],default);

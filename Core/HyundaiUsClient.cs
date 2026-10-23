@@ -60,7 +60,9 @@ public sealed class HyundaiUsClient : IDisposable
     public HyundaiUsClient(HttpMessageHandler handler,TimeProvider? clock=null,RequestBudget? budget=null)
     { this.clock=clock??TimeProvider.System;this.budget=budget??new RequestBudget(new MemoryBudgetStore(),this.clock);http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(45),MaxResponseContentBufferSize=2*1024*1024}; }
 
-    public async Task<IReadOnlyList<EnrolledVehicle>> LoginAsync(string email,string secret,string servicePin,CancellationToken ct)
+    // implicit: a sign-in nCTRL performs for a saved account as part of a user action. It counts toward
+    // the daily cap but is never refused by the sign-in cooldown.
+    public async Task<IReadOnlyList<EnrolledVehicle>> LoginAsync(string email,string secret,string servicePin,CancellationToken ct,bool implicitSignIn=false)
     {
         await gate.WaitAsync(ct);
         string stage="Authentication";
@@ -70,7 +72,7 @@ public sealed class HyundaiUsClient : IDisposable
             if(string.IsNullOrWhiteSpace(email)||string.IsNullOrEmpty(secret)||servicePin.Length!=4||!servicePin.All(char.IsAsciiDigit))
                 throw new BluelinkException("Enter your US Bluelink email, password and four-digit service PIN.");
             username=email.Trim();password=secret;pin=servicePin;
-            budget.Acquire(RequestKind.SignIn);
+            budget.Acquire(RequestKind.SignIn,enforceCooldown:!implicitSignIn);
             await TokenAsync(false,ct);
             stage="Vehicle list";
             // fiveN/upstream put ordinary email punctuation directly in this path segment.

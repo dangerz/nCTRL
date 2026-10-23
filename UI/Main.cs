@@ -37,7 +37,7 @@ public partial class Main : Control
         liveSmoke |= vaultSmoke;
         smoke = liveSmoke;
 #endif
-        if (!smoke) LoadPrefs();
+        if (!smoke) { LoadPrefs(); LoadSnapshot(); }
 #if DEBUG
         budget = new RequestBudget(smoke ? new MemoryBudgetStore() : new FileBudgetStore(LimitsFile), null, smoke ? SmokeLimits : null);
 #else
@@ -45,13 +45,14 @@ public partial class Main : Control
 #endif
         connectionFactory = () => new HyundaiUsClient(budget);
         InitializeVault();
+        // Cold launch: open straight to the Car screen with the last saved status, if any.
+        EnterOffline();
         Render();
 #if DEBUG
         if (vaultSmoke) _ = SecureSmokeTest();
         else if (liveSmoke) _ = LiveSmokeTest();
 #endif
-        // Cold launch: start Face ID once the scene is ready (native code waits for app activation).
-        CallDeferred(nameof(TryAutoUnlock));
+
     }
 
     public override void _ExitTree() { liveEpoch++; vault.Cancel(); liveLifetime.Cancel(); connection?.Dispose(); DiscardParked(); liveLifetime.Dispose(); }

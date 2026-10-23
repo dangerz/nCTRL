@@ -9,6 +9,7 @@ static class Program
         VehicleLinkTests.Run();
         DisclaimerTests.Run();
         IndicatorTests.Run();
+        SnapshotTests.Run();
         await RequestBudgetTests.Run();
         await MapTests.Run();
     }
