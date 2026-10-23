@@ -154,8 +154,7 @@ public partial class Main
     private void LiveHome()
     {
         var s=connection?.State;
-        Label(24,106,260,24,"YOUR HYUNDAI · LAST REPORTED",10,Muted,true);
-        Button(294,100,142,32,"Customize paint  ›",11,()=>Navigate("Paint"));
+        Label(24,106,412,24,"YOUR HYUNDAI · LAST REPORTED",10,Muted,true);
         Hero(139,215);
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
@@ -227,7 +226,7 @@ public partial class Main
         Title("YOUR CONNECTED GARAGE.","Hyundai USA · device security");
         Label(24,210,412,60,$"{v?.Name}\nVIN …{v?.Vin[^6..]}",17,White,true,true);
         Label(24,295,412,62,"Session: "+(connection?.IsAuthenticated==true?"Signed in":"Expired / denied — sign in again"),14,Muted,false,true);
-        Button(24,381,412,48,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"));
+        Button(24,381,412,48,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
         LiveButton(24,452,412,48,"Refresh cached status",13,()=>_ = RefreshLive(false));
         LiveButton(24,523,412,48,"Wake vehicle and refresh",13,()=>_ = RefreshLive(true));
         LiveButton(24,594,198,48,"Lock app",13,()=>EndLiveSession());

@@ -69,7 +69,17 @@ public partial class Main
             await ChooseVehicle();
             if(!liveMode||connection?.State?.Battery!=78||fixture.Commands!=0)throw new Exception("Connect failed or sent a command");
             PickPaint("Ecotonic Gray","747c79");notice="";Render();await Capture("12-connected-test.png");
-            Navigate("Paint");await Capture("13-ecotonic-gray.png");
+            foreach(var child in canvas.GetChildren())
+                if(child is Button b&&b.Text.Contains("paint",StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("Car screen still offers paint customization");
+            // Paint is reached only through Settings → Appearance, and returns there.
+            Navigate("Settings");canvas.GetNode<Button>("SettingsAppearance").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Appearance")throw new Exception("Settings does not open Appearance");
+            canvas.GetNode<Button>("SettingsPaint").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Paint")throw new Exception("Appearance does not open car color");
+            await Capture("13-ecotonic-gray.png");
+            canvas.GetNode<Button>("PaintDone").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Appearance")throw new Exception("Paint Done does not return to Appearance");
             Navigate("Energy");await Capture("14-live-energy-test.png");
             Navigate("Climate");await Capture("15-live-climate-test.png");
             Navigate("Settings");await Capture("16-live-settings-test.png");

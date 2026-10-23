@@ -157,7 +157,7 @@ public partial class Main : Control
         };
         picker.PopupClosed += ()=> { SavePrefs(); Render(); };
         canvas.AddChild(picker);
-        Button(214,714,222,46,"Done  ›",14,()=>Navigate("Car"),true,"PaintDone");
+        Button(214,714,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"PaintDone");
         if(notice.Length==0) Label(24,794,410,40,"Preview colors are illustrative, not factory paint matching.",11,Muted,false,true);
     }
     private void Appearance()
@@ -175,7 +175,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Activity","Settings"};
-        string selected=screen is "Appearance" or "Disclaimer"?"Settings":screen is "Paint" or "Climate" or "Locate"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Disclaimer"?"Settings":screen is "Climate" or "Locate"?"Car":screen;
         for(int i=0;i<4;i++)
         {
             string name=names[i];int x=i*115;

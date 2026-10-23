@@ -1,6 +1,6 @@
 # nCTRL — Godot 4.7 C# / Hyundai USA
 
-N Performance styling, pixel Ioniq 5 N, six presets including **Ecotonic Gray**, and custom paint. This revision includes direct Hyundai USA / Bluelink HTTP connectivity, secure phone-side saved login, and biometric unlock. App logic is C# with small native OS storage bridges. No Python runtime or backend.
+N Performance styling, pixel Ioniq 5 N, six presets including **Ecotonic Gray**, and custom paint (Settings → Appearance → Car color). This revision includes direct Hyundai USA / Bluelink HTTP connectivity, secure phone-side saved login, and biometric unlock. App logic is C# with small native OS storage bridges. No Python runtime or backend.
 
 **Implementation status:** C# app/export plugin and Android vault Java compiled. The bundled Android AAR includes the nCTRL prompts. The iOS vault now builds with the C# NativeAOT export; Apple compilation and physical-device validation are still required. Mobile JSON serialization no longer uses reflection. See `SECURE_LOGIN.md` for mobile setup. The owner reported a live sign-in 502; this revision has not been authenticated against a real Hyundai account or tested on a physical vehicle. The working local fiveN sign-in profile was compared and adopted for token/enrollment requests; live resolution remains unverified. See `SIGN_IN_DIAGNOSIS.md`. Mobile exports have not been tested.
 
