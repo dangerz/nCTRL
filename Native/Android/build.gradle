@@ -1,0 +1,14 @@
+plugins { id 'com.android.library' version '8.7.3' }
+android {
+    namespace 'com.ngarage.vault'
+    compileSdk 35
+    defaultConfig { minSdk 30; consumerProguardFiles 'consumer-rules.pro' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { compileOnly 'org.godotengine:godot:4.7.0.stable' }
+tasks.register('installPlugin', Copy) {
+    dependsOn 'assembleRelease'
+    from layout.buildDirectory.file('outputs/aar/NGarageVault-release.aar')
+    into '../../addons/ngarage_vault'
+    rename { 'NGarageVault.aar' }
+}

@@ -1,0 +1,12 @@
+[config]
+name="NGarageVault"
+binary="NGarageVault.xcframework"
+initialization="ng_vault_init"
+deinitialization="ng_vault_deinit"
+[dependencies]
+linked=[]
+embedded=[]
+system=["Foundation.framework", "Security.framework", "LocalAuthentication.framework", "UIKit.framework"]
+linker_flags=["-ObjC", "-Wl,-u,_ng_vault_availability", "-Wl,-u,_ng_vault_has_account", "-Wl,-u,_ng_vault_start", "-Wl,-u,_ng_vault_take_result", "-Wl,-u,_ng_vault_free", "-Wl,-u,_ng_vault_cancel"]
+[plist]
+NSFaceIDUsageDescription:string="Use Face ID to unlock your saved Hyundai account in nCTRL on this device."
