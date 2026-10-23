@@ -87,7 +87,9 @@ public partial class Main
             notice="Disclaimer accepted.";accepted=true;
         },"Waiting for confirmation…");
         // Resume the held sign-in only after the gate is recorded; it never ran a request before.
-        if(!accepted||pending==null||version!=liveEpoch)return;
+        if(!accepted||version!=liveEpoch)return;
+        // Upgrading with a saved account: continue straight into Face ID unlock.
+        if(pending==null){autoUnlockArmed=true;TryAutoUnlock();return;}
         if(pending.FromVault)await SignInSavedLive(pending.Email,pending.Password,pending.Pin);
         else await SignIn(pending.Email,pending.Password,pending.Pin,pending.Remember);
     }

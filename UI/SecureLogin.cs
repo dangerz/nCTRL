@@ -1,6 +1,7 @@
 using Godot;
 using NGarage.Core;
 using System;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,6 +11,11 @@ public partial class Main
     private bool rememberDevice=true,manualAccountEntry;
     private int liveEpoch;
     private bool vaultReady;
+    // A signed-in session kept in memory while backgrounded. Face ID must succeed before it is used again.
+    private HyundaiUsClient? parked;
+    private string parkedAccountKey="";
+    // Face ID starts by itself once per cold launch or return from the background, never in a loop.
+    private bool autoUnlockArmed=true;
     private void InitializeVault()
     {
         vault=new AccountVault(smoke?new UnavailableVaultBridge():NativeVaultBridge.Create());vaultReady=true;
@@ -18,11 +24,19 @@ public partial class Main
     }
     private void EnsureLive(int version)
     {if(version!=liveEpoch || liveLifetime.IsCancellationRequested)throw new OperationCanceledException();}
-    private void EndLiveSession(bool render=true)
+    private void EndLiveSession(bool render=true,bool park=false)
     {
+        // Backgrounding may park an idle session (selected vehicle, valid token, saved account) so
+        // Face ID can resume it without a new sign-in. Lock app and sign-out always discard it.
+        bool keep=park&&connection is {Selected: not null,SessionValid: true}&&!liveBusy&&!monitoringCommand&&
+            accountKey.Length>0&&vault.HasAccount;
+        // Backgrounding again from the locked screen keeps the earlier parked session.
+        if(!(park&&connection==null))DiscardParked();
+        if(keep){parked=connection;parkedAccountKey=accountKey;}
+        else connection?.Dispose();
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
-        connection?.Dispose();connection=null;enrollment=null;liveMode=false;liveBusy=false;
+        connection=null;enrollment=null;liveMode=false;liveBusy=false;
         history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;
         screen="Connect";notice="";noticeError=false;
         if(render&&IsInsideTree())Render();
@@ -34,7 +48,8 @@ public partial class Main
         if(what==NotificationApplicationPaused) {
             // Hide immediately, then rebuild after the engine resumes its scene tree.
             if(canvas!=null)canvas.Hide();
-            EndLiveSession(false);
+            EndLiveSession(false,park:true);
+            autoUnlockArmed=true;
         }
         if(what==NotificationApplicationResumed)CallDeferred(nameof(RestoreForeground));
     }
@@ -43,7 +58,17 @@ public partial class Main
         if(!IsInsideTree())return;
         Render();
         if(!smoke)NativeVaultBridge.RestoreForeground();
+        TryAutoUnlock();
     }
+    private void TryAutoUnlock()
+    {
+        if(!autoUnlockArmed||!IsInsideTree())return;
+        autoUnlockArmed=false;
+        // Only from the saved-login screen: a cancelled prompt leaves its button for a manual retry.
+        if(liveMode||liveBusy||DisclaimerRequired||manualAccountEntry||pendingOverride!=null||!vault.HasAccount||!vault.Available)return;
+        _ = UnlockAccount();
+    }
+    private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
     private void SavedLoginScreen()
     {
         Title("WELCOME BACK.","Your saved Hyundai account is locked on this device.");
@@ -60,7 +85,8 @@ public partial class Main
         int version=liveEpoch;SavedAccount? account=null;
         await RunLive(async()=>{
             account=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
-            if(HoldForDisclaimer(account.Email,account.Password,account.Pin,true,true))return;
+            if(HoldForDisclaimer(account.Email,account.Password,account.Pin,true,true)){DiscardParked();return;}
+            if(await ResumeParked(account,version))return;
             await SignInSaved(account.Email,account.Password,account.Pin,version);
         },"Waiting for "+vault.BiometricName+"…",
         // An override retries with the already unlocked account instead of asking for Face ID twice.
@@ -71,8 +97,30 @@ public partial class Main
         int version=liveEpoch;
         return RunLive(()=>SignInSaved(email,password,pin,version),"Signing in to Hyundai…",()=>SignInSavedLive(email,password,pin));
     }
+    // Reuses the parked session only for the same account with a still-valid token. Always lands on the Car screen.
+    private async Task<bool> ResumeParked(SavedAccount account,int version)
+    {
+        var active=parked;string key=parkedAccountKey;parked=null;parkedAccountKey="";
+        if(active==null)return false;
+        if(!active.SessionValid||active.Selected==null||key!=VehicleLink.AccountKey(account.Email)){active.Dispose();return false;}
+        connection=active;accountKey=key;liveMode=true;screen="Car";manualAccountEntry=false;
+        history.Add(("Session resumed",vault.BiometricName+" verified. No new sign-in was sent.",true));
+        notice="Unlocked. Showing Hyundai’s last reported state.";noticeError=false;
+        // One automatic cached read when the limits allow it. Never prompts and never wakes the vehicle.
+        if(!active.Budget.CanAcquire(RequestKind.Read))return true;
+        try {await active.ReadAsync(false,liveLifetime.Token);EnsureLive(version);notice="Unlocked. Hyundai status refreshed.";}
+        catch(BluelinkException ex) when(ex.HttpStatus is 401 or 403) {
+            // Hyundai ended the session while backgrounded: sign in again with the unlocked account.
+            EnsureLive(version);connection=null;liveMode=false;active.Dispose();return false;
+        }
+        catch(Exception ex) when(ex is BluelinkException or HttpRequestException) {
+            EnsureLive(version);notice="Unlocked. Status refresh failed; showing the last reported state.";noticeError=true;
+        }
+        return true;
+    }
     private async Task SignInSaved(string email,string password,string pin,int version)
     {
+        DiscardParked();
         connection?.Dispose();var active=connectionFactory();connection=active;
         var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
         accountKey=VehicleLink.AccountKey(email);BindDisclaimer();

@@ -26,6 +26,12 @@ public partial class Main
         public string TakeResult(){var s=result;result="";return s;}
         public void Cancel(){result="";}
     }
+    // Lets deferred resume work start, then waits for any unlock it began.
+    private async Task Settle()
+    {
+        for(int i=0;i<3;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+        for(int i=0;i<600&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+    }
     private async Task SecureSmokeTest()
     {
         try {
@@ -44,18 +50,26 @@ public partial class Main
             string testerKey=VehicleLink.AccountKey("tester@example.invalid");
             if(disclaimer?.AccountKey!=testerKey)throw new Exception("Successful sign-in did not bind disclaimer acceptance");
             await ChooseVehicle();
-            _Notification((int)NotificationApplicationPaused);
+            // Backgrounding parks the idle session; resume starts Face ID by itself, exactly once.
+            int tokens=http.Tokens;
+            fake.CancelNext=true;_Notification((int)NotificationApplicationPaused);
             if(connection!=null||liveMode||enrollment!=null||screen!="Connect")throw new Exception("Background did not clear session");
             if(canvas.Visible)throw new Exception("Background left the old vehicle canvas visible");
-            _Notification((int)NotificationApplicationResumed);
-            await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            if(!canvas.Visible||canvas.GetNodeOrNull<Button>("BiometricUnlock")==null)throw new Exception("Resume did not rebuild the unlock screen");
+            if(parked==null)throw new Exception("Background did not park the idle signed-in session");
+            _Notification((int)NotificationApplicationResumed);await Settle();
+            if(fake.CancelNext)throw new Exception("Resume did not start Face ID automatically");
+            if(!canvas.Visible||canvas.GetNodeOrNull<Button>("BiometricUnlock")==null)throw new Exception("Cancelled automatic Face ID did not leave the unlock screen");
+            if(connection!=null||liveMode||parked==null||!vault.HasAccount)throw new Exception("Cancelled automatic Face ID leaked or dropped the session");
             AssertAccountOnly();
+            TryAutoUnlock();if(liveBusy)throw new Exception("Face ID started again without another backgrounding");
             await Capture("20-biometric-unlock-test.png");
-            fake.CancelNext=true;await UnlockAccount();
-            if(connection!=null||enrollment!=null||!vault.HasAccount)throw new Exception("Cancelled biometric leaked account access");
-            await UnlockAccount();if(!liveMode||screen!="Car")throw new Exception("Unlock did not restore the previously selected vehicle");
+            // Backgrounding again from the locked screen keeps the parked session.
+            fake.CancelNext=true;_Notification((int)NotificationApplicationPaused);
+            if(parked==null)throw new Exception("A second background dropped the parked session");
+            _Notification((int)NotificationApplicationResumed);await Settle();
+            await UnlockAccount();
+            if(!liveMode||screen!="Car"||parked!=null)throw new Exception("Face ID did not resume the parked session on the Car screen");
+            if(http.Tokens!=tokens)throw new Exception("Resuming a valid session sent a new sign-in");
             // On phones an override needs the device check; cancelling it sends nothing.
             int sent=http.Requests;await RefreshLive(false);
             if(pendingOverride==null||http.Requests!=sent)throw new Exception("Read cooldown did not warn after unlock");
@@ -85,14 +99,15 @@ public partial class Main
             var waiting=UnlockAccount();_Notification((int)NotificationApplicationPaused);await waiting;
             if(connection!=null||liveMode||liveBusy)throw new Exception("Late unlock restored locked session");
             fake.Hold=false;
-            _Notification((int)NotificationApplicationResumed);
-            await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            await ForgetAccount();if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
+            _Notification((int)NotificationApplicationResumed);await Settle();
+            if(!liveMode||screen!="Car")throw new Exception("Resume without a parked session did not sign in automatically after Face ID");
+            fake.CancelNext=true;_Notification((int)NotificationApplicationPaused);_Notification((int)NotificationApplicationResumed);await Settle();
+            if(parked==null)throw new Exception("Session was not parked before sign-out");
+            await ForgetAccount();if(parked!=null)throw new Exception("Sign out did not discard the parked session");if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
             if(linkedVehicle.Length!=0)throw new Exception("Forget retained the linked vehicle preference");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, background lock, biometric cancellation, unlock, account re-acceptance, stale-result rejection, forget. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, background lock, automatic Face ID, session reuse, biometric cancellation, unlock, account re-acceptance, stale-result rejection, forget. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }

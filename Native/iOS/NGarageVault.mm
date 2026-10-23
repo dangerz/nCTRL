@@ -60,6 +60,18 @@ static void finish(NSUInteger ticket, BOOL ok, NSString *code, NSString *data) {
         busy=NO;activeContext=nil;
     }
 }
+// Biometric UI can only appear while the app is active. A resume can start a request a moment
+// before UIKit finishes activating, so wait for activation instead of failing as not interactive.
+static void whenActive(void (^work)(void)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(UIApplication.sharedApplication.applicationState==UIApplicationStateActive){work();return;}
+        __block id token=nil;
+        token=[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
+            queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){
+                [NSNotificationCenter.defaultCenter removeObserver:token];token=nil;work();
+            }];
+    });
+}
 static NSString *errorCode(OSStatus status) {
     if(status==errSecUserCanceled)return @"cancelled";
     if(status==errSecItemNotFound)return @"missing";
@@ -127,7 +139,8 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
         if(![ctx canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&error]){finish(ticket,NO,@"unavailable",nil);return;}
         ctx.touchIDAuthenticationAllowableReuseDuration=0;
         @synchronized(guard){if(ticket!=generation)return;activeContext=ctx;}
-        dispatch_async(dispatch_get_main_queue(), ^{
+        whenActive(^{
+            @synchronized(guard){if(ticket!=generation)return;}
             [ctx evaluatePolicy:LAPolicyDeviceOwnerAuthentication localizedReason:text reply:^(BOOL success,NSError *error){
                 finish(ticket,success,success?@"":error.code==LAErrorUserCancel||error.code==LAErrorAppCancel||error.code==LAErrorSystemCancel?@"cancelled":@"auth_failed",nil);
             }];
@@ -141,7 +154,8 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
     @synchronized(guard){if(ticket!=generation)return;activeContext=ctx;}
     if([op isEqualToString:@"unlock"]) {
         // The ACL on the item itself requires biometry; there is no separate boolean gate.
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+        whenActive(^{dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+            @synchronized(guard){if(ticket!=generation)return;}
             NSMutableDictionary *q=query();q[(__bridge id)kSecReturnData]=@YES;
             q[(__bridge id)kSecUseAuthenticationContext]=ctx;
             q[(__bridge id)kSecUseOperationPrompt]=@"Unlock your saved Hyundai account in nCTRL";
@@ -149,7 +163,7 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             NSData *data=value?CFBridgingRelease(value):nil;
             NSString *account=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
             finish(ticket,status==errSecSuccess && account!=nil,status==errSecSuccess?@"":errorCode(status),account);
-        });return;
+        });});return;
     }
     // Verify the owner before enabling persistence, then bind access to the current biometrics.
     dispatch_async(dispatch_get_main_queue(), ^{

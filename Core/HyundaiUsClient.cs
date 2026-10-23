@@ -39,6 +39,8 @@ public sealed class HyundaiUsClient : IDisposable
     private DateTimeOffset expires;
     private readonly RequestBudget budget;
     public bool IsAuthenticated => access.Length>0;
+    // A session that can be resumed without a new sign-in (or an automatic renewal).
+    public bool SessionValid => access.Length>0&&clock.GetUtcNow()<expires.AddSeconds(-60);
     public EnrolledVehicle? Selected { get; private set; }
     public LiveVehicleState? State { get; private set; }
     public RemoteReceipt? Pending { get; private set; }

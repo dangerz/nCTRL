@@ -74,6 +74,7 @@ public partial class Main
         if(HoldForDisclaimer(email,password,pin,remember,false)){Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{
+            DiscardParked();
             connection?.Dispose();connection=null;enrollment=null;
             var active=connectionFactory();connection=active;
             var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);

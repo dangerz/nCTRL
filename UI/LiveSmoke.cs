@@ -20,11 +20,12 @@ public partial class Main
     {
         public int Commands;
         public int Requests;
+        public int Tokens;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
             string route=request.RequestUri!.AbsolutePath;
-            Requests++;
+            Requests++;if(route.EndsWith("/oauth/token"))Tokens++;
             if((FailStage=="Authentication"&&route.EndsWith("/oauth/token"))||
                (FailStage=="Vehicle list"&&route.Contains("/enrollment/details/")))
             {

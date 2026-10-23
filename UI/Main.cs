@@ -50,9 +50,11 @@ public partial class Main : Control
         if (vaultSmoke) _ = SecureSmokeTest();
         else if (liveSmoke) _ = LiveSmokeTest();
 #endif
+        // Cold launch: start Face ID once the scene is ready (native code waits for app activation).
+        CallDeferred(nameof(TryAutoUnlock));
     }
 
-    public override void _ExitTree() { liveEpoch++; vault.Cancel(); liveLifetime.Cancel(); connection?.Dispose(); liveLifetime.Dispose(); }
+    public override void _ExitTree() { liveEpoch++; vault.Cancel(); liveLifetime.Cancel(); connection?.Dispose(); DiscardParked(); liveLifetime.Dispose(); }
     private void LoadPrefs()
     {
         var cfg = new ConfigFile();

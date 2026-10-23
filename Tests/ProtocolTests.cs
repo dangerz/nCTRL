@@ -90,6 +90,12 @@ static class ProtocolTests
         await AutomaticFollowup();
         Check(!JsonSerializer.IsReflectionEnabledByDefault,"Tests enforce mobile JSON reflection restrictions");
         await MobilePayloadsAndFailures();
+        var sessionClock=new Clock();var (resumable,_)=await Session(sessionClock);using(resumable)
+        {
+            Check(resumable.SessionValid,"Fresh session can be resumed without signing in");
+            await sessionClock.Advance(TimeSpan.FromSeconds(3600-61),default);Check(resumable.SessionValid,"Session stays resumable until shortly before expiry");
+            await sessionClock.Advance(TimeSpan.FromSeconds(2),default);Check(!resumable.SessionValid,"Session near expiry requires signing in again");
+        }
         var (c,f)=await Session();using(c)
         {
             Check(f.Calls[0].Path=="/v2/ac/oauth/token"&&f.Calls[0].Method=="POST","Login endpoint");
