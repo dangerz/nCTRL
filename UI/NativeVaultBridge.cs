@@ -13,6 +13,18 @@ public static class NativeVaultBridge
         catch(EntryPointNotFoundException){return false;}
     }
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_vault_open_map(double latitude,double longitude);
+    public static bool CanSavePhotos=>OS.GetName()=="iOS";
+    // Starts an add-only save to Photos; poll PhotoStatus: 1 saving, 2 saved, 3 not allowed, 4 failed.
+    public static bool SavePhoto(byte[] image)
+    {
+        if(!CanSavePhotos)return false;
+        try {ng_photo_save(image,image.Length);return true;}
+        catch(DllNotFoundException){return false;}
+        catch(EntryPointNotFoundException){return false;}
+    }
+    public static int PhotoStatus()=>CanSavePhotos?ng_photo_status():0;
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_photo_save(byte[] bytes,int length);
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern int ng_photo_status();
     public static void RestoreForeground()
     {
         if(OS.GetName()!="iOS")return;

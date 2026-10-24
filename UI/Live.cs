@@ -176,6 +176,7 @@ public partial class Main
         else if(screen=="Locate")LiveLocation();
         else if(screen=="Details")LiveDetails();
         else if(screen=="Alerts")LiveAlerts();
+        else if(screen=="Look")LookAround();
         else LiveSettings();
     }
     private void LiveHome()

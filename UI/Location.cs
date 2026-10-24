@@ -65,7 +65,8 @@ public partial class Main
             Label(24,578,412,44,mapStatus,12,White,false,true);
             Label(24,624,412,35,"Reported: "+ReportedTime(loc.ReportedAt),11,Muted,false,true);
         }
-        LiveButton(24,677,412,47,"Update Location",14,()=>_ = UpdateVehicleLocation(),true,"UpdateLocation");
+        LiveButton(24,677,198,47,"Update Location",14,()=>_ = UpdateVehicleLocation(),true,"UpdateLocation");
+        Button(238,677,198,47,"Look around  ›",13,()=>Navigate("Look"),false,"LookAround");
         Label(24,731,412,40,"Hyundai location requests: once per hour. Map tiles share the viewed area with OpenStreetMap.",10,Muted,false,true);
     }
     private void OpenMaps(VehicleLocation location)

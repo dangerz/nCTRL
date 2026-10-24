@@ -67,17 +67,17 @@ public partial class Main
         {
             var s=budget.Status(kind);int left=Math.Max(0,s.DailyCap-s.UsedToday);
             string name=RequestBudget.Label(kind);
-            Panel(24,y,412,74,new("#0e2031"),false);Rect(24,y,3,74,s.Factor>1||left==0?Red:Blue);
+            Panel(24,y,412,62,new("#0e2031"),false);Rect(24,y,3,62,s.Factor>1||left==0?Red:Blue);
             Label(42,y+8,200,24,char.ToUpperInvariant(name[0])+name[1..],14,White,true);
             Label(236,y+8,190,24,$"{left} of {s.DailyCap} left today",12,left==0?Red:Blue,true).HorizontalAlignment=HorizontalAlignment.Right;
-            Label(42,y+38,384,28,(s.Cooldown==TimeSpan.Zero?"No cooldown":"One every "+RequestBudget.Duration(s.Cooldown))+
+            Label(42,y+34,384,24,(s.Cooldown==TimeSpan.Zero?"No cooldown":"One every "+RequestBudget.Duration(s.Cooldown))+
                 (s.Factor>1?$" · tightened ×{s.Factor} until "+s.TightenedUntil.ToLocalTime().ToString("t",CultureInfo.CurrentCulture):""),11,Muted,false,true);
-            y+=82;
+            y+=70;
         }
         var blocked=budget.HyundaiBlockedUntil;
         if(blocked>DateTimeOffset.UtcNow)
-            Label(24,606,412,36,"Hyundai is rate limiting. Requests are paused until "+blocked.ToLocalTime().ToString("t",CultureInfo.CurrentCulture)+".",12,Red,true,true);
-        Label(24,644,412,72,"Shared by every account on this device; daily counts reset at midnight. Hyundai rate limiting doubles that request's limits "+
+            Label(24,612,412,32,"Hyundai is rate limiting. Requests are paused until "+blocked.ToLocalTime().ToString("t",CultureInfo.CurrentCulture)+".",12,Red,true,true);
+        Label(24,648,412,68,"Shared by every account on this device; daily counts reset at midnight. Hyundai rate limiting doubles that request's limits "+
             "for 24 hours, up to ×8. Overrides cover one request"+(deviceCheckRequired?" and need "+vault.BiometricName:"")+".",11,Muted,false,true);
         Button(24,722,412,46,"Back to settings",13,()=>Navigate("Settings"),false,"LimitsBack");
     }

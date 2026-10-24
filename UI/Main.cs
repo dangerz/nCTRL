@@ -210,7 +210,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits" or "Places"?"Settings":screen is "Climate" or "Locate" or "Alerts"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits" or "Places"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;

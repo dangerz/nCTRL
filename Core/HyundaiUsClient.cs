@@ -25,6 +25,8 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
     // While charging: power in kW and Hyundai's estimate of minutes left for the current charge.
     double? ChargingPowerKw=null, int? ChargeMinutesLeft=null);
 // RetrievedAt is when nCTRL received it, for deciding whether a location is fresh enough to trust.
+// One composite Surround View picture (Hyundai's encoded bytes), its capture time and the car's position then.
+public sealed record SurroundView(byte[] Image,string CapturedAt,VehicleLocation? Location,int? Heading,bool? TrunkOpen,DateTimeOffset RetrievedAt);
 public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt, DateTimeOffset RetrievedAt=default);
 // Openings and warnings as reported; null means Hyundai did not report that item.
 public sealed record VehicleHealth(int? Battery12V,
@@ -37,8 +39,10 @@ public class BluelinkException : Exception
 {
     public int? HttpStatus { get; }
     public int? ApiErrorCode { get; }
-    public BluelinkException(string message,int? httpStatus=null,int? apiErrorCode=null) : base(message)
-    { HttpStatus=httpStatus;ApiErrorCode=apiErrorCode; }
+    // Hyundai's errorSubCode (such as HT_533), kept only when it has that short code shape.
+    public string? ApiSubCode { get; }
+    public BluelinkException(string message,int? httpStatus=null,int? apiErrorCode=null,string? apiSubCode=null) : base(message)
+    { HttpStatus=httpStatus;ApiErrorCode=apiErrorCode;ApiSubCode=apiSubCode; }
 }
 
 /// <summary>Unofficial Hyundai USA adapter. Secrets are memory-only. No command retries.</summary>
@@ -73,7 +77,7 @@ public sealed class HyundaiUsClient : IDisposable
     // Injection is for deterministic offline protocol tests; host remains fixed.
     // Without a shared budget, limits apply only to this client instance.
     public HyundaiUsClient(HttpMessageHandler handler,TimeProvider? clock=null,RequestBudget? budget=null)
-    { this.clock=clock??TimeProvider.System;this.budget=budget??new RequestBudget(new MemoryBudgetStore(),this.clock);http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(45),MaxResponseContentBufferSize=2*1024*1024}; }
+    { this.clock=clock??TimeProvider.System;this.budget=budget??new RequestBudget(new MemoryBudgetStore(),this.clock);http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(45),MaxResponseContentBufferSize=8*1024*1024}; } // Surround View pictures arrive inline.
 
     // implicit: a sign-in nCTRL performs for a saved account as part of a user action. It counts toward
     // the daily cap but is never refused by the sign-in cooldown.
@@ -314,6 +318,68 @@ public sealed class HyundaiUsClient : IDisposable
         };
     }
 
+    public SurroundView? SurroundView { get; private set; }
+    // Asks the car for a new Surround View picture, then checks every 15 seconds for about two minutes
+    // (upstream's timing). Pictures are kept in memory only.
+    public Task<SurroundView> CaptureSurroundViewAsync(Action<int>? checkedCount,CancellationToken ct)=>
+        CaptureSurroundViewAsync(checkedCount,ct,(duration,token)=>Task.Delay(duration,clock,token));
+    internal async Task<SurroundView> CaptureSurroundViewAsync(Action<int>? checkedCount,CancellationToken ct,Func<TimeSpan,CancellationToken,Task> delay)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            NeedVehicle();
+            budget.Acquire(RequestKind.Camera);
+            await EnsureToken(ct);
+            var baseline=await SurroundViewDetails(ct);
+            string body=RequestJson.Object(w=>{w.WriteString("vin",Selected!.Vin);w.WriteString("username",username);
+                w.WriteString("gen",Selected.Generation.ToString(CultureInfo.InvariantCulture));w.WriteString("blueLinkServicePin",pin);});
+            try {await RequestAsync(RequestKind.Camera,HttpMethod.Post,"/ac/v2/svm/findMyCarSVM",body,true,true,ct,stage:"Surround View");}
+            catch(BluelinkException ex) when(ex.ApiSubCode=="HT_533")
+            {throw new BluelinkException("Surround View: a capture is already in progress. Try again in a few minutes.",ex.HttpStatus,ex.ApiErrorCode,ex.ApiSubCode);}
+            for(int attempt=1;attempt<=SurroundViewChecks;attempt++)
+            {
+                await delay(TimeSpan.FromSeconds(15),ct);
+                checkedCount?.Invoke(attempt);
+                var latest=await SurroundViewDetails(ct);
+                if(latest!=null&&IsNewerCapture(baseline,latest)){SurroundView=latest;return latest;}
+            }
+            throw new BluelinkException("Surround View: the car didn't send a new picture within two minutes. Nothing else was requested.");
+        }
+        finally { gate.Release(); }
+    }
+    public const int SurroundViewChecks=7;
+    private async Task<SurroundView?> SurroundViewDetails(CancellationToken ct)
+    {
+        budget.Acquire(RequestKind.Read,enforceCooldown:false,startsCooldown:false);
+        var r=await RequestAsync(RequestKind.Read,HttpMethod.Get,"/ac/v2/svm/getSVMDetails",null,true,true,ct,stage:"Surround View");
+        return ParseSurroundView(r.Body,clock.GetUtcNow());
+    }
+    public static SurroundView? ParseSurroundView(JsonElement body,DateTimeOffset received)
+    {
+        var d=At(body,"svmDetails.0.svmDetail");
+        if(d.ValueKind!=JsonValueKind.Object)return null;
+        string encoded=Text(d,"svmImage");
+        int comma=encoded.IndexOf(',');
+        if(encoded.StartsWith("data:",StringComparison.Ordinal)&&comma>0)encoded=encoded[(comma+1)..];
+        byte[] image;
+        try {image=encoded.Length is >0 and <=11_000_000?Convert.FromBase64String(encoded):Array.Empty<byte>();} catch(FormatException) {image=Array.Empty<byte>();}
+        var lat=Number(d,"gpsDetail.coord.lat");var lon=Number(d,"gpsDetail.coord.lon");string time=Text(d,"gpsDetail.time");
+        var at=lat is double y&&lon is double x&&Math.Abs(y)<=90&&Math.Abs(x)<=180&&!(y==0&&x==0)?new VehicleLocation(y,x,time,received):null;
+        return new(image,time,at,Integer(d,"gpsDetail.head"),Boolean(d,"trunkOpen"),received);
+    }
+    // Upstream's rule: newer when both capture times parse and the new one is later; otherwise when the raw
+    // times differ. With no earlier capture, any picture with a time counts.
+    internal static bool IsNewerCapture(SurroundView? baseline,SurroundView latest)
+    {
+        if(latest.Image.Length==0||latest.CapturedAt.Length==0)return false;
+        if(baseline==null||baseline.CapturedAt.Length==0)return true;
+        if(CaptureTime(baseline.CapturedAt) is DateTimeOffset before&&CaptureTime(latest.CapturedAt) is DateTimeOffset after)return after>before;
+        return latest.CapturedAt!=baseline.CapturedAt;
+    }
+    private static DateTimeOffset? CaptureTime(string text)=>
+        text.Length==14&&DateTime.TryParseExact(text,"yyyyMMddHHmmss",CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal|DateTimeStyles.AdjustToUniversal,out var compact)?compact:
+        DateTimeOffset.TryParse(text,CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal,out var iso)?iso:null;
     public async Task<VehicleLocation> LocateAsync(CancellationToken ct)
     {
         await gate.WaitAsync(ct);
@@ -386,8 +452,10 @@ public sealed class HyundaiUsClient : IDisposable
         string rawCode=error.ValueKind==JsonValueKind.String?error.GetString()??"":error.ToString();
         int? code=rawCode.Length==3&&rawCode.All(char.IsAsciiDigit)&&int.TryParse(rawCode,out int number)?number:null;
         int status=(int)response.StatusCode;
+        var sub=At(json,"errorSubCode");
+        string? subCode=sub.ValueKind==JsonValueKind.String&&sub.GetString() is {Length: >=4 and <=12} sc&&sc.Contains('_')&&sc.All(ch=>char.IsAsciiLetterUpper(ch)||char.IsAsciiDigit(ch)||ch=='_')?sc:null;
         BluelinkException Failure(string detail)=>new($"{stage}: HTTP {status}"+
-            (apiError?code is int n?$"; API code {n}":"; API error (code withheld)":"")+". "+detail,status,code);
+            (apiError?code is int n?$"; API code {n}":"; API error (code withheld)":"")+". "+detail,status,code,subCode);
         if(response.StatusCode==HttpStatusCode.TooManyRequests){budget.RecordRateLimited(kind,response.Headers.RetryAfter?.Delta);throw Failure("Hyundai is rate limiting requests. No automatic retry was sent.");}
         if(response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){access="";refresh="";throw Failure("Hyundai denied access. Sign-in or account challenges may be required; challenges are not supported. No retry was sent.");}
         if(!response.IsSuccessStatusCode)throw Failure("Hyundai request failed; the cause is not established. No automatic retry was sent.");
@@ -469,6 +537,6 @@ public sealed class HyundaiUsClient : IDisposable
     private static int? Integer(JsonElement e,string p){var n=Number(e,p);return n is >=int.MinValue and <=int.MaxValue?(int)n.Value:null;}
     private static bool? Boolean(JsonElement e,string p)=>At(e,p).ValueKind switch {
         JsonValueKind.True=>true,JsonValueKind.False=>false,_=>Text(e,p).ToLowerInvariant() switch {"1" or "true"=>true,"0" or "false"=>false,_=>null}};
-    private void Clear(){username="";password="";pin="";access="";refresh="";Selected=null;State=null;RawStatus=null;Pending=null;Location=null;}
+    private void Clear(){username="";password="";pin="";access="";refresh="";Selected=null;State=null;RawStatus=null;Pending=null;Location=null;SurroundView=null;}
     public void Dispose(){Clear();http.Dispose();}
 }

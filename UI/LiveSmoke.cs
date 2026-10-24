@@ -27,6 +27,8 @@ public partial class Main
         public bool Unhealthy;
         // Turns the reported car into one that is charging at 7.2 kW with 95 minutes left.
         public bool Charging;
+        // Surround View: a picture whose capture time moves forward once a capture is requested.
+        public string SvmImage="";public int SvmRequests;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
@@ -39,11 +41,17 @@ public partial class Main
                 FailStage="";
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway){Content=new StringContent("offline gateway fixture")});
             }
+            if(route=="/ac/v2/svm/getSVMDetails") {
+                string time=SvmRequests>0?DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"):"2026-10-20T08:00:00Z";
+                var svm="{\"svmDetails\":[{\"svmDetail\":{\"svmImage\":\""+SvmImage+"\",\"gpsDetail\":{\"time\":\""+time+"\",\"coord\":{\"lat\":40.111111,\"lon\":-74.222222},\"head\":90},\"trunkOpen\":false}}]}";
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(svm,Encoding.UTF8,"application/json")});
+            }
+            if(route=="/ac/v2/svm/findMyCarSVM")SvmRequests++;
             string body=route switch {
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
                 "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"battery\":{\"batSoc\":87},\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0},\"tirePressure\":{\"tirePressureFrontLeft\":36,\"tirePressureFrontRight\":36,\"tirePressureRearLeft\":35,\"tirePressureRearRight\":29},\"tirePressureLamp\":{\"tirePressureWarningLampAll\":1,\"tirePressureWarningLampRearRight\":1},\"vehicleLocation\":{\"coord\":{\"lat\":40.111111,\"lon\":-74.222222}},\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
-                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl" or "/ac/v2/evc/charge/targetsoc/set"=>"",
+                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl" or "/ac/v2/evc/charge/targetsoc/set" or "/ac/v2/svm/findMyCarSVM"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
                 "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
@@ -298,7 +306,33 @@ public partial class Main
             await Capture("45-charging-eta-test.png");
             Navigate("Car");
             if(canvas.GetNodeOrNull<Label>("CarChargeEta")?.Text.StartsWith("Full at")!=true)throw new Exception("Car screen does not show when charging finishes");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA. No real API calls.");
+            // Surround View: a warning first, then the car's picture, saved through a stand-in for Photos.
+            var picture=Image.CreateEmpty(32,16,false,Image.Format.Rgb8);picture.Fill(new Color("#3aa0ff"));
+            fixture.SvmImage=Convert.ToBase64String(picture.SavePngToBuffer());
+            byte[]? savedPicture=null;savePhoto=bytes=>{savedPicture=bytes;return Task.FromResult("Saved to Photos.");};
+            Navigate("Locate");canvas.GetNode<Button>("LookAround").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Look")throw new Exception("Vehicle location does not open Look around");
+            canvas.GetNode<Button>("LookCapture").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingConfirm==null||!pendingConfirm.Message.Contains("wakes the car")||!pendingConfirm.Message.Contains("12-volt battery is at 41%")||fixture.SvmRequests!=0)
+                throw new Exception("Surround View did not warn before capturing");
+            await Capture("46-look-warning-test.png");
+            canvas.GetNode<Button>("ConfirmGo").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<40&&!lookCapturing;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(canvas.GetNodeOrNull<Label>("LookProgress")==null)throw new Exception("Surround View does not show its progress");
+            await Capture("47-look-progress-test.png");
+            for(int i=0;i<200&&(liveBusy||lookTexture==null);i++)await ToSignal(GetTree().CreateTimer(0.25),SceneTreeTimer.SignalName.Timeout);
+            if(lookTexture==null||canvas.GetNodeOrNull<TextureRect>("LookPicture")==null||fixture.SvmRequests!=1)throw new Exception("Surround View picture did not appear after one request");
+            await Capture("48-look-picture-test.png");
+            canvas.GetNode<Button>("LookSave").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<100&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(savedPicture==null||Convert.ToBase64String(savedPicture)!=fixture.SvmImage||notice!="Saved to Photos.")throw new Exception("Save to Photos did not save the captured picture");
+            // A second capture within 5 minutes warns before anything is sent.
+            canvas.GetNode<Button>("LookCapture").EmitSignal(Godot.Button.SignalName.Pressed);
+            canvas.GetNode<Button>("ConfirmGo").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<100&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(pendingOverride?.Kind!=RequestKind.Camera||fixture.SvmRequests!=1)throw new Exception("A second capture within 5 minutes was not refused first");
+            canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

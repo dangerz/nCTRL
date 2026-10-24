@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace NGarage.Core;
 
-public enum RequestKind { SignIn, Read, Wake, Command, Location }
+public enum RequestKind { SignIn, Read, Wake, Command, Location, Camera }
 public sealed record RequestLimit(TimeSpan Cooldown,int DailyCap);
 // Display snapshot. Cooldown and DailyCap already include any rate-limit tightening.
 public sealed record RequestAllowance(RequestKind Kind,TimeSpan Cooldown,int DailyCap,int UsedToday,int Factor,DateTimeOffset TightenedUntil);
@@ -38,7 +38,9 @@ public sealed class RequestBudget
         [RequestKind.Read]=new(TimeSpan.FromSeconds(15),150),
         [RequestKind.Wake]=new(TimeSpan.FromMinutes(10),10),
         [RequestKind.Command]=new(TimeSpan.FromSeconds(30),30),
-        [RequestKind.Location]=new(TimeSpan.FromHours(1),24)
+        [RequestKind.Location]=new(TimeSpan.FromHours(1),24),
+        // Surround View wakes the car and runs its cameras.
+        [RequestKind.Camera]=new(TimeSpan.FromMinutes(5),6)
     };
     public const int MaxFactor=8;
     private static readonly TimeSpan TightenFor=TimeSpan.FromHours(24),DefaultBackoff=TimeSpan.FromMinutes(5),
@@ -138,7 +140,7 @@ public sealed class RequestBudget
 
     public static string Label(RequestKind kind)=>kind switch {
         RequestKind.SignIn=>"sign-ins",RequestKind.Read=>"status reads",RequestKind.Wake=>"wake requests",
-        RequestKind.Command=>"remote commands",_=>"location requests"};
+        RequestKind.Command=>"remote commands",RequestKind.Camera=>"camera captures",_=>"location requests"};
     public static string Singular(RequestKind kind)=>Label(kind).TrimEnd('s');
     public static string Duration(TimeSpan span)
     {

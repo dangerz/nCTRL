@@ -2,6 +2,7 @@
 #import <Security/Security.h>
 #import <LocalAuthentication/LocalAuthentication.h>
 #import <UIKit/UIKit.h>
+#import <Photos/Photos.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -24,6 +25,21 @@ NG_EXPORT void ng_vault_open_map(double latitude, double longitude) {
         }];
     });
 }
+// Saves one Surround View picture to the photo library with add-only access (nCTRL never reads the library).
+// Status: 0 idle, 1 saving, 2 saved, 3 access not allowed, 4 failed.
+static volatile int photoStatus;
+NG_EXPORT void ng_photo_save(const unsigned char *bytes, int length) {
+    if(!bytes || length<=0 || length>16*1024*1024){photoStatus=4;return;}
+    NSData *data=[NSData dataWithBytes:bytes length:(NSUInteger)length];
+    photoStatus=1;
+    [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus status) {
+        if(status!=PHAuthorizationStatusAuthorized && status!=PHAuthorizationStatusLimited){photoStatus=3;return;}
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^{
+            [[PHAssetCreationRequest creationRequestForAsset] addResourceWithType:PHAssetResourceTypePhoto data:data options:nil];
+        } completionHandler:^(BOOL success, NSError *error) {photoStatus=success?2:4;}];
+    }];
+}
+NG_EXPORT int ng_photo_status(void) {return photoStatus;}
 static NSObject *guard;
 static NSData *resultData;
 static LAContext *activeContext;
