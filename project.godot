@@ -12,7 +12,7 @@ config_version=5
 
 config/name="nCTRL"
 config/description="Ioniq 5 N companion with Hyundai USA connectivity and device-secured login."
-config/version="2.4"
+config/version="2.5"
 run/main_scene="res://Main.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="Godot/app_userdata/N Garage"
