@@ -49,7 +49,7 @@ public static class IgnoredPlaces
         return null;
     }
     // Hyundai uses ISO times and compact yyyyMMddHHmmss times; only stamps of the same kind are compared.
-    private static (DateTimeOffset At,bool Compact)? Stamp(string text)
+    internal static (DateTimeOffset At,bool Compact)? Stamp(string text)
     {
         if(string.IsNullOrWhiteSpace(text))return null;
         if(text.Length==14&&DateTime.TryParseExact(text,"yyyyMMddHHmmss",CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal,out var compact))

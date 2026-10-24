@@ -150,7 +150,7 @@ public partial class Main
         if(liveBusy)return;
         int version=liveEpoch;
         liveBusy=true;notice=progress;noticeError=false;Render();
-        try {await work();EnsureLive(version);}
+        try {await work();EnsureLive(version);await RememberLocation(version);}
         catch(Exception) when(version!=liveEpoch) { }
         catch(VaultException ex){notice=ex.Message;noticeError=true;}
         catch(RequestLimitException ex){OfferOverride(ex,retry);}

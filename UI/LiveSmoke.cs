@@ -175,6 +175,17 @@ public partial class Main
             if(connection!.Location==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null||fixture.Commands!=0)
                 throw new Exception("Location entry did not automatically load map without a command");
             await Capture("19-vehicle-map-test.png");Navigate("Car");
+            // Within the hourly limit, reopening shows the last known location marked old, without a request.
+            int located=fixture.Requests;await OpenVehicleLocation();
+            if(fixture.Requests!=located||pendingOverride!=null||canvas.GetNodeOrNull<Label>("LocationOld")?.Text.StartsWith("OLD LOCATION")!=true||
+                canvas.GetNodeOrNull<Button>("VehicleMap")==null)throw new Exception("Reopening within the location limit did not show the old location");
+            // Asking anyway warns about the limit and keeps the old map up.
+            canvas.GetNode<Button>("UpdateLocation").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(pendingOverride?.Kind!=RequestKind.Location||fixture.Requests!=located||canvas.GetNodeOrNull<Label>("LocationOld")==null)
+                throw new Exception("A refused location request did not keep the old location");
+            await Capture("49-old-location-test.png");
+            canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);Navigate("Car");
             var door=canvas.GetNode<Button>("DoorControl");
             if(door.GetThemeStylebox("normal") is not StyleBoxFlat style||style.BgColor!=Red)
                 throw new Exception("Locked door control is missing the N red accent");
@@ -332,7 +343,7 @@ public partial class Main
             for(int i=0;i<100&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(pendingOverride?.Kind!=RequestKind.Camera||fixture.SvmRequests!=1)throw new Exception("A second capture within 5 minutes was not refused first");
             canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View, old location. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

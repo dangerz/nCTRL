@@ -113,6 +113,10 @@ public sealed class AccountVault
     public Task<string> LoadPlacesAsync(CancellationToken ct)=>bridge.Present?Request("places_load","",ct):throw new VaultException("unavailable");
     public Task SavePlacesAsync(string json,CancellationToken ct)=>bridge.Present?Request("places_save",json,ct):throw new VaultException("unavailable");
     public Task ForgetPlacesAsync(CancellationToken ct)=>bridge.Present?Request("places_forget","",ct):throw new VaultException("unavailable");
+    // The car's last known location: its own device-only item, shown by the app only after Face ID. Empty text means none.
+    public Task<string> LoadLocationAsync(CancellationToken ct)=>bridge.Present?Request("location_load","",ct):throw new VaultException("unavailable");
+    public Task SaveLocationAsync(string json,CancellationToken ct)=>bridge.Present?Request("location_save",json,ct):throw new VaultException("unavailable");
+    public Task ForgetLocationAsync(CancellationToken ct)=>bridge.Present?Request("location_forget","",ct):throw new VaultException("unavailable");
     public async Task ForgetAsync(CancellationToken ct)
     {
         // Deletion must still work when enrollment was changed or biometrics are unavailable.

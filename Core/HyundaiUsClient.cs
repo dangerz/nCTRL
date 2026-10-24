@@ -20,7 +20,7 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
     // Seat codes as reported (see SeatCodes.Reported); null when Hyundai does not report them.
     int? DriverSeat=null, int? PassengerSeat=null, bool? SteeringWheelHeat=null,
     VehicleHealth? Health=null,
-    // Location included in the status report, if any. Used only for ignored-place checks; never shown or saved.
+    // Location included in the status report, if any. Used for ignored-place checks, and kept as the last known location when newest.
     VehicleLocation? StatusLocation=null,
     // While charging: power in kW and Hyundai's estimate of minutes left for the current charge.
     double? ChargingPowerKw=null, int? ChargeMinutesLeft=null);

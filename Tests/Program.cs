@@ -13,6 +13,7 @@ static class Program
         DetailTests.Run();
         HealthTests.Run();
         PlaceTests.Run();
+        LastLocationTests.Run();
         PresetTests.Run();
         await RequestBudgetTests.Run();
         await SurroundViewTests.Run();

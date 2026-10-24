@@ -14,7 +14,7 @@ public partial class Main
         public bool Present=>true;
         public bool CancelNext,Hold;
         public int Unlocks;
-        public string Places="";
+        public string Places="",Location="";
         private string? saved;
         private string result="";
         public int Availability()=>2;
@@ -22,10 +22,12 @@ public partial class Main
         public void Start(string op,string data) {
             if(op=="unlock")Unlocks++;
             if(Hold)return;
-            if(CancelNext){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
+            if(CancelNext&&!op.StartsWith("places_")&&!op.StartsWith("location_")){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
             if(op=="save")saved=data;if(op=="forget")saved=null;
             if(op=="places_save")Places=data;if(op=="places_forget")Places="";
-            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:"");});
+            if(op=="location_save")Location=data;if(op=="location_forget")Location="";
+            result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");
+                w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:op=="location_load"?Location:"");});
         }
         public string TakeResult(){var s=result;result="";return s;}
         public void Cancel(){result="";}
@@ -70,6 +72,16 @@ public partial class Main
             if(fake.Unlocks!=unlocks||http.Requests!=sent)throw new Exception("Opening the app asked for Face ID or sent a request");
             if(canvas.GetNodeOrNull<Label>("LastUpdated")?.Text.StartsWith("Updated")!=true)throw new Exception("Car screen does not show when status last updated");
             await Capture("20-saved-status-test.png");
+            // The status report's location was kept in its own (fake) Keychain item, by vehicle fingerprint only.
+            if(!fake.Location.Contains("40.111111")||fake.Location.Contains("TESTVIN")||fake.Location.Contains("tester"))
+                throw new Exception("Last known location was not stored by vehicle fingerprint");
+            // As after a relaunch: shown from the Keychain without Face ID, marked old. Cancelling the new request's Face ID keeps it.
+            savedLocation=null;storedLocation=null;savedLoaded=false;
+            fake.CancelNext=true;await OpenVehicleLocation();
+            if(fake.Unlocks!=unlocks+1||http.Requests!=sent||canvas.GetNodeOrNull<Label>("LocationOld")==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null)
+                throw new Exception("Saved status did not show the old location without Face ID");
+            await Capture("50-old-location-saved-status-test.png");
+            Navigate("Car");unlocks=fake.Unlocks;
             // The first request asks for Face ID; cancelling sends nothing.
             fake.CancelNext=true;await RefreshLive(false);
             if(fake.Unlocks!=unlocks+1||http.Requests!=sent||connection!=null||!Offline)throw new Exception("Cancelled Face ID still sent a request");
@@ -128,9 +140,10 @@ public partial class Main
             await ForgetAccount();if(parked!=null)throw new Exception("Sign out did not discard the parked session");if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
             if(linkedVehicle.Length!=0||snapshot!=null)throw new Exception("Forget retained the linked vehicle or saved status");
             if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
+            if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, forget. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, old location without Face ID, forget. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }
