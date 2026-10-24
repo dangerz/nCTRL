@@ -1,10 +1,10 @@
 using Godot;
 using NGarage.Core;
 
-// Status drawn over the Ioniq 5 N art: static red/blue tints for the windshield (climate), front
+// Status drawn over the car art: static red/blue tints for the windshield (climate), front
 // seats (heat/ventilation) and steering wheel (heat), plus a pulsing padlock on the front door.
-// Positions are source-sprite pixels (1774×887), so they follow its aspect-fit scaling.
-// The car faces left, so the nearer seat through the windshield is the passenger's.
+// Positions are the picture's own pixels (see CarArt), so they follow its aspect-fit scaling.
+// The car faces left, so its driver's side is in view and the nearer seat is the driver's.
 public partial class StatusOverlay : Control
 {
     public LockEffect Lock;
@@ -17,25 +17,14 @@ public partial class StatusOverlay : Control
     private FontVariation? italic;
     private bool drewFlash;
     public bool Flashing=>Time.GetTicksMsec()<FlashUntilMs;
-    // Reported openings on the visible (passenger) side; driver-side doors and the tailgate are not in view.
+    // Reported openings on the visible (driver's) side; passenger-side doors and the tailgate are not in view.
     public bool FrontDoorOpen,RearDoorOpen,FrontWindowOpen,RearWindowOpen,HoodOpen;
     public Vector2 TextureSize=new(1774,887);
+    public CarArt Art=CarArt.For("ioniq5n");
     private float time;
     private static readonly Color LockRed=new("#f24a4d"),Outline=new("#eef5fb"),Backdrop=new(0.03f,0.07f,0.11f,0.78f),
         HeatTint=new("#ff3b30"),CoolTint=new("#3aa0ff");
-    private static readonly Vector2[] WindshieldGlass={new(485,312),new(700,160),new(1095,148),new(1040,312)};
-    private static readonly Rect2 DriverSeatBack=new(778,196,66,64),PassengerSeatBack=new(884,198,92,98);
-    private static readonly Vector2 WheelCenter=new(735,278),WheelRadius=new(42,22);
-    private static readonly Vector2 LockCenter=new(1220,410);
-    private static readonly Rect2[] Headlights={new(132,431,96,39),new(552,431,83,39),new(680,431,80,37)};
-    // Just above the hood's front edge, over the grille where the horn sits.
-    private static readonly Vector2 HornAt=new(385,392);
     private static readonly Color Beam=new(1f,0.96f,0.78f),Dark=new(0.03f,0.07f,0.11f),OpenAmber=new("#e0a43a");
-    private static readonly Vector2[] FrontDoor={new(1060,328),new(1330,320),new(1332,605),new(1100,615),new(1065,570)};
-    private static readonly Vector2[] RearDoor={new(1335,320),new(1550,328),new(1560,430),new(1500,520),new(1490,600),new(1335,605)};
-    private static readonly Vector2[] FrontWindow={new(1075,315),new(1150,165),new(1265,162),new(1275,315)};
-    private static readonly Vector2[] RearWindow={new(1290,162),new(1430,180),new(1540,312),new(1300,315)};
-    private static readonly Vector2[] HoodPanel={new(160,425),new(250,345),new(485,312),new(1040,318),new(985,345),new(830,420)};
     private static readonly string[] Closed={"..XXXXX..",".X.....X.",".X.....X.","XXXXXXXXX","XXXXXXXXX","XXXX.XXXX","XXXX.XXXX","XXXXXXXXX","XXXXXXXXX"};
     private static readonly string[] Open={"..XXXXX..",".X.....X.",".X.......",".X.......","XXXXXXXXX","X.......X","X...X...X","X.......X","XXXXXXXXX"};
 
@@ -54,22 +43,22 @@ public partial class StatusOverlay : Control
     private float ArtScale=>Mathf.Min(Size.X/TextureSize.X,Size.Y/TextureSize.Y);
     private Vector2 At(Vector2 source)=>(Size-TextureSize*ArtScale)/2+source*ArtScale;
     // The padlock's tap area in this control's coordinates (larger than the 28-point badge).
-    public Rect2 LockArea()=>new(At(LockCenter)-new Vector2(24,24),new Vector2(48,48));
+    public Rect2 LockArea()=>new(At(Art.Lock)-new Vector2(24,24),new Vector2(48,48));
     private static Color Tint(ComfortTint tint,float alpha)=>new(tint==ComfortTint.Heat?HeatTint:CoolTint,alpha);
     public override void _Draw()
     {
         if(Windshield!=ComfortTint.None) {
-            var glass=new Vector2[WindshieldGlass.Length];
-            for(int i=0;i<glass.Length;i++)glass[i]=At(WindshieldGlass[i]);
+            var glass=new Vector2[Art.Windshield.Length];
+            for(int i=0;i<glass.Length;i++)glass[i]=At(Art.Windshield[i]);
             DrawColoredPolygon(glass,Tint(Windshield,0.30f));
         }
-        if(HoodOpen)Opening(HoodPanel,0.16f);
-        if(FrontDoorOpen)Opening(FrontDoor,0.16f);if(RearDoorOpen)Opening(RearDoor,0.16f);
-        if(FrontWindowOpen)Opening(FrontWindow,0.32f);if(RearWindowOpen)Opening(RearWindow,0.32f);
-        if(DriverSeat!=ComfortTint.None)SeatBack(DriverSeatBack,DriverSeat);
-        if(PassengerSeat!=ComfortTint.None)SeatBack(PassengerSeatBack,PassengerSeat);
+        if(HoodOpen)Opening(Art.Hood,0.16f);
+        if(FrontDoorOpen)Opening(Art.FrontDoor,0.16f);if(RearDoorOpen&&Art.RearDoor!=null)Opening(Art.RearDoor,0.16f);
+        if(FrontWindowOpen)Opening(Art.FrontWindow,0.32f);if(RearWindowOpen&&Art.RearWindow!=null)Opening(Art.RearWindow,0.32f);
+        if(DriverSeat!=ComfortTint.None)SeatBack(Art.DriverSeat,DriverSeat);
+        if(PassengerSeat!=ComfortTint.None)SeatBack(Art.PassengerSeat,PassengerSeat);
         if(WheelHeat) {
-            var center=At(WheelCenter);var radius=WheelRadius*ArtScale;
+            var center=At(Art.WheelCenter);var radius=Art.WheelRadius*ArtScale;
             var ring=new Vector2[25];
             for(int i=0;i<ring.Length;i++){float a=i*Mathf.Tau/24;ring[i]=center+new Vector2(Mathf.Cos(a)*radius.X,Mathf.Sin(a)*radius.Y);}
             DrawPolyline(ring,new Color(HeatTint,0.9f),2.5f);
@@ -82,12 +71,12 @@ public partial class StatusOverlay : Control
     {
         // Hazard-style blink: about 0.3 s on, 0.3 s off.
         if(Time.GetTicksMsec()/300%2==0)
-            foreach(var light in Headlights) {
+            foreach(var light in Art.Headlights) {
                 var rect=new Rect2(At(light.Position),light.Size*ArtScale);
                 DrawRect(rect.Grow(8),new Color(Beam,0.22f));DrawRect(rect.Grow(4),new Color(Beam,0.45f));DrawRect(rect,new Color(Beam,0.95f));
             }
         if(Horn&&italic!=null) {
-            var at=At(HornAt)-new Vector2(6,0);
+            var at=At(Art.Horn)-new Vector2(6,0);
             DrawStringOutline(italic,at,"!",HorizontalAlignment.Left,-1,30,6,Dark);
             DrawString(italic,at,"!",HorizontalAlignment.Left,-1,30,LockRed);
         }
@@ -112,7 +101,7 @@ public partial class StatusOverlay : Control
     private void DrawLock()
     {
         // Badge on the front door beside its handle; the backdrop keeps it readable on any paint.
-        var center=At(LockCenter);
+        var center=At(Art.Lock);
         var origin=(center-new Vector2(9,9)).Snapped(Vector2.One*2);
         bool locked=Lock==LockEffect.Locked;
         float pulse=0.5f+0.5f*Mathf.Sin(time*(locked?3f:2f));

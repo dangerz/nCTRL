@@ -11,7 +11,6 @@ public partial class Main : Control
     private readonly List<(string Title,string Detail,bool Ok)> history = new();
     private Control canvas = null!;
     private Font regular = null!, bold = null!;
-    private Texture2D car = null!;
     private Shader paintShader = null!;
     private string screen = "Connect", paintName = "Performance Blue", paintHex = "89b7f0";
     private string garageName = "My garage", notice = "";
@@ -29,7 +28,6 @@ public partial class Main : Control
     {
         regular = GD.Load<Font>("res://Assets/Body.ttf");
         bold = GD.Load<Font>("res://Assets/Bold.ttf");
-        car = GD.Load<Texture2D>("res://Assets/ioniq_pixel.png");
         paintShader = GD.Load<Shader>("res://Assets/Paint.gdshader");
 #if DEBUG
         liveSmoke = Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--live-smoke-test");
@@ -67,6 +65,11 @@ public partial class Main : Control
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
+        if(cfg.HasSection("cars"))foreach(string key in cfg.GetSectionKeys("cars")) {
+            var car=cfg.GetValue("cars",key).AsStringArray();
+            if(car.Length==2)cars[key]=(car[0],CarModels.CleanName(car[1]));
+        }
+        SelectCar();
         driverSeat=SeatPreference(cfg.GetValue("climate","driver_seat",0).AsInt32());
         passengerSeat=SeatPreference(cfg.GetValue("climate","passenger_seat",0).AsInt32());
         wheelHeat=cfg.GetValue("climate","steering_wheel",false).AsBool();
@@ -83,6 +86,7 @@ public partial class Main : Control
         cfg.SetValue("appearance","name",paintName);
         cfg.SetValue("appearance","garage",garageName);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
+        foreach(var (key,car) in cars)cfg.SetValue("cars",key,new[]{car.Model,car.Name});
         cfg.SetValue("climate","driver_seat",(int)driverSeat);
         cfg.SetValue("climate","passenger_seat",(int)passengerSeat);
         cfg.SetValue("climate","steering_wheel",wheelHeat);
@@ -121,13 +125,14 @@ public partial class Main : Control
         // N-inspired asymmetric motorsport detail; original artwork and layout.
         var header=Panel(0,0,460,96,new("#0c1825"),false,true);header.BottomEdgeOnly=true;
         Label(24,19,310,20,garageName,13,Muted);
-        Label(24,44,340,41,liveMode?"IONIQ 5 N":"nCTRL",29,White,true);
+        Label(24,44,340,41,liveMode?CarTitle:"nCTRL",liveMode&&CarTitle.Length>14?23:29,White,true).Name="CarTitle";
         Button(365,20,70,28,smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
         // Nothing else is reachable until the current account has accepted the risk disclaimer.
         if(DisclaimerRequired) DisclaimerScreen();
         else if(screen=="Connect") ConnectionScreen();
         else if(screen=="Paint") Paint();
         else if(screen=="Appearance") Appearance();
+        else if(screen=="Model") ModelPicker();
         else if(screen=="Disclaimer") DisclaimerView();
         else if(screen=="Limits") LimitsScreen();
         else if(screen=="Places") PlacesScreen();
@@ -154,7 +159,7 @@ public partial class Main : Control
         Panel(20,y,420,height,new("#101820"),false);
         var tex = new TextureRect {
             Name="CarArtwork", Position=new Vector2(24,y+4),Size=new Vector2(412,height-8),
-            Texture=car, ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,
+            Texture=CarTexture, ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode=TextureRect.StretchModeEnum.KeepAspectCentered,
             TextureFilter=TextureFilterEnum.Nearest, MouseFilter=MouseFilterEnum.Ignore
         };
@@ -165,7 +170,7 @@ public partial class Main : Control
     private void Paint()
     {
         Label(24,108,400,34,"MAKE IT YOURS.",25,White,true);
-        Label(24,148,410,24,"Choose the paint for your pixel Ioniq.",12,Muted);
+        Label(24,148,410,24,"Choose the paint for your pixel "+carModel.Name+".",12,Muted);
         Hero(185,215);
         Label(24,419,410,30,paintName.ToUpperInvariant(),20,Blue,true);
         Label(24,455,410,30,"Wheels, glass and signature red trim stay intact.",11,Muted);
@@ -195,22 +200,11 @@ public partial class Main : Control
         Button(214,714,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"PaintDone");
         if(notice.Length==0) Label(24,794,410,40,"Preview colors are illustrative, not factory paint matching.",11,Muted,false,true);
     }
-    private void Appearance()
-    {
-        Title("YOUR GARAGE.","Appearance saved on this device.");
-        Label(24,204,412,22,"GARAGE NAME",11,Muted,true);
-        var input=new LineEdit {Name="GarageName",Position=new(24,238),Size=new(278,44),Text=garageName,MaxLength=30};
-        input.AddThemeFontOverride("font",regular);input.AddThemeFontSizeOverride("font_size",14);canvas.AddChild(input);
-        Button(314,238,122,44,"Save",13,()=>{garageName=string.IsNullOrWhiteSpace(input.Text)?"My garage":input.Text.Trim();SavePrefs();Render();},true,"SaveGarage");
-        Button(24,306,412,51,"Car color  /  "+paintName+"  ›",13,()=>Navigate("Paint"),false,"SettingsPaint");
-        Hero(390,215);
-        Button(24,686,412,48,"Back to settings",13,()=>Navigate("Settings"));
-    }
     private void Nav()
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Disclaimer" or "Limits" or "Places"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;

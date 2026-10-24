@@ -87,7 +87,8 @@ public partial class Main
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
         ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
-        linkedVehicle="";disclaimer=null;SavePrefs();
+        // Car names and pictures go with the account too.
+        linkedVehicle="";disclaimer=null;cars.Clear();SelectCar();SavePrefs();
         if(!vault.Present){notice="Session cleared. This build has no saved account storage.";Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{

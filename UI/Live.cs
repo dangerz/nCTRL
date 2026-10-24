@@ -137,7 +137,10 @@ public partial class Main
         if(active.State?.TemperatureF is int t&&t>=62&&t<=82)liveTemperature=t;
         history.Add(("Connected to Hyundai","Read-only status loaded. No remote command sent.",true));
         if(!noticeError)notice="Connected. Showing Hyundai’s last reported state.";
-        linkedVehicle=VehicleLink.Fingerprint(accountKey,selected.Vin);SavePrefs();
+        linkedVehicle=VehicleLink.Fingerprint(accountKey,selected.Vin);
+        // First time with this car: pick the closest picture from Hyundai's model code.
+        if(!cars.ContainsKey(linkedVehicle))cars[linkedVehicle]=((CarModels.Detect(selected.Model)??CarModels.Default).Id,"");
+        SelectCar();SavePrefs();
     }
     private void Disconnect()
     {
@@ -185,12 +188,13 @@ public partial class Main
         Label(24,106,412,24,"YOUR HYUNDAI · LAST REPORTED",10,Muted,true);
         Hero(139,215);
         // Car screen only: door, climate, seat and steering-wheel state over the artwork.
-        var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=car.GetSize(),
+        var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=CarTexture.GetSize(),Art=CarArt.For(carModel.Id),
             Lock=VehicleIndicators.Lock(s?.Locked),Windshield=VehicleIndicators.Windshield(s?.ClimateOn,s?.TemperatureF),
             DriverSeat=VehicleIndicators.Seat(s?.DriverSeat),PassengerSeat=VehicleIndicators.Seat(s?.PassengerSeat),WheelHeat=s?.SteeringWheelHeat==true,
             FlashUntilMs=flashEffectUntil,Horn=hornEffect,ExclaimFont=bold,
-            FrontDoorOpen=s?.Health?.FrontRightDoor==true,RearDoorOpen=s?.Health?.RearRightDoor==true,
-            FrontWindowOpen=s?.Health?.FrontRightWindow==true,RearWindowOpen=s?.Health?.RearRightWindow==true,HoodOpen=s?.Health?.Hood==true};
+            // The art shows the car's left (driver's) side.
+            FrontDoorOpen=s?.Health?.FrontLeftDoor==true,RearDoorOpen=s?.Health?.RearLeftDoor==true,
+            FrontWindowOpen=s?.Health?.FrontLeftWindow==true,RearWindowOpen=s?.Health?.RearLeftWindow==true,HoodOpen=s?.Health?.Hood==true};
         canvas.AddChild(overlay);
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);

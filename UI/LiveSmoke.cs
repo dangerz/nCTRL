@@ -58,7 +58,7 @@ public partial class Main
             };
             if(Unhealthy&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"doorLock\":true","\"doorLock\":false").Replace("\"batSoc\":87","\"batSoc\":41")
-                    .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":0,\"frontRight\":1},\"windowOpen\":{\"backLeft\":1,\"backRight\":1},\"hoodOpen\":true");
+                    .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":1,\"frontRight\":0},\"windowOpen\":{\"backLeft\":1,\"backRight\":1},\"hoodOpen\":true");
             if(Charging&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"batteryCharge\":false","\"batteryCharge\":true,\"realTimePower\":7.2,\"remainTime2\":{\"atc\":{\"value\":95,\"unit\":1}}")
                     .Replace("2026-10-22T10:00:00Z",DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
@@ -170,6 +170,24 @@ public partial class Main
             await Capture("31-details-test.png");
             Navigate("Appearance");
             if(canvas.GetNodeOrNull<LineEdit>("GarageName")==null)throw new Exception("Garage appearance editor missing");
+            // Each car's name and picture: Hyundai's model code picked the IONIQ 5 N, and both can be changed.
+            if(carModel.Id!="ioniq5n"||canvas.GetNodeOrNull<Label>("CarTitle")?.Text!="IONIQ 5 N")throw new Exception("Model code did not pick the IONIQ 5 N picture and name");
+            canvas.GetNode<LineEdit>("CarName").Text="  Track   Toy ";canvas.GetNode<Button>("SaveCarName").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(canvas.GetNodeOrNull<Label>("CarTitle")?.Text!="Track Toy"||cars[linkedVehicle].Name!="Track Toy")throw new Exception("Car name was not saved for this vehicle");
+            canvas.GetNode<Button>("SettingsModel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Model"||canvas.GetChildren().OfType<Button>().Count(b=>b.Name.ToString().StartsWith("Model_"))!=CarModels.All.Count)
+                throw new Exception("The model picker does not list every picture");
+            await Capture("51-model-picker-test.png");
+            canvas.GetNode<Button>("Model_ev6").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(carModel.Id!="ev6"||!notice.Contains("as a picture")||canvas.GetNodeOrNull<Label>("CarTitle")?.Text!="Track Toy")
+                throw new Exception("Picking a picture-only model did not keep the name and explain it");
+            canvas.GetNode<Button>("ModelDone").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Appearance")throw new Exception("Model Done does not return to Appearance");
+            await Capture("52-appearance-car-test.png");
+            canvas.GetNode<LineEdit>("CarName").Text=" ";canvas.GetNode<Button>("SaveCarName").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(canvas.GetNodeOrNull<Label>("CarTitle")?.Text!="Kia EV6")throw new Exception("A blank car name does not fall back to the model name");
+            // Back to the car's own picture for the remaining captures.
+            PickModel(CarModels.ById("ioniq5n"));
             Navigate("Car");
             await OpenVehicleLocation();
             if(connection!.Location==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null||fixture.Commands!=0)
@@ -263,7 +281,7 @@ public partial class Main
             if(strip==null||!strip.Text.Contains("Doors unlocked")||!strip.Text.Contains("+6 more"))throw new Exception("Car screen does not lead with the unlocked alert");
             var panels=canvas.GetNode<StatusOverlay>("StatusOverlay");
             if(!panels.FrontDoorOpen||!panels.RearWindowOpen||!panels.HoodOpen||panels.RearDoorOpen||panels.FrontWindowOpen)
-                throw new Exception("Car art does not outline exactly the reported open passenger-side panels");
+                throw new Exception("Car art does not outline exactly the reported open driver-side panels");
             await Capture("36-alert-strip-test.png");
             // Every visible panel outlined at once, for reviewing the shapes.
             panels.RearDoorOpen=panels.FrontWindowOpen=true;panels.QueueRedraw();
@@ -343,6 +361,7 @@ public partial class Main
             for(int i=0;i<100&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(pendingOverride?.Kind!=RequestKind.Camera||fixture.SvmRequests!=1)throw new Exception("A second capture within 5 minutes was not refused first");
             canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--art-gallery"))await ArtGallery();
             GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View, old location. No real API calls.");
             GetTree().Quit();
         }
@@ -388,6 +407,22 @@ public partial class Main
     {
         if(screen!="Connect"||liveMode||canvas.GetNodeOrNull<Button>("NavCar")!=null||connection?.Selected!=null)
             throw new Exception("Vehicle UI is accessible without a selected live vehicle");
+    }
+    // Every picture with every overlay drawn, for checking the positions by eye.
+    private async Task ArtGallery()
+    {
+        var (keep,name)=cars[CarKey];
+        foreach(var model in CarModels.All) {
+            cars[CarKey]=(model.Id,"");SelectCar();Navigate("Car");
+            var art=canvas.GetNode<StatusOverlay>("StatusOverlay");
+            art.Windshield=ComfortTint.Heat;art.DriverSeat=ComfortTint.Heat;art.PassengerSeat=ComfortTint.Cool;art.WheelHeat=true;
+            art.FrontDoorOpen=art.RearDoorOpen=art.FrontWindowOpen=art.RearWindowOpen=art.HoodOpen=true;
+            art.Horn=true;art.FlashUntilMs=Time.GetTicksMsec()+60000;art.QueueRedraw();
+            // Capture while the headlights are on in their blink.
+            do await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame); while(Time.GetTicksMsec()%600>200);
+            await Capture($"art-{model.Id}.png");
+        }
+        cars[CarKey]=(keep,name);SelectCar();Render();
     }
     private async Task Capture(string filename)
     {

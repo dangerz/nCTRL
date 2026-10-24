@@ -9,6 +9,7 @@ static class Program
         VehicleLinkTests.Run();
         DisclaimerTests.Run();
         IndicatorTests.Run();
+        CarModelTests.Run();
         SnapshotTests.Run();
         DetailTests.Run();
         HealthTests.Run();
