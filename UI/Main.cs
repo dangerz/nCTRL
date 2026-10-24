@@ -6,8 +6,12 @@ using System.Globalization;
 
 public partial class Main : Control
 {
-    private static readonly Color Blue = new("#8ecbfa"), White = new("#eef5fb"),
-        Muted = new("#9ab0c6"), Red = new("#f24a4d"), Back = new("#08121d"), Yellow = new("#ffd129");
+    // Theme colors follow the chosen app color (UI/Skin.cs); red and yellow carry a meaning and stay fixed.
+    private static Color Blue=>Skin.Accent;
+    private static Color White=>Skin.Text;
+    private static Color Muted=>Skin.Muted;
+    private static Color Back=>Skin.Back;
+    private static readonly Color Red = new("#f24a4d"), Yellow = new("#ffd129");
     private readonly List<(string Title,string Detail,bool Ok)> history = new();
     private Control canvas = null!;
     private Font regular = null!, bold = null!;
@@ -75,6 +79,7 @@ public partial class Main : Control
         paintName = cfg.GetValue("appearance","name","Performance Blue").AsString();
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
+        Skin.Use(cfg.GetValue("appearance","theme",AppTheme.DefaultHex).AsString());
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
         cars.Clear();
         if(cfg.HasSection("cars"))foreach(string key in cfg.GetSectionKeys("cars")) {
@@ -106,6 +111,7 @@ public partial class Main : Control
         cfg.SetValue("appearance","paint",paintHex);
         cfg.SetValue("appearance","name",paintName);
         cfg.SetValue("appearance","garage",garageName);
+        cfg.SetValue("appearance","theme",Skin.Hex);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
         foreach(var (key,car) in cars)cfg.SetValue("cars",key,new[]{car.Model,car.Name});
         cfg.SetValue("climate","driver_seat",(int)driverSeat);
@@ -147,7 +153,7 @@ public partial class Main : Control
         AddChild(canvas);
         Rect(0,0,460,920,Back);
         // N-inspired asymmetric motorsport detail; original artwork and layout.
-        var header=Panel(0,0,460,96,new("#0c1825"),false,true);header.BottomEdgeOnly=true;
+        var header=Panel(0,0,460,96,Skin.Header,false,true);header.BottomEdgeOnly=true;
         Label(24,19,310,20,garageName,13,Muted);
         Label(24,44,340,41,liveMode?CarTitle:"nCTRL",liveMode&&CarTitle.Length>14?23:29,White,true).Name="CarTitle";
         Button(365,20,70,28,demo?"DEMO":smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
@@ -161,11 +167,12 @@ public partial class Main : Control
         else if(screen=="Limits") LimitsScreen();
         else if(screen=="Places") PlacesScreen();
         else if(screen=="Range") RangeScreen();
+        else if(screen=="AppColor") AppColorScreen();
         else LiveScreen();
         if(liveMode)Nav();
         if(notice.Length>0)
         {
-            Rect(20,778,420,65,noticeError?new("#47232a"):new("#183749"));
+            Rect(20,778,420,65,noticeError?new("#47232a"):Skin.Notice);
             Label(31,784,397,53,notice,11,White,false,true);
         }
         if(pendingOverride!=null)OverrideDialog();
@@ -181,7 +188,7 @@ public partial class Main : Control
     }
     private void Hero(int y,int height=215)
     {
-        Panel(20,y,420,height,new("#101820"),false);
+        Panel(20,y,420,height,Skin.Hero,false);
         var tex = new TextureRect {
             Name="CarArtwork", Position=new Vector2(24,y+4),Size=new Vector2(412,height-8),
             Texture=CarTexture, ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,
@@ -189,8 +196,16 @@ public partial class Main : Control
             TextureFilter=TextureFilterEnum.Nearest, MouseFilter=MouseFilterEnum.Ignore
         };
         var material = new ShaderMaterial { Shader=paintShader };
-        material.SetShaderParameter("paint",new Color(paintHex));
+        material.SetShaderParameter("paint",new Color(paintHex));ThemeBackdrop(material,carModel);
         tex.Material=material; canvas.AddChild(tex);
+    }
+    // Turns a car picture's backdrop to the app color (nothing to do for the default).
+    private void ThemeBackdrop(ShaderMaterial material,CarModel model)
+    {
+        var (shift,vivid)=AppTheme.Shift(Skin.Hex);
+        if(shift==0&&vivid==1)return;
+        material.SetShaderParameter("car_mask",CarMask(model));
+        material.SetShaderParameter("hue_shift",(float)(shift/360));material.SetShaderParameter("vivid",(float)vivid);
     }
     private void Paint()
     {
@@ -208,7 +223,7 @@ public partial class Main : Control
             b.AddChild(swatch);
             var text=new Label {Position=new(4,36),Size=new(120,24),Text=selected.Name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
             text.AddThemeFontOverride("font",regular);text.AddThemeFontSizeOverride("font_size",10);b.AddChild(text);
-            if(selected.Hex==paintHex) b.AddThemeStyleboxOverride("normal",Style(new("#142b40"),Blue,2));
+            if(selected.Hex==paintHex) b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
         Label(24,682,200,22,"CUSTOM COLOR",11,Muted,true);
         var picker = new ColorPickerButton {Name="CustomPaint",Position=new(24,714),Size=new(174,46),Color=new(paintHex),EditAlpha=false,Text="Choose color"};
@@ -227,14 +242,14 @@ public partial class Main : Control
     }
     private void Nav()
     {
-        Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
+        Rect(0,851,460,69,Skin.Nav);Rect(0,851,460,1,Skin.NavLine);
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range" or "AppColor"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;
             var b=Button(x,856,92,64,"",12,()=>Navigate(name),false,"Nav"+name);
-            b.AddThemeStyleboxOverride("normal",Style(new("#0b1520"),new("#0b1520")));
+            b.AddThemeStyleboxOverride("normal",Style(Skin.Nav,Skin.Nav));
             var g=new Glyph {Kind=name,Ink=name==selected?Blue:Muted,Position=new(33,5),Size=new(26,26)};b.AddChild(g);
             var l=new Label {Position=new(0,35),Size=new(92,22),Text=name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
             l.AddThemeFontOverride("font",regular);l.AddThemeFontSizeOverride("font_size",11);l.AddThemeColorOverride("font_color",name==selected?Blue:Muted);b.AddChild(l);
@@ -266,9 +281,9 @@ public partial class Main : Control
         n.AddThemeColorOverride("font_color",primary?Back:White);
         n.AddThemeColorOverride("font_hover_color",primary?Back:White);
         n.AddThemeColorOverride("font_pressed_color",primary?Back:Blue);
-        n.AddThemeStyleboxOverride("normal",Style(primary?Blue:new("#0c1c2c"),primary?Blue:new("#31526c")));
-        n.AddThemeStyleboxOverride("hover",Style(primary?new("#b0ddff"):new("#18334b"),Blue));
-        n.AddThemeStyleboxOverride("pressed",Style(primary?new("#72b6e8"):new("#1d3a53"),Blue));
+        n.AddThemeStyleboxOverride("normal",Style(primary?Blue:Skin.Button,primary?Blue:Skin.ButtonEdge));
+        n.AddThemeStyleboxOverride("hover",Style(primary?Skin.AccentHover:Skin.ButtonHover,Blue));
+        n.AddThemeStyleboxOverride("pressed",Style(primary?Skin.AccentPressed:Skin.ButtonPressed,Blue));
         n.AddThemeStyleboxOverride("focus",Style(new Color(0,0,0,0),Blue,2));
         n.Pressed+=()=>click();canvas.AddChild(n);return n;
     }

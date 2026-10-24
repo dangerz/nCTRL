@@ -22,9 +22,11 @@ public partial class StatusOverlay : Control
     public Vector2 TextureSize=new(1774,887);
     public CarArt Art=CarArt.For("ioniq5n");
     private float time;
-    private static readonly Color LockRed=new("#f24a4d"),Outline=new("#eef5fb"),Backdrop=new(0.03f,0.07f,0.11f,0.78f),
-        HeatTint=new("#ff3b30"),CoolTint=new("#3aa0ff");
-    private static readonly Color Beam=new(1f,0.96f,0.78f),Dark=new(0.03f,0.07f,0.11f),OpenAmber=new("#e0a43a");
+    private static readonly Color LockRed=new("#f24a4d"),HeatTint=new("#ff3b30"),CoolTint=new("#3aa0ff");
+    private static readonly Color Beam=new(1f,0.96f,0.78f),OpenAmber=new("#e0a43a");
+    private static Color Outline=>Skin.Text;
+    private static Color Dark=>Skin.Back;
+    private static Color Backdrop=>new(Skin.Back,0.78f);
     private static readonly string[] Closed={"..XXXXX..",".X.....X.",".X.....X.","XXXXXXXXX","XXXXXXXXX","XXXX.XXXX","XXXX.XXXX","XXXXXXXXX","XXXXXXXXX"};
     private static readonly string[] Open={"..XXXXX..",".X.....X.",".X.......",".X.......","XXXXXXXXX","X.......X","X...X...X","X.......X","XXXXXXXXX"};
 

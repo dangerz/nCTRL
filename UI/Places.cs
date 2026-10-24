@@ -47,7 +47,7 @@ public partial class Main
     private void PlaceNameDialog()
     {
         canvas.AddChild(new ColorRect {Name="PlaceShade",Size=new(460,920),Color=new(0,0,0,.72f),MouseFilter=MouseFilterEnum.Stop});
-        Panel(24,200,412,330,new("#0e2031"));
+        Panel(24,200,412,330,Skin.Card);
         Label(44,220,372,30,"IGNORE THIS PLACE",18,Amber,true);
         Label(44,256,372,80,$"Doors left unlocked within {Units.Radius(IgnoredPlaces.DefaultRadius,units)} of the car's current location won't be flagged. Other alerts still show.",12,White,false,true)
             .VerticalAlignment=VerticalAlignment.Top;
@@ -69,7 +69,7 @@ public partial class Main
         int y=200;
         for(int i=0;i<ignoredPlaces.Count&&y<600;i++) {
             var place=ignoredPlaces[i];
-            Panel(24,y,412,54,new("#0e2031"),false);Rect(24,y,3,54,Amber);
+            Panel(24,y,412,54,Skin.Card,false);Rect(24,y,3,54,Amber);
             Label(42,y+4,250,24,place.Name,14,White,true);
             Label(42,y+28,250,20,"Within "+Units.Radius(place.RadiusMeters,units),11,Muted);
             LiveButton(316,y+7,110,40,"Delete",13,()=>_ = StorePlaces(ignoredPlaces.Where(p=>p!=place).ToList(),"Removed "+place.Name+"."),false,"PlaceDelete"+i);

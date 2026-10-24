@@ -47,9 +47,10 @@ public partial class Main
         Label(24,266,412,22,"CAR NAME",11,Muted,true);
         var name=NameInput(290,"CarName",carName,carModel.Name,CarModels.MaxName);
         Button(314,290,122,42,"Save",13,()=>{SaveCar(carModel.Id,name.Text);notice=carName.Length>0?"Car name saved.":"Car name reset to the model name.";noticeError=false;Render();},true,"SaveCarName");
-        Button(24,346,412,46,"Model  /  "+carModel.Name+"  ›",13,()=>Navigate("Model"),false,"SettingsModel");
-        Button(24,402,412,46,"Car color  /  "+paintName+"  ›",13,()=>Navigate("Paint"),false,"SettingsPaint");
-        Hero(460,212);
+        Button(24,344,412,44,"Model  /  "+carModel.Name+"  ›",13,()=>Navigate("Model"),false,"SettingsModel");
+        Button(24,396,412,44,"Car color  /  "+paintName+"  ›",13,()=>Navigate("Paint"),false,"SettingsPaint");
+        Button(24,448,412,44,"App color  /  "+AppTheme.Name(Skin.Hex)+"  ›",13,()=>Navigate("AppColor"),false,"SettingsAppColor");
+        Hero(504,172);
         Button(24,686,412,48,"Back to settings",13,()=>Navigate("Settings"));
     }
     private LineEdit NameInput(int y,string nodeName,string text,string placeholder,int maxLength)
@@ -57,6 +58,40 @@ public partial class Main
         var input=new LineEdit {Name=nodeName,Position=new(24,y),Size=new(278,42),Text=text,PlaceholderText=placeholder,MaxLength=maxLength};
         input.AddThemeFontOverride("font",regular);input.AddThemeFontSizeOverride("font_size",14);canvas.AddChild(input);
         return input;
+    }
+    // App color: one picked color sets the whole look (Core/AppTheme.cs); the default is Performance Blue.
+    private void AppColorScreen()
+    {
+        Title("APP COLOR.","One color sets the whole look. Saved on this device.");
+        Label(24,192,412,30,AppTheme.Name(Skin.Hex).ToUpperInvariant(),20,Blue,true).Name="AppColorName";
+        var presets=AppTheme.Presets;
+        for(int i=0;i<presets.Count;i++) {
+            var (name,hex)=presets[i];
+            int x=24+(i%4)*104,y=232+(i/4)*80;
+            var b=Button(x,y,96,68,"",12,()=>PickAppColor(hex),false,"AppColor"+i);
+            // Swatches show each choice's own colors.
+            b.AddChild(new ColorRect {Name="Swatch",Position=new(8,8),Size=new(80,23),Color=new(hex),MouseFilter=MouseFilterEnum.Ignore});
+            b.AddChild(new ColorRect {Name="SwatchCard",Position=new(8,31),Size=new(80,4),Color=new(AppTheme.Derive(hex)[ThemeRole.Card]),MouseFilter=MouseFilterEnum.Ignore});
+            var text=new Label {Position=new(2,38),Size=new(92,24),Text=name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore,ClipText=true};
+            text.AddThemeFontOverride("font",regular);text.AddThemeFontSizeOverride("font_size",10);b.AddChild(text);
+            if(hex==Skin.Hex)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
+        }
+        Label(24,404,200,22,"CUSTOM COLOR",11,Muted,true);
+        var picker=new ColorPickerButton {Name="CustomAppColor",Position=new(24,432),Size=new(198,46),Color=new(Skin.Hex),EditAlpha=false,Text="Choose color"};
+        picker.AddThemeFontOverride("font",bold);picker.AddThemeFontSizeOverride("font_size",12);
+        // Applied when the picker closes: rebuilding the screen while its popup is open crashes Godot.
+        string chosen=Skin.Hex;
+        picker.ColorChanged+=value=>chosen=value.ToHtml(false);
+        picker.PopupClosed+=()=>Callable.From(()=>PickAppColor(chosen)).CallDeferred();
+        canvas.AddChild(picker);
+        Button(238,432,198,46,"Reset to default",13,()=>PickAppColor(AppTheme.DefaultHex),false,"AppColorReset");
+        Label(24,494,412,80,"Buttons, cards, text and the background all follow this color. Red for locked and alerts, yellow for charging and amber for warnings keep their meaning in every color. The launch screen and app icon stay blue.",
+            11,Muted,false,true);
+        Button(214,718,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"AppColorDone");
+    }
+    private void PickAppColor(string hex)
+    {
+        Skin.Use(hex);SavePrefs();Render();
     }
     private void ModelPicker()
     {
@@ -69,11 +104,11 @@ public partial class Main
             var card=Button(x,y,128,96,"",12,()=>PickModel(model),false,"Model_"+model.Id);
             var thumb=new TextureRect {Position=new(4,4),Size=new(120,56),Texture=model==carModel?CarTexture:CarPicture(model),
                 ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,StretchMode=TextureRect.StretchModeEnum.KeepAspectCentered,MouseFilter=MouseFilterEnum.Ignore};
-            var material=new ShaderMaterial {Shader=paintShader};material.SetShaderParameter("paint",new Color(paintHex));thumb.Material=material;
+            var material=new ShaderMaterial {Shader=paintShader};material.SetShaderParameter("paint",new Color(paintHex));ThemeBackdrop(material,model);thumb.Material=material;
             card.AddChild(thumb);
             card.AddChild(CardText(60,model.Name,10,White));
             card.AddChild(CardText(76,model.Support switch {CarSupport.Electric=>"Hyundai USA",CarSupport.Gas=>"Gas · Hyundai USA",_=>"Picture only"},9,Muted));
-            if(model==carModel)card.AddThemeStyleboxOverride("normal",Style(new("#142b40"),Blue,2));
+            if(model==carModel)card.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
         Button(214,718,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"ModelDone");
     }

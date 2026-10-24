@@ -32,7 +32,7 @@ public partial class Main
     {
         var p=pendingOverride!;
         canvas.AddChild(new ColorRect {Name="OverrideShade",Size=new(460,920),Color=new(0,0,0,.72f),MouseFilter=MouseFilterEnum.Stop});
-        Panel(24,236,412,400,new("#0e2031"));
+        Panel(24,236,412,400,Skin.Card);
         Label(44,256,372,30,"LIMIT REACHED",18,Red,true);
         Label(44,294,372,128,p.Message,13,White,false,true);
         Label(44,428,372,112,"Going past nCTRL's limits raises the chance that Hyundai rate-limits or bans your account. "+
@@ -67,7 +67,7 @@ public partial class Main
         {
             var s=budget.Status(kind);int left=Math.Max(0,s.DailyCap-s.UsedToday);
             string name=RequestBudget.Label(kind);
-            Panel(24,y,412,62,new("#0e2031"),false);Rect(24,y,3,62,s.Factor>1||left==0?Red:Blue);
+            Panel(24,y,412,62,Skin.Card,false);Rect(24,y,3,62,s.Factor>1||left==0?Red:Blue);
             Label(42,y+8,200,24,char.ToUpperInvariant(name[0])+name[1..],14,White,true);
             Label(236,y+8,190,24,$"{left} of {s.DailyCap} left today",12,left==0?Red:Blue,true).HorizontalAlignment=HorizontalAlignment.Right;
             Label(42,y+34,384,24,(s.Cooldown==TimeSpan.Zero?"No cooldown":"One every "+RequestBudget.Duration(s.Cooldown))+

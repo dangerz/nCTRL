@@ -7,7 +7,8 @@ public partial class CarFrame : Control
 {
     public bool Charging,Moving;
     private const float Chamfer=12;
-    private static readonly Color Yellow=new(1f,0.82f,0.16f),White=new("#eef5fb");
+    private static readonly Color Yellow=new(1f,0.82f,0.16f);
+    private static Color White=>Skin.Text;
     private float time;
     public override void _Ready(){MouseFilter=MouseFilterEnum.Ignore;}
     public override void _Process(double delta)

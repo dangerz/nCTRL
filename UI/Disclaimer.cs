@@ -59,7 +59,7 @@ public partial class Main
     }
     private void DisclaimerText(int y,int height)
     {
-        Panel(24,y,412,height,new("#0e2031"),false);
+        Panel(24,y,412,height,Skin.Card,false);
         var scroll=new ScrollContainer {Name="DisclaimerScroll",Position=new(32,y+8),Size=new(398,height-16),
             HorizontalScrollMode=ScrollContainer.ScrollMode.Disabled};
         var text=new Label {Text=Disclaimer.Text,AutowrapMode=TextServer.AutowrapMode.WordSmart,CustomMinimumSize=new(382,0)};

@@ -212,7 +212,7 @@ public partial class Main
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
         Label(288,398,150,42,s?.RangeMiles is double range?Units.Distance(range,units):"—",28,White,true).Name="Range";
         ColdRangeLine(s);
-        for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:new("#243446"));
+        for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:Skin.BarOff);
         HealthStrip(s);
         Label(24,509,412,36,"Reported: "+ReportedTime(s?.ReportedAt),11,Muted,false,true);
         var doorAction=VehicleLink.DoorAction(s?.Locked);
@@ -255,7 +255,7 @@ public partial class Main
         if(s?.DriverSeat!=null||s?.PassengerSeat!=null||s?.SteeringWheelHeat!=null)
             Label(24,224,412,22,"Seats: driver "+SeatCodes.Reported(s?.DriverSeat)+" · passenger "+SeatCodes.Reported(s?.PassengerSeat)+
                 " · wheel "+OnOff(s?.SteeringWheelHeat,"on","off"),11,Muted);
-        Panel(24,256,412,104,new("#0e2031"));
+        Panel(24,256,412,104,Skin.Card);
         Label(142,274,220,68,Units.Setpoint(liveTemperature,units),40,White,true).Name="ClimateTemperature";
         LiveButton(43,282,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
         LiveButton(366,282,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
@@ -365,7 +365,7 @@ public partial class Main
         Title("YOUR RECENT ACTIVITY.","Hyundai requests · session-only history");
         int y=204;
         for(int i=history.Count-1;i>=Math.Max(0,history.Count-4);i--){var item=history[i];
-            Panel(24,y,412,99,new("#0e2031"),false);Rect(24,y,3,99,item.Ok?Blue:Red);
+            Panel(24,y,412,99,Skin.Card,false);Rect(24,y,3,99,item.Ok?Blue:Red);
             Label(42,y+7,375,53,item.Title,12,White,true,true);Label(42,y+64,375,24,item.Detail,10,Muted);y+=111;}
 
     }

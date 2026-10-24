@@ -31,7 +31,7 @@ public partial class Main
         int y=200;
         // Unlocked at an ignored place: say so instead of flagging it.
         if(s?.Locked==false&&AtIgnoredPlace) {
-            Panel(24,y,412,54,new("#0e2031"),false);Rect(24,y,3,54,Muted);
+            Panel(24,y,412,54,Skin.Card,false);Rect(24,y,3,54,Muted);
             Label(42,y+4,380,46,"Doors unlocked · ignored at "+(IgnoredHere?.Name??"an ignored place"),13,Muted,false,true).Name="IgnoredNote";
             y+=62;
         }
@@ -39,7 +39,7 @@ public partial class Main
         foreach(var alert in alerts) {
             if(y>600)break;
             bool unlocked=alert.Kind==AlertKind.Unlocked;int h=unlocked?100:54;
-            Panel(24,y,412,h,new("#0e2031"),false);Rect(24,y,3,h,alert.Critical?Red:Amber);
+            Panel(24,y,412,h,Skin.Card,false);Rect(24,y,3,h,alert.Critical?Red:Amber);
             Label(42,y+4,unlocked?250:380,46,alert.Text,14,White,true,true);
             if(unlocked) {
                 CommandFeedback(RemoteButton(316,y+7,110,40,"Lock",13,()=>_ = SendLive(new(ActionKind.Lock)),true,"AlertLock"),ActionKind.Lock,false);
@@ -67,7 +67,7 @@ public partial class Main
     {
         var p=pendingConfirm!;
         canvas.AddChild(new ColorRect {Name="ConfirmShade",Size=new(460,920),Color=new(0,0,0,.72f),MouseFilter=MouseFilterEnum.Stop});
-        Panel(24,260,412,330,new("#0e2031"));
+        Panel(24,260,412,330,Skin.Card);
         Label(44,280,372,30,p.Title,18,Amber,true);
         Label(44,322,372,170,p.Message,13,White,false,true).VerticalAlignment=VerticalAlignment.Top;
         LiveButton(44,514,174,52,"Cancel",13,()=>{pendingConfirm=null;Render();},false,"ConfirmCancel");

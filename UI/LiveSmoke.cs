@@ -87,6 +87,29 @@ public partial class Main
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent("{\"current\":{\"temperature_2m\":28}}",Encoding.UTF8,"application/json")});
         }
     }
+    // Every color drawn is from the current theme or a fixed meaning color: none left over from the default blue
+    // (App color's swatches excepted, since they show each choice).
+    private void AssertThemed(string where)
+    {
+        var defaults=AppTheme.Default.Values.ToHashSet();var current=Skin.All.Select(c=>c.ToHtml(false)).ToHashSet();
+        var stray=new List<string>();
+        void Look(Node node,string what,Color color){string hex=color.ToHtml(false);if(defaults.Contains(hex)&&!current.Contains(hex))stray.Add($"{node.Name} {what} #{hex}");}
+        var nodes=new List<Node>{canvas};
+        for(int i=0;i<nodes.Count;i++)nodes.AddRange(nodes[i].GetChildren());
+        foreach(var node in nodes) {
+            if(node.Name.ToString().StartsWith("Swatch"))continue;
+            if(node is ColorRect rect)Look(node,"color",rect.Color);
+            if(node is PanelArt panel){Look(node,"fill",panel.Fill);Look(node,"edge",panel.Edge);}
+            if(node is Glyph glyph)Look(node,"ink",glyph.Ink);
+            if(node is Control control) {
+                foreach(string name in new[]{"font_color","font_hover_color","font_pressed_color"})
+                    if(control.HasThemeColorOverride(name))Look(node,name,control.GetThemeColor(name));
+                foreach(string state in new[]{"normal","hover","pressed","focus","disabled"})
+                    if(control.HasThemeStyleboxOverride(state)&&control.GetThemeStylebox(state) is StyleBoxFlat box){Look(node,state,box.BgColor);Look(node,state+" edge",box.BorderColor);}
+            }
+        }
+        if(stray.Count>0)throw new Exception("Default colors left on "+where+": "+string.Join(", ",stray.Take(5)));
+    }
     private async Task WaitFrames(int frames=20){for(int i=0;i<frames;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);}
     private async Task LiveSmokeTest()
     {
@@ -451,6 +474,24 @@ public partial class Main
             Navigate("Range");canvas.GetNode<CheckBox>("ColdRangeOn").ButtonPressed=true;await WaitFrames();
             if(weatherFixture.Requests!=weatherBefore+1||outside?.TemperatureF!=28)throw new Exception("Turning the estimate on did not read the temperature once");
             units=UnitSystem.Imperial;coldRange=ColdRangeSettings.Default;
+            // App color: every screen follows one picked color, with nothing left in the default blue.
+            Navigate("Appearance");canvas.GetNode<Button>("SettingsAppColor").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="AppColor"||canvas.GetNode<Label>("AppColorName").Text!="PERFORMANCE BLUE")throw new Exception("App color does not open on the default");
+            await Capture("65-app-color-test.png");
+            canvas.GetNode<Button>("AppColor3").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(Skin.Hex!="bb8efa"||canvas.GetNode<Label>("AppColorName").Text!="PURPLE"||Skin.Accent==new Color("#8ecbfa"))throw new Exception("Picking Purple did not change the app color");
+            await Capture("66-app-color-purple-test.png");
+            foreach(var (hex,name) in new[]{("bb8efa","purple"),("ff8800","custom"),("d0d0d0","graphite")}) {
+                PickAppColor(hex);
+                foreach(string route in new[]{"Car","Climate","Energy","Details","Activity","Settings","Appearance","Range","Limits","Places","Locate","Alerts","Paint","Model","AppColor","Disclaimer"})
+                {Navigate(route);AssertThemed(route+" in "+name);}
+                Navigate("Car");await Capture($"67-car-{name}-test.png");
+            }
+            PickAppColor("bb8efa");
+            foreach(string route in new[]{"Climate","Settings","Details","Model","Paint"}){Navigate(route);await Capture($"68-{route.ToLowerInvariant()}-purple-test.png");}
+            Navigate("AppColor");canvas.GetNode<Button>("AppColorReset").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(Skin.Hex!=AppTheme.DefaultHex||Skin.Accent!=new Color("#8ecbfa"))throw new Exception("Reset to default did not bring back Performance Blue");
+            PickAppColor("bb8efa");
             // The demo: a pretend car inside the app. Nothing reaches the (test) Hyundai server, and ending it puts everything back.
             var budgetBefore=budget;var linkedBefore=linkedVehicle;var paintBefore=paintHex;int sentBefore=fixture.Requests;
             EndLiveSession();
@@ -465,13 +506,15 @@ public partial class Main
             if(canvas.GetNodeOrNull<Label>("ColdRange")?.Text!="~"+Units.Distance(connection.State.RangeMiles!.Value*ColdRange.Factor(DemoHyundai.OutsideF,coldRange),units)+" at 28°F"||
                 weatherFixture.Requests!=weatherBefore+1)throw new Exception("The demo did not show its pretend temperature without a weather request");
             await Capture("53-demo-car-test.png");
-            PickPaint("Gravity Gold","b6ab8a");Navigate("Settings");
+            PickPaint("Gravity Gold","b6ab8a");PickAppColor("8efaec");Navigate("Settings");
             if(canvas.GetNodeOrNull<Button>("SignOut")!=null||canvas.GetNodeOrNull<Button>("DemoEnd")==null)throw new Exception("The demo offers Sign out & forget instead of End demo");
             await Capture("54-demo-settings-test.png");
             canvas.GetNode<Button>("DemoEnd").EmitSignal(Godot.Button.SignalName.Pressed);
             if(demo||connection!=null||!ReferenceEquals(budget,budgetBefore)||linkedVehicle!=linkedBefore||paintHex!=paintBefore||fixture.Requests!=sentBefore)
                 throw new Exception("Ending the demo did not put everything back");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, demo. No real API calls.");
+            if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
+            Skin.Use(AppTheme.DefaultHex);
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

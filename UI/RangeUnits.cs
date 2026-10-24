@@ -53,7 +53,7 @@ public partial class Main
         Label(24,192,412,22,"UNITS",11,Muted,true);
         foreach(var (system,x,text) in new[]{(UnitSystem.Imperial,24,"Imperial  ·  mi, °F, psi"),(UnitSystem.Metric,238,"Metric  ·  km, °C, kPa")}) {
             var b=Button(x,216,198,46,text,13,()=>{units=system;SavePrefs();Render();},false,"Units"+system);
-            if(units==system)b.AddThemeStyleboxOverride("normal",Style(new("#142b40"),Blue,2));
+            if(units==system)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
         Label(24,278,412,22,"COLD-WEATHER RANGE",11,Muted,true);
         var on=new CheckBox {Name="ColdRangeOn",Position=new(24,300),Size=new(412,40),Text="Estimate range in cold weather",ButtonPressed=coldRange.Enabled};

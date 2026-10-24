@@ -20,7 +20,7 @@ public partial class Main
         if(lookCapturing) {
             Label(24,220,412,90,$"Waiting for the car's cameras… check {lookChecks} of {HyundaiUsClient.SurroundViewChecks}. This can take up to two minutes.",15,White,false,true).Name="LookProgress";
         } else if(lookTexture!=null&&lookView!=null) {
-            Panel(20,192,420,320,new("#101820"),false);
+            Panel(20,192,420,320,Skin.Hero,false);
             canvas.AddChild(new TextureRect {Name="LookPicture",Position=new(24,196),Size=new(412,312),Texture=lookTexture,
                 ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,StretchMode=TextureRect.StretchModeEnum.KeepAspectCentered,MouseFilter=MouseFilterEnum.Ignore});
             Label(24,520,412,22,"Captured: "+ReportedTime(lookView.CapturedAt),11,Muted);

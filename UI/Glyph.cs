@@ -3,7 +3,7 @@ using Godot;
 public partial class Glyph : Control
 {
     public string Kind = "Car";
-    public Color Ink = new("#8ecbfa");
+    public Color Ink = Skin.Accent;
     public override void _Ready() { MouseFilter = MouseFilterEnum.Ignore; }
     public override void _Draw()
     {

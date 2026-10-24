@@ -2,8 +2,8 @@ using Godot;
 
 public partial class PanelArt : Control
 {
-    public Color Fill = new("#0d1e2e");
-    public Color Edge = new("#284760");
+    public Color Fill = Skin.PanelFill;
+    public Color Edge = Skin.PanelEdge;
     public bool Accent = true;
     public bool Stripes;
     public bool BottomEdgeOnly;
@@ -18,7 +18,7 @@ public partial class PanelArt : Control
         if (Accent) DrawColoredPolygon(new Vector2[]{new(0,0),new(19,0),new(0,19)}, new Color("#f24a4d"));
         if (Stripes)
         {
-            DrawColoredPolygon(new Vector2[]{new(w-130,0),new(w-62,0),new(w-195,h),new(w-263,h)},new Color("#172e46"));
+            DrawColoredPolygon(new Vector2[]{new(w-130,0),new(w-62,0),new(w-195,h),new(w-263,h)},Skin.Stripe);
             DrawColoredPolygon(new Vector2[]{new(w-40,0),new(w-20,0),new(w-153,h),new(w-173,h)},new Color("#c63842"));
         }
     }
