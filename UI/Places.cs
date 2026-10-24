@@ -31,12 +31,12 @@ public partial class Main
     {
         await RunLive(async()=>{
             int version=liveEpoch;
-            if(placesPersisted)await vault.SavePlacesAsync(IgnoredPlaces.Encode(updated),liveLifetime.Token);
+            if(placesPersisted&&!demo)await vault.SavePlacesAsync(IgnoredPlaces.Encode(updated),liveLifetime.Token);
             EnsureLive(version);
             ignoredPlaces=updated;
             // Re-save the status so its ignored-place flag matches.
             persistedState=null;PersistSnapshot();
-            notice=placesPersisted?done:done+" Saved for this session only on this device.";noticeError=false;
+            notice=demo?done+" Kept for this demo only.":placesPersisted?done:done+" Saved for this session only on this device.";noticeError=false;
         },"Saving ignored places…");
     }
     private void StartIgnoreHere()

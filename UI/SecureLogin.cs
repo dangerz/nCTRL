@@ -25,7 +25,7 @@ public partial class Main
     {
         // Backgrounding may park an idle session (selected vehicle, valid token, saved account) so
         // Face ID can resume it without a new sign-in. Sign-out always discards it.
-        bool keep=park&&connection is {Selected: not null,SessionValid: true}&&!liveBusy&&!monitoringCommand&&
+        bool keep=!demo&&park&&connection is {Selected: not null,SessionValid: true}&&!liveBusy&&!monitoringCommand&&
             accountKey.Length>0&&vault.HasAccount;
         // Backgrounding again from the locked screen keeps the earlier parked session.
         if(!(park&&connection==null))DiscardParked();
@@ -38,6 +38,7 @@ public partial class Main
         lookView=null;lookTexture=null;lookCapturing=false;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;shownLocation=null;shownOld=false;
         sessionVerified=false;sessionAccount=null;
         screen="Connect";notice="";noticeError=false;
+        if(demo)LeaveDemo();
         // With a saved account and status, return to the Car screen showing that (stale) status.
         EnterOffline();
         if(render&&IsInsideTree())Render();
@@ -46,7 +47,8 @@ public partial class Main
     {
         // Focus loss also occurs during Face ID, so only actual backgrounding ends the session.
         if(!vaultReady)return;
-        if(what==NotificationApplicationPaused) {
+        // The demo has nothing to protect, so it carries on after the app is backgrounded.
+        if(what==NotificationApplicationPaused&&!demo) {
             // Hide immediately, then rebuild after the engine resumes its scene tree.
             if(canvas!=null)canvas.Hide();
             EndLiveSession(false,park:true);
@@ -84,6 +86,7 @@ public partial class Main
     private async Task ForgetAccount()
     {
         if(liveBusy)return;
+        if(demo){EndLiveSession();return;}
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
         ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.

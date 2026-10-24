@@ -362,7 +362,25 @@ public partial class Main
             if(pendingOverride?.Kind!=RequestKind.Camera||fixture.SvmRequests!=1)throw new Exception("A second capture within 5 minutes was not refused first");
             canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
             if(Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--art-gallery"))await ArtGallery();
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View, old location. No real API calls.");
+            // The demo: a pretend car inside the app. Nothing reaches the (test) Hyundai server, and ending it puts everything back.
+            var budgetBefore=budget;var linkedBefore=linkedVehicle;var paintBefore=paintHex;int sentBefore=fixture.Requests;
+            EndLiveSession();
+            canvas.GetNode<Button>("DemoStart").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<600&&(liveBusy||connection?.State==null);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(!demo||connection?.Selected?.Vin!=DemoHyundai.Vin||screen!="Car"||canvas.GetNodeOrNull<Button>("ConnectionBadge")?.Text!="DEMO"||
+                fixture.Requests!=sentBefore||ReferenceEquals(budget,budgetBefore))throw new Exception("Try the demo did not open the pretend car on its own");
+            canvas.GetNode<Button>("DoorControl").EmitSignal(Godot.Button.SignalName.Pressed);
+            await WaitForCommandChecks();
+            if(connection?.State?.Locked!=false||connection.Pending?.Outcome!=RemoteOutcome.Confirmed)throw new Exception("The demo car did not confirm and report the unlock");
+            Navigate("Car");
+            await Capture("53-demo-car-test.png");
+            PickPaint("Gravity Gold","b6ab8a");Navigate("Settings");
+            if(canvas.GetNodeOrNull<Button>("SignOut")!=null||canvas.GetNodeOrNull<Button>("DemoEnd")==null)throw new Exception("The demo offers Sign out & forget instead of End demo");
+            await Capture("54-demo-settings-test.png");
+            canvas.GetNode<Button>("DemoEnd").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(demo||connection!=null||!ReferenceEquals(budget,budgetBefore)||linkedVehicle!=linkedBefore||paintHex!=paintBefore||fixture.Requests!=sentBefore)
+                throw new Exception("Ending the demo did not put everything back");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View, old location, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

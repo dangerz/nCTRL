@@ -2,6 +2,7 @@
 using Godot;
 using NGarage.Core;
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -15,11 +16,13 @@ public partial class Main
         public bool CancelNext,Hold;
         public int Unlocks;
         public string Places="",Location="";
+        public readonly System.Collections.Generic.List<string> Ops=new();
         private string? saved;
         private string result="";
         public int Availability()=>2;
         public bool HasAccount()=>saved!=null;
         public void Start(string op,string data) {
+            Ops.Add(op);
             if(op=="unlock")Unlocks++;
             if(Hold)return;
             if(CancelNext&&!op.StartsWith("places_")&&!op.StartsWith("location_")){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
@@ -142,8 +145,18 @@ public partial class Main
             if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
             if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
+            // The demo is open before acceptance, never touches secure storage, and leaves the gate as it was.
+            int ops=fake.Ops.Count;
+            await Capture("55-disclaimer-demo-test.png");
+            canvas.GetNode<Button>("DemoStart").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<600&&(liveBusy||connection?.State==null);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(!demo||connection?.State==null||DisclaimerRequired)throw new Exception("The demo did not open from the disclaimer screen");
+            EndLiveSession();
+            for(int i=0;i<10;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op!="places_load"))
+                throw new Exception("The demo touched secure storage or the disclaimer");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, old location without Face ID, forget. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, old location without Face ID, forget, demo isolation. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }

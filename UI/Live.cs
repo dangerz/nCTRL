@@ -71,7 +71,8 @@ public partial class Main
             pass.Text="";servicePin.Text="";
             _ = SignIn(e,p,s,rememberDevice && vault.Available);
         },true,"SignIn");
-        Label(24,685,412,76,"Unofficial integration. MFA or account challenges may block sign-in. The app never bypasses those checks.",12,Muted,false,true);
+        LiveButton(24,680,412,44,"Try the demo  ·  no account, nothing sent",13,()=>_ = StartDemo(),false,"DemoStart");
+        Label(24,732,412,40,"Unofficial integration. MFA or account challenges may block sign-in. The app never bypasses those checks.",11,Muted,false,true);
     }
     private LineEdit AccountInput(int x,int y,int width,string placeholder,bool secret)
     {
@@ -333,16 +334,17 @@ public partial class Main
     {
         Title("YOUR CONNECTED GARAGE.","Hyundai USA · device security");
         Label(24,204,412,52,$"{VehicleName}\nVIN …{VinTail}",17,White,true,true);
-        Label(24,262,412,28,"Session: "+(connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status · "+vault.BiometricName+" on first request":
+        Label(24,262,412,28,"Session: "+(demo?"Demo · nothing is sent to Hyundai":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status · "+vault.BiometricName+" on first request":
             "Expired / denied — sign in again"),13,Muted,false,true);
         Button(24,302,412,46,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
         LiveButton(24,358,412,46,"Update",13,()=>_ = RefreshLive(false));
         LiveButton(24,414,412,46,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
-        LiveButton(24,470,412,46,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
+        if(demo)LiveButton(24,470,412,46,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
+        else LiveButton(24,470,412,46,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
         Button(24,526,412,46,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
         Button(24,582,412,46,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
         Button(24,638,412,46,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
-        Label(24,694,412,64,vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
+        Label(24,694,412,64,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
             " is required for the first update or command after you open it. Signing out removes the saved login and status.":
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }

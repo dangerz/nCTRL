@@ -532,7 +532,7 @@ public sealed class HyundaiUsClient : IDisposable
         }
         return e;
     }
-    private static string Text(JsonElement e,string p){var v=At(e,p);return v.ValueKind is JsonValueKind.String? v.GetString()??"":v.ValueKind==JsonValueKind.Number?v.GetRawText():"";}
+    internal static string Text(JsonElement e,string p){var v=At(e,p);return v.ValueKind is JsonValueKind.String? v.GetString()??"":v.ValueKind==JsonValueKind.Number?v.GetRawText():"";}
     private static double? Number(JsonElement e,string p)=>double.TryParse(Text(e,p),NumberStyles.Float,CultureInfo.InvariantCulture,out var n)&&double.IsFinite(n)?n:null;
     private static int? Integer(JsonElement e,string p){var n=Number(e,p);return n is >=int.MinValue and <=int.MaxValue?(int)n.Value:null;}
     private static bool? Boolean(JsonElement e,string p)=>At(e,p).ValueKind switch {

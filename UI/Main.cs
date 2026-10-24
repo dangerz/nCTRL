@@ -58,13 +58,17 @@ public partial class Main : Control
     private void LoadPrefs()
     {
         var cfg = new ConfigFile();
-        if (cfg.Load(Prefs) != Error.Ok) return;
+        if (cfg.Load(Prefs) == Error.Ok) ApplyPrefs(cfg);
+    }
+    private void ApplyPrefs(ConfigFile cfg)
+    {
         string hex = cfg.GetValue("appearance","paint","89b7f0").AsString();
         if (Color.HtmlIsValid(hex)) paintHex = hex;
         paintName = cfg.GetValue("appearance","name","Performance Blue").AsString();
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
+        cars.Clear();
         if(cfg.HasSection("cars"))foreach(string key in cfg.GetSectionKeys("cars")) {
             var car=cfg.GetValue("cars",key).AsStringArray();
             if(car.Length==2)cars[key]=(car[0],CarModels.CleanName(car[1]));
@@ -80,7 +84,12 @@ public partial class Main : Control
     }
     private void SavePrefs()
     {
-        if(smoke) return;
+        // The demo saves nothing; its changes are undone when it ends.
+        if(smoke||demo) return;
+        if(PrefsConfig().Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
+    }
+    private ConfigFile PrefsConfig()
+    {
         var cfg = new ConfigFile();
         cfg.SetValue("appearance","paint",paintHex);
         cfg.SetValue("appearance","name",paintName);
@@ -101,7 +110,7 @@ public partial class Main : Control
             cfg.SetValue("disclaimer","account",disclaimer.AccountKey);
             cfg.SetValue("disclaimer","accepted_at",disclaimer.AcceptedAt.ToString("O",CultureInfo.InvariantCulture));
         }
-        if(cfg.Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
+        return cfg;
     }
     private static ClimatePreset LoadPreset(ConfigFile cfg,string section,ClimatePreset defaults)=>!cfg.HasSection(section)?defaults:
         defaults.With(cfg.GetValue(section,"temperature",defaults.TemperatureF).AsInt32(),cfg.GetValue(section,"driver_seat",(int)defaults.DriverSeat).AsInt32(),
@@ -126,7 +135,7 @@ public partial class Main : Control
         var header=Panel(0,0,460,96,new("#0c1825"),false,true);header.BottomEdgeOnly=true;
         Label(24,19,310,20,garageName,13,Muted);
         Label(24,44,340,41,liveMode?CarTitle:"nCTRL",liveMode&&CarTitle.Length>14?23:29,White,true).Name="CarTitle";
-        Button(365,20,70,28,smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
+        Button(365,20,70,28,demo?"DEMO":smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
         // Nothing else is reachable until the current account has accepted the risk disclaimer.
         if(DisclaimerRequired) DisclaimerScreen();
         else if(screen=="Connect") ConnectionScreen();

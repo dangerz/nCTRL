@@ -20,7 +20,8 @@ public partial class Main
         public string AccountKey { get; }=VehicleLink.AccountKey(email);
         public override string ToString()=>"PendingSignIn [redacted]";
     }
-    private bool DisclaimerRequired=>!Disclaimer.IsCurrent(disclaimer)||pendingSignIn!=null;
+    // The demo sends nothing to Hyundai, so it is open before acceptance; real accounts never are.
+    private bool DisclaimerRequired=>!demo&&(!Disclaimer.IsCurrent(disclaimer)||pendingSignIn!=null);
 
     // Stops a sign-in before any network request when this account has not accepted.
     private bool HoldForDisclaimer(string email,string password,string pin,bool remember,bool fromVault)
@@ -54,6 +55,7 @@ public partial class Main
         Label(24,684,412,36,deviceCheckRequired?"Submitting asks for "+vault.BiometricName+" or your passcode to record your acceptance.":
             "Desktop development build: no device check is available.",12,Muted,false,true);
         if(pendingSignIn!=null)LiveButton(24,726,412,44,"Cancel and use another account",13,()=>{pendingSignIn=null;notice="";Render();},false,"DisclaimerCancel");
+        else LiveButton(24,726,412,44,"Try the demo  ·  no account, nothing sent",13,()=>_ = StartDemo(),false,"DemoStart");
     }
     private void DisclaimerText(int y,int height)
     {

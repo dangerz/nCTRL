@@ -36,7 +36,7 @@ public partial class Main
         string key=VehicleKey;
         if(key.Length==0)return null;
         if(savedFor!=key){savedFor=key;savedLocation=null;storedLocation=null;savedLoaded=false;}
-        if(!savedLoaded&&vault.Present) {
+        if(!savedLoaded&&vault.Present&&!demo) {
             try {
                 var loaded=LastLocation.Decode(await vault.LoadLocationAsync(liveLifetime.Token),key,DateTimeOffset.UtcNow);
                 EnsureLive(version);storedLocation=loaded;savedLocation=LastLocation.Newest(savedLocation,loaded);
@@ -54,7 +54,7 @@ public partial class Main
         if(newest==null)return;
         if(savedFor!=key){savedFor=key;savedLocation=null;storedLocation=null;savedLoaded=false;}
         savedLocation=LastLocation.Newest(newest,savedLocation);
-        if(!vault.Present||LastLocation.Same(savedLocation,storedLocation))return;
+        if(!vault.Present||demo||LastLocation.Same(savedLocation,storedLocation))return;
         try {await vault.SaveLocationAsync(LastLocation.Encode(key,savedLocation!),liveLifetime.Token);EnsureLive(version);storedLocation=savedLocation;}
         catch(VaultException) { } // The location is still shown this session.
     }

@@ -18,6 +18,7 @@ static class Program
         PresetTests.Run();
         await RequestBudgetTests.Run();
         await SurroundViewTests.Run();
+        await DemoTests.Run();
         await MapTests.Run();
     }
 }

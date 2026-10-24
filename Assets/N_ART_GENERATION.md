@@ -50,3 +50,6 @@ File: hyundai_i30_fastback_n_pixel.png
 
 Production 2021–2024 facelift Hyundai i30 FASTBACK N. A low sleek FIVE-DOOR FASTBACK with long hood, conventional sculpted i30 front end, swept angular V-signature headlights, wide black cascading mesh grille, black outer intakes, gracefully sloping coupe-like roof transitioning to an extended rear deck and liftback, small integrated black lip spoiler following curved rear deck edge. The fastback profile must be clearly different from the upright-roof i30 hatchback and angular Elantra sedan: rounded flowing roof, longer rear overhang, NO hatchback roof wing. Dark 19-inch forged multi-spoke wheels, red brake calipers, red front splitter and side sill strip. Performance Blue paint.
 
+## Badges removed
+
+On October 23, 2026 the maker badges were painted out of every picture: grille and hood logos replaced with neighboring grille mesh or blended paint, and wheel-center logos filled with the hub color. The pictures otherwise match their generation.
