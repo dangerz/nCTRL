@@ -23,8 +23,23 @@ public sealed record ClimatePreset(string Name,int TemperatureF,SeatMode DriverS
         SteeringWheel=wheel,Defrost=defrost};
 }
 
+public sealed record ChargeLine(string Text,bool Charging);
 public static class ChargeEstimate
 {
+    /// <summary>The line above the car: charging (with Hyundai's finish time while it is still ahead) or not
+    /// charging. Null when charging isn't reported, as with gas cars.</summary>
+    public static ChargeLine? Headline(LiveVehicleState? state,DateTimeOffset now,TimeZoneInfo zone)
+    {
+        if(state?.Charging is not bool charging)return null;
+        if(!charging)return new("NOT CHARGING",false);
+        if(FullAt(state) is not DateTimeOffset at||at<=now)return new("CHARGING",true);
+        var local=TimeZoneInfo.ConvertTime(at,zone);
+        string time=local.ToString(local.Date==TimeZoneInfo.ConvertTime(now,zone).Date?"h:mm tt":"ddd h:mm tt",CultureInfo.InvariantCulture);
+        return new("CHARGING · FINISHING AROUND "+time.ToUpperInvariant(),true);
+    }
+    /// <summary>Still reported charging after Hyundai's own finish time: the report is out of date.</summary>
+    public static bool Overdue(LiveVehicleState? state,DateTimeOffset now)=>FullAt(state) is DateTimeOffset at&&at<=now;
+
     /// <summary>When Hyundai expects the current charge to finish: minutes left counted from the report's
     /// own time when it has a full date and time, otherwise from when nCTRL received it. Null unless charging.</summary>
     public static DateTimeOffset? FullAt(LiveVehicleState? state)

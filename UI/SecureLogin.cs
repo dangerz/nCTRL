@@ -60,6 +60,8 @@ public partial class Main
         if(!IsInsideTree())return;
         Render();
         if(!smoke)NativeVaultBridge.RestoreForeground();
+        // Back on saved status: an out-of-date charge asks for an update straight away.
+        if(!smoke)CallDeferred(nameof(CheckChargeOverdue));
     }
     private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
     private void SavedLoginScreen()

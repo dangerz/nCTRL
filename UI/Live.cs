@@ -186,8 +186,16 @@ public partial class Main
     private void LiveHome()
     {
         var s=CurrentState;
-        Label(24,106,412,24,"YOUR HYUNDAI · LAST REPORTED",10,Muted,true);
+        // Charging state from the last report, with Hyundai's finish time while it is still ahead.
+        var charge=ChargeEstimate.Headline(s,DateTimeOffset.UtcNow,TimeZoneInfo.Local);
+        Label(24,106,412,24,charge?.Text??"YOUR HYUNDAI · LAST REPORTED",10,charge?.Charging==true?Yellow:Muted,true).Name="ChargeLine";
         Hero(139,215);
+        if(charge?.Charging==true) {
+            var outline=new TextureRect {Name="ChargeOutline",Position=new(24,143),Size=new(412,207),Texture=CarMask(carModel),
+                ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,StretchMode=TextureRect.StretchModeEnum.KeepAspectCentered,
+                TextureFilter=TextureFilterEnum.Linear,MouseFilter=MouseFilterEnum.Ignore,Material=new ShaderMaterial {Shader=chargeOutline}};
+            canvas.AddChild(outline);
+        }
         // Car screen only: door, climate, seat and steering-wheel state over the artwork.
         var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=CarTexture.GetSize(),Art=CarArt.For(carModel.Id),
             Lock=VehicleIndicators.Lock(s?.Locked),Windshield=VehicleIndicators.Windshield(s?.ClimateOn,s?.TemperatureF),
@@ -197,10 +205,11 @@ public partial class Main
             FrontDoorOpen=s?.Health?.FrontLeftDoor==true,RearDoorOpen=s?.Health?.RearLeftDoor==true,
             FrontWindowOpen=s?.Health?.FrontLeftWindow==true,RearWindowOpen=s?.Health?.RearLeftWindow==true,HoodOpen=s?.Health?.Hood==true};
         canvas.AddChild(overlay);
+        // Lines on the frame's edge: charging (counter-clockwise) and moving (along the bottom).
+        canvas.AddChild(new CarFrame {Name="CarFrame",Position=new(20,139),Size=new(420,215),Charging=charge?.Charging==true,Moving=s?.Moving==true});
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
         Label(288,403,150,42,s?.RangeMiles is double range?$"{range:0} mi":"—",28,White,true);
-        if(ChargeEta(s) is string eta)Label(294,440,142,16,char.ToUpperInvariant(eta[0])+eta[1..],10,Blue,true).Name="CarChargeEta";
         for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:new("#243446"));
         HealthStrip(s);
         Label(24,509,412,36,"Reported: "+ReportedTime(s?.ReportedAt),11,Muted,false,true);
@@ -426,6 +435,23 @@ public partial class Main
         }
     }
     // Update (cached read) or wake. The first request of a foreground session asks for Face ID.
+    // Still reported charging after Hyundai's own finish time: that report is out of date, so read status once
+    // for that estimate, like tapping Update. From saved status that asks for Face ID; cancelling it isn't asked
+    // again for the same report. Never past a limit, and at most once every 10 minutes.
+    private string chargeChecked="";
+    private DateTimeOffset chargeCheckedAt;
+    private void CheckChargeOverdue()
+    {
+        if(liveBusy||monitoringCommand||screen!="Car"||!liveMode)return;
+        bool unlocked=connection is {Selected: not null,IsAuthenticated: true}&&!NeedsFaceId;
+        if(!unlocked&&!Offline)return;
+        var now=DateTimeOffset.UtcNow;
+        if(ChargeEstimate.FullAt(CurrentState) is not DateTimeOffset at||!ChargeEstimate.Overdue(CurrentState,now))return;
+        string estimate=at.ToString("O",System.Globalization.CultureInfo.InvariantCulture);
+        if(estimate==chargeChecked||now-chargeCheckedAt<TimeSpan.FromMinutes(10)||!budget.CanAcquire(RequestKind.Read))return;
+        chargeChecked=estimate;chargeCheckedAt=now;
+        _ = RefreshLive(false);
+    }
     private Task RefreshLive(bool wake)=>RunLive(async()=>{
         int version=liveEpoch;
         var (active,freshRead)=await AcquireSession(version);

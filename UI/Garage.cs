@@ -15,6 +15,18 @@ public partial class Main
     // Only the current picture stays loaded; the picker's thumbnails are released when it closes.
     private Texture2D CarTexture=>carTexture??=CarPicture(carModel);
     private static Texture2D CarPicture(CarModel model)=>GD.Load<Texture2D>("res://Assets/"+model.Picture);
+    // Each picture's outside shape, for the charging outline: worked out once, at half size, and kept.
+    private readonly Dictionary<string,Texture2D> carMasks=new();
+    private Texture2D CarMask(CarModel model)
+    {
+        if(carMasks.TryGetValue(model.Id,out var known))return known;
+        var image=CarPicture(model).GetImage();
+        image.Convert(Image.Format.Rgb8);image.Resize(image.GetWidth()/2,image.GetHeight()/2,Image.Interpolation.Bilinear);
+        var mask=Silhouette.Mask(image.GetData(),image.GetWidth(),image.GetHeight());
+        for(int i=0;i<mask.Length;i++)mask[i]*=255;
+        var texture=ImageTexture.CreateFromImage(Image.CreateFromData(image.GetWidth(),image.GetHeight(),false,Image.Format.L8,mask));
+        carMasks[model.Id]=texture;return texture;
+    }
 
     private void SelectCar()
     {

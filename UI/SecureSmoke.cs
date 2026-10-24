@@ -109,6 +109,20 @@ public partial class Main
             await RefreshLive(false);
             if(fake.Unlocks!=unlocks+1)throw new Exception("The first request after backgrounding did not ask for Face ID");
             if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Saved status still charging past Hyundai's finish time: the app asks for Face ID and reads once.
+            http.Charging=http.ChargingOverdue=true;
+            await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);
+            await RefreshLive(false);
+            if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(!ChargeEstimate.Overdue(snapshot?.State,DateTimeOffset.UtcNow))throw new Exception("Saved status did not keep the overdue charge");
+            _Notification((int)NotificationApplicationPaused);_Notification((int)NotificationApplicationResumed);await Settle();
+            if(!Offline||canvas.GetNodeOrNull<Label>("ChargeLine")?.Text!="CHARGING")throw new Exception("Saved status does not show the out-of-date charge");
+            await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);
+            int overdueUnlocks=fake.Unlocks,overdueSent=http.Requests;
+            CheckChargeOverdue();
+            for(int i=0;i<600&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(fake.Unlocks!=overdueUnlocks+1||http.Requests<=overdueSent||connection==null)throw new Exception("An overdue charge on saved status did not ask for Face ID and update");
+            http.Charging=http.ChargingOverdue=false;
             Navigate("Settings");
             if(canvas.GetNodeOrNull<Button>("SignOut")==null)throw new Exception("Settings is missing Sign out & forget");
             await Capture("21-secure-settings-test.png");
@@ -156,7 +170,7 @@ public partial class Main
             if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op!="places_load"))
                 throw new Exception("The demo touched secure storage or the disclaimer");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, old location without Face ID, forget, demo isolation. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, old location without Face ID, overdue charge update with Face ID, forget, demo isolation. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }

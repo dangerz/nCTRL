@@ -23,7 +23,9 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
     // Location included in the status report, if any. Used for ignored-place checks, and kept as the last known location when newest.
     VehicleLocation? StatusLocation=null,
     // While charging: power in kW and Hyundai's estimate of minutes left for the current charge.
-    double? ChargingPowerKw=null, int? ChargeMinutesLeft=null);
+    double? ChargingPowerKw=null, int? ChargeMinutesLeft=null,
+    // True when the reported location carries a speed above zero; null when no speed is reported.
+    bool? Moving=null);
 // RetrievedAt is when nCTRL received it, for deciding whether a location is fresh enough to trust.
 // One composite Surround View picture (Hyundai's encoded bytes), its capture time and the car's position then.
 public sealed record SurroundView(byte[] Image,string CapturedAt,VehicleLocation? Location,int? Heading,bool? TrunkOpen,DateTimeOffset RetrievedAt);
@@ -519,7 +521,8 @@ public sealed class HyundaiUsClient : IDisposable
             Seat(Integer(v,"seatHeaterVentState.frSeatHeatState")),Boolean(v,"steerWheelHeat"),health,located,
             Number(v,"evStatus.realTimePower") is double kw&&kw>=0&&kw<1000?kw:null,
             // remainTime2.atc is in minutes (unit 1); other units are not interpreted.
-            Integer(v,"evStatus.remainTime2.atc.unit") is null or 1&&Integer(v,"evStatus.remainTime2.atc.value") is int left&&left is >0 and <10000?left:null);
+            Integer(v,"evStatus.remainTime2.atc.unit") is null or 1&&Integer(v,"evStatus.remainTime2.atc.value") is int left&&left is >0 and <10000?left:null,
+            Number(v,"vehicleLocation.speed.value") is double speed&&speed>=0&&speed<500?speed>0:null);
     }
     private static int? Percent(int? n)=>n is >=0 and <=100?n:null;
     public static JsonElement At(JsonElement e,string path)

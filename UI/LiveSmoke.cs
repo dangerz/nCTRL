@@ -27,6 +27,10 @@ public partial class Main
         public bool Unhealthy;
         // Turns the reported car into one that is charging at 7.2 kW with 95 minutes left.
         public bool Charging;
+        // Charging, but reported three hours ago, so Hyundai's finish time has passed.
+        public bool ChargingOverdue;
+        // The reported location carries a speed.
+        public bool Moving;
         // Surround View: a picture whose capture time moves forward once a capture is requested.
         public string SvmImage="";public int SvmRequests;
         public string FailStage="";
@@ -61,7 +65,9 @@ public partial class Main
                     .Replace("\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0}","\"doorOpen\":{\"frontLeft\":1,\"frontRight\":0},\"windowOpen\":{\"backLeft\":1,\"backRight\":1},\"hoodOpen\":true");
             if(Charging&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"batteryCharge\":false","\"batteryCharge\":true,\"realTimePower\":7.2,\"remainTime2\":{\"atc\":{\"value\":95,\"unit\":1}}")
-                    .Replace("2026-10-22T10:00:00Z",DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+                    .Replace("2026-10-22T10:00:00Z",DateTimeOffset.UtcNow.AddHours(ChargingOverdue?-3:0).ToString("yyyy-MM-ddTHH:mm:ssZ"));
+            if(Moving&&route.EndsWith("/vehicleStatus"))
+                body=body.Replace("\"lon\":-74.222222}}","\"lon\":-74.222222},\"speed\":{\"value\":34,\"unit\":1}}");
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
             if(route.EndsWith("/rdo/on")){Commands++;response.Headers.Add("tmsTid","fixture-command");}
             // Tracked, so the follow-up check confirms on its first try instead of reading status for two minutes.
@@ -325,6 +331,8 @@ public partial class Main
             Navigate("Car");
             if(ignoredPlaces.Count!=0||!canvas.GetNode<Button>("AlertStrip").Text.Contains("Doors unlocked"))throw new Exception("Deleting the place did not bring the alert back");
             // Charging ETA from Hyundai's minutes-left estimate, on Energy and the Car screen.
+            if(canvas.GetNodeOrNull<Label>("ChargeLine")?.Text!="NOT CHARGING"||canvas.GetNodeOrNull<TextureRect>("ChargeOutline")!=null||canvas.GetNode<CarFrame>("CarFrame").Charging)
+                throw new Exception("A car that isn't charging is not shown as Not charging");
             fixture.Charging=true;
             await RefreshLive(false);
             if(pendingOverride!=null)canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
@@ -334,7 +342,36 @@ public partial class Main
             if(!eta.Contains("Charging at 7.2 kW")||!eta.Contains("full at"))throw new Exception("Energy screen does not show charging power and finish time");
             await Capture("45-charging-eta-test.png");
             Navigate("Car");
-            if(canvas.GetNodeOrNull<Label>("CarChargeEta")?.Text.StartsWith("Full at")!=true)throw new Exception("Car screen does not show when charging finishes");
+            var line=canvas.GetNodeOrNull<Label>("ChargeLine");
+            if(line?.Text.StartsWith("CHARGING · FINISHING AROUND ")!=true||line.GetThemeColor("font_color")!=Yellow||canvas.GetNodeOrNull<Label>("CarChargeEta")!=null)
+                throw new Exception("The Car screen does not say Charging, in yellow, with the finish time");
+            if(canvas.GetNodeOrNull<TextureRect>("ChargeOutline")==null||!canvas.GetNode<CarFrame>("CarFrame").Charging)throw new Exception("Charging does not outline the car and its frame");
+            for(int i=0;i<40;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            await Capture("56-charging-car-test.png");
+            // Moving: a white line along the bottom of the frame.
+            fixture.Moving=true;await RefreshLive(false);
+            if(pendingOverride!=null)canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||connection?.State?.Moving!=true);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            Navigate("Car");
+            if(!canvas.GetNode<CarFrame>("CarFrame").Moving)throw new Exception("A moving car does not show the moving line");
+            // The dash enters from the right edge about half a second in.
+            await ToSignal(GetTree().CreateTimer(1.2),SceneTreeTimer.SignalName.Timeout);
+            await Capture("57-moving-test.png");
+            // Past Hyundai's finish time: one automatic status read for that estimate, and no more.
+            fixture.Moving=false;fixture.ChargingOverdue=true;await RefreshLive(false);
+            if(pendingOverride!=null)canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&(liveBusy||!ChargeEstimate.Overdue(connection?.State,DateTimeOffset.UtcNow));i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            Navigate("Car");
+            if(canvas.GetNodeOrNull<Label>("ChargeLine")?.Text!="CHARGING")throw new Exception("An out-of-date charging report still shows a finish time");
+            // Wait out the read cooldown so the automatic read is allowed.
+            await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);
+            int beforeCheck=fixture.Requests;
+            CheckChargeOverdue();
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            CheckChargeOverdue();
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(fixture.Requests!=beforeCheck+1||pendingOverride!=null)throw new Exception("An overdue charge did not read status exactly once, without prompting");
+            fixture.ChargingOverdue=false;
             // Surround View: a warning first, then the car's picture, saved through a stand-in for Photos.
             var picture=Image.CreateEmpty(32,16,false,Image.Format.Rgb8);picture.Fill(new Color("#3aa0ff"));
             fixture.SvmImage=Convert.ToBase64String(picture.SavePngToBuffer());
@@ -380,7 +417,7 @@ public partial class Main
             canvas.GetNode<Button>("DemoEnd").EmitSignal(Godot.Button.SignalName.Pressed);
             if(demo||connection!=null||!ReferenceEquals(budget,budgetBefore)||linkedVehicle!=linkedBefore||paintHex!=paintBefore||fixture.Requests!=sentBefore)
                 throw new Exception("Ending the demo did not put everything back");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, Surround View, old location, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

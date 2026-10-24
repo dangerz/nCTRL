@@ -7,11 +7,11 @@ using System.Globalization;
 public partial class Main : Control
 {
     private static readonly Color Blue = new("#8ecbfa"), White = new("#eef5fb"),
-        Muted = new("#9ab0c6"), Red = new("#f24a4d"), Back = new("#08121d");
+        Muted = new("#9ab0c6"), Red = new("#f24a4d"), Back = new("#08121d"), Yellow = new("#ffd129");
     private readonly List<(string Title,string Detail,bool Ok)> history = new();
     private Control canvas = null!;
     private Font regular = null!, bold = null!;
-    private Shader paintShader = null!;
+    private Shader paintShader = null!, chargeOutline = null!;
     private string screen = "Connect", paintName = "Performance Blue", paintHex = "89b7f0";
     private string garageName = "My garage", notice = "";
     private bool noticeError;
@@ -29,6 +29,7 @@ public partial class Main : Control
         regular = GD.Load<Font>("res://Assets/Body.ttf");
         bold = GD.Load<Font>("res://Assets/Bold.ttf");
         paintShader = GD.Load<Shader>("res://Assets/Paint.gdshader");
+        chargeOutline = GD.Load<Shader>("res://Assets/ChargeOutline.gdshader");
 #if DEBUG
         liveSmoke = Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--live-smoke-test");
         vaultSmoke = Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--secure-smoke-test");
@@ -46,6 +47,8 @@ public partial class Main : Control
         // Cold launch: open straight to the Car screen with the last saved status, if any.
         EnterOffline();
         _ = LoadPlaces();
+        // Smoke tests call the check themselves.
+        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(CheckChargeOverdue));}
         Render();
 #if DEBUG
         if (vaultSmoke) _ = SecureSmokeTest();
