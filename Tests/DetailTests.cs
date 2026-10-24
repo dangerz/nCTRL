@@ -28,7 +28,7 @@ static class DetailTests
         Check(Value("12-volt battery")=="87%"&&Value("Battery")=="78%"&&Value("Doors locked")=="Yes","Known fields get readable names and values");
         Check(Value("Front-right door")=="Open"&&Value("Front-left door")=="Closed"&&Value("Tailgate")=="Closed","Door and tailgate states");
         Check(Value("Driver seat")=="Heat high"&&Value("Passenger seat")=="Cool low"&&Value("Steering wheel heat")=="Off","Seat and wheel states");
-        Check(Value("Rear-right tire (psi)")=="33"&&Value("Rear-right tire warning")=="Warning"&&Value("Front-left tire warning")=="OK","Tire rows have readable names");
+        Check(Value("Rear-right tire")=="33 psi"&&Value("Rear-right tire warning")=="Warning"&&Value("Front-left tire warning")=="OK","Tire rows have readable names");
         Check(Value("Charge time left (min)")=="95"&&Value("Charge cable")=="Plugged in (type 2)","EV charging details");
         Check(Value("evStatus.newHyundaiField")=="x"&&Value("someFutureFlag")=="Yes","Unknown fields are still listed by their path");
         Check(rows.All(r=>!r.Label.Contains("coord",StringComparison.OrdinalIgnoreCase)&&!r.Label.Contains("vehicleLocation",StringComparison.OrdinalIgnoreCase)&&

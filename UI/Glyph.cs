@@ -25,6 +25,13 @@ public partial class Glyph : Control
             case "Energy": R(4,19,4,10,true);R(14,11,4,18,true);R(24,3,4,26,true);break;
             case "Details": DrawArc(new(16,16),13,0,Mathf.Tau,32,Ink,3,true);DrawArc(new(16,16),5,0,Mathf.Tau,18,Ink,2,true);
                 for(int i=0;i<5;i++){float a=i*Mathf.Tau/5;L(16+Mathf.Cos(a)*5,16+Mathf.Sin(a)*5,16+Mathf.Cos(a)*10,16+Mathf.Sin(a)*10);} break;
+            case "Cold":
+                for(int i=0;i<6;i++) {
+                    float a=i*Mathf.Pi/3;Vector2 arm=new(Mathf.Cos(a),Mathf.Sin(a)),mid=new Vector2(16,16)+arm*9;
+                    DrawLine(new(16,16),new Vector2(16,16)+arm*14,Ink,3,true);
+                    foreach(float side in new[]{-.8f,.8f})DrawLine(mid,mid+arm.Rotated(side)*5,Ink,3,true);
+                }
+                break;
             default: R(4,13,24,12);L(6,13,10,6);L(10,6,22,6);L(22,6,26,13);R(5,25,4,4,true);R(23,25,4,4,true);R(8,17,3,3,true);R(21,17,3,3,true);break;
         }
     }

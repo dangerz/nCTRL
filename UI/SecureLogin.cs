@@ -61,7 +61,7 @@ public partial class Main
         Render();
         if(!smoke)NativeVaultBridge.RestoreForeground();
         // Back on saved status: an out-of-date charge asks for an update straight away.
-        if(!smoke)CallDeferred(nameof(CheckChargeOverdue));
+        if(!smoke){CallDeferred(nameof(CheckChargeOverdue));_ = UpdateOutsideTemperature();}
     }
     private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
     private void SavedLoginScreen()
@@ -90,7 +90,7 @@ public partial class Main
         if(liveBusy)return;
         if(demo){EndLiveSession();return;}
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;EndLiveSession();
+        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
         // Car names and pictures go with the account too.
         linkedVehicle="";disclaimer=null;cars.Clear();SelectCar();SavePrefs();

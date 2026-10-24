@@ -19,6 +19,8 @@ public sealed class DemoHyundai : HttpMessageHandler
     public const string Email="demo@example.invalid",Vin="DEMOVIN0000000001";
     // A public place (Central Park, New York), not anyone's car.
     public const double Latitude=40.7812,Longitude=-73.9665;
+    // The demo's pretend outside temperature: cold enough to show the cold-weather range. No weather is requested.
+    public const double OutsideF=28;
     private readonly object sync=new();
     private readonly TimeProvider clock;
     private readonly byte[] picture;

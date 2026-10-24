@@ -40,25 +40,37 @@ public static class StatusDetails
         ("seatHeaterVentState.flSeatHeatState","Driver seat",Seat),("seatHeaterVentState.frSeatHeatState","Passenger seat",Seat),
         ("seatHeaterVentState.rlSeatHeatState","Rear-left seat",Seat),("seatHeaterVentState.rrSeatHeatState","Rear-right seat",Seat),
         ("tirePressureLamp.tirePressureWarningLampAll","Tire pressure warning",Warning),
-        ("tirePressure.tirePressureFrontLeft","Front-left tire (psi)",Raw),("tirePressure.tirePressureFrontRight","Front-right tire (psi)",Raw),
-        ("tirePressure.tirePressureRearLeft","Rear-left tire (psi)",Raw),("tirePressure.tirePressureRearRight","Rear-right tire (psi)",Raw),
+        ("tirePressure.tirePressureFrontLeft","Front-left tire",Raw),("tirePressure.tirePressureFrontRight","Front-right tire",Raw),
+        ("tirePressure.tirePressureRearLeft","Rear-left tire",Raw),("tirePressure.tirePressureRearRight","Rear-right tire",Raw),
         ("tirePressureLamp.tirePressureWarningLampFrontLeft","Front-left tire warning",Warning),("tirePressureLamp.tirePressureWarningLampFrontRight","Front-right tire warning",Warning),
         ("tirePressureLamp.tirePressureWarningLampRearLeft","Rear-left tire warning",Warning),("tirePressureLamp.tirePressureWarningLampRearRight","Rear-right tire warning",Warning),
         ("washerFluidStatus","Washer fluid low",YesNo),("breakOilStatus","Brake fluid warning",YesNo),("smartKeyBatteryWarning","Key fob battery low",YesNo),
         ("odometer","Odometer",Raw),("engine","Vehicle on",YesNo)
     };
 
-    public static IReadOnlyList<DetailRow> Rows(JsonElement status)
+    public static IReadOnlyList<DetailRow> Rows(JsonElement status,UnitSystem units=UnitSystem.Imperial)
     {
         var leaves=new List<(string Path,JsonElement Value)>();
         Walk(status,"",leaves);
         var byPath=leaves.GroupBy(l=>l.Path,StringComparer.OrdinalIgnoreCase).ToDictionary(g=>g.Key,g=>g.First().Value,StringComparer.OrdinalIgnoreCase);
         var rows=new List<DetailRow>();var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach(var (path,label,format) in Known)
-            if(byPath.TryGetValue(path,out var value)){rows.Add(new(label,Clip(format(value))));used.Add(path);}
+            if(byPath.TryGetValue(path,out var value)){rows.Add(new(label,Clip(Measure(path,value,byPath,units)??format(value))));used.Add(path);}
         foreach(var (path,value) in leaves)
             if(rows.Count<MaxRows&&used.Add(path))rows.Add(new(path,Clip(Raw(value))));
         return rows.Take(MaxRows).ToList();
+    }
+    // Distances, pressures and temperatures in the chosen units. Hyundai USA reports miles (a range with
+    // unit 1 is in km), psi and °F (airTemp unit 0 is °C).
+    private static string? Measure(string path,JsonElement value,Dictionary<string,JsonElement> byPath,UnitSystem units)
+    {
+        if(Number(value) is not double n)return null;
+        bool Unit(string key,double code)=>byPath.TryGetValue(key,out var u)&&Number(u)==code;
+        if(path.StartsWith("tirePressure.",StringComparison.OrdinalIgnoreCase))return Units.Pressure(n,units);
+        if(path=="odometer")return Units.Distance(n,units);
+        if(path=="airTemp.value")return Units.Temperature(Unit("airTemp.unit",0)?Units.Fahrenheit(n):n,units);
+        if(path.EndsWith("Range.value",StringComparison.OrdinalIgnoreCase))return Units.Distance(Unit(path[..^5]+"unit",1)?n/Units.KmPerMile:n,units);
+        return null;
     }
     private static void Walk(JsonElement e,string path,List<(string,JsonElement)> leaves)
     {

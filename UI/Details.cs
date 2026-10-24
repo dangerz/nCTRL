@@ -20,7 +20,7 @@ public partial class Main
                 var tire=tires[i];int x=24+(i%2)*214,y=214+(i/2)*62;bool low=tire.Warning==true;
                 Panel(x,y,198,54,new("#0e2031"),false);Rect(x,y,3,54,low?Red:Blue);
                 Label(x+14,y+4,180,20,tire.Position,11,Muted,true);
-                Label(x+14,y+24,180,26,(tire.Psi is double psi?$"{psi:0} psi":"—")+(tire.Warning switch {true=>" · Low",false=>" · OK",_=>""}),15,low?Red:White,true)
+                Label(x+14,y+24,180,26,(tire.Psi is double psi?Units.Pressure(psi,units):"—")+(tire.Warning switch {true=>" · Low",false=>" · OK",_=>""}),15,low?Red:White,true)
                     .Name="Tire"+i;
             }
             if(tires.All(t=>t.Psi==null&&t.Warning==null))
@@ -30,7 +30,7 @@ public partial class Main
             var scroll=new ScrollContainer {Name="DetailScroll",Position=new(32,372),Size=new(398,334),HorizontalScrollMode=ScrollContainer.ScrollMode.Disabled};
             var list=new VBoxContainer {CustomMinimumSize=new(382,0)};
             list.AddThemeConstantOverride("separation",6);
-            foreach(var row in StatusDetails.Rows(status)) {
+            foreach(var row in StatusDetails.Rows(status,units)) {
                 var line=new HBoxContainer();
                 var name=new Label {Text=row.Label,AutowrapMode=TextServer.AutowrapMode.Arbitrary,CustomMinimumSize=new(232,0),SizeFlagsHorizontal=Control.SizeFlags.ExpandFill};
                 name.AddThemeFontOverride("font",regular);name.AddThemeFontSizeOverride("font_size",11);name.AddThemeColorOverride("font_color",Muted);

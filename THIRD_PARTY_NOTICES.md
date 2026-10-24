@@ -14,4 +14,6 @@ This application does not import, bundle or execute Python. The static client ID
 
 The adapter is unofficial. It uses the normal HTTPS certificate verification provided by .NET and refuses redirects. Unlike the reference Python transport, it does not lower TLS security settings. Some platform/server TLS combinations may consequently fail and require investigation.
 
+The outside temperature for the cold-weather range comes from the Open-Meteo forecast API (https://open-meteo.com/), whose data is licensed under CC BY 4.0 and credited in Settings → Range & units. Terms: https://open-meteo.com/en/terms.
+
 DejaVu Sans fonts: see `Assets/FONT_LICENSE.txt`. Pixel vehicle artwork: see `ART_NOTES.md`.

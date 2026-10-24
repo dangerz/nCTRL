@@ -17,6 +17,7 @@ static class Program
         LastLocationTests.Run();
         PresetTests.Run();
         ChargeLineTests.Run();
+        await ColdRangeTests.Run();
         await RequestBudgetTests.Run();
         await SurroundViewTests.Run();
         await DemoTests.Run();

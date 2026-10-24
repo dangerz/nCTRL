@@ -43,12 +43,17 @@ public partial class Main : Control
         budget = new RequestBudget(new FileBudgetStore(LimitsFile));
 #endif
         connectionFactory = () => new HyundaiUsClient(budget);
+#if DEBUG
+        weather = smoke ? new OutsideTemperature(weatherFixture = new WeatherFixture()) : new OutsideTemperature();
+#else
+        weather = new OutsideTemperature();
+#endif
         InitializeVault();
         // Cold launch: open straight to the Car screen with the last saved status, if any.
         EnterOffline();
         _ = LoadPlaces();
         // Smoke tests call the check themselves.
-        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(CheckChargeOverdue));}
+        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(CheckChargeOverdue));_ = UpdateOutsideTemperature();}
         Render();
 #if DEBUG
         if (vaultSmoke) _ = SecureSmokeTest();
@@ -57,7 +62,7 @@ public partial class Main : Control
 
     }
 
-    public override void _ExitTree() { liveEpoch++; vault.Cancel(); liveLifetime.Cancel(); connection?.Dispose(); DiscardParked(); liveLifetime.Dispose(); }
+    public override void _ExitTree() { liveEpoch++; vault.Cancel(); liveLifetime.Cancel(); connection?.Dispose(); DiscardParked(); liveLifetime.Dispose(); weather.Dispose(); }
     private void LoadPrefs()
     {
         var cfg = new ConfigFile();
@@ -82,6 +87,10 @@ public partial class Main : Control
         wheelHeat=cfg.GetValue("climate","steering_wheel",false).AsBool();
         climateDefrost=cfg.GetValue("climate","defrost",false).AsBool();
         warmPreset=LoadPreset(cfg,"preset_warm",ClimatePreset.WarmUp);coolPreset=LoadPreset(cfg,"preset_cool",ClimatePreset.CoolDown);
+        units=Units.Parse(cfg.GetValue("units","system","imperial").AsString());
+        var cold=ColdRangeSettings.Default;
+        coldRange=new ColdRangeSettings(cfg.GetValue("cold_range","enabled",cold.Enabled).AsBool(),cfg.GetValue("cold_range","start_f",cold.StartF).AsDouble(),
+            cfg.GetValue("cold_range","coldest_f",cold.ColdestF).AsDouble(),cfg.GetValue("cold_range","loss_percent",cold.LossPercent).AsInt32()).Valid();
         disclaimer=Disclaimer.Restore(cfg.GetValue("disclaimer","version",0).AsInt32(),
             cfg.GetValue("disclaimer","account","").AsString(),cfg.GetValue("disclaimer","accepted_at","").AsString());
     }
@@ -108,6 +117,9 @@ public partial class Main : Control
             cfg.SetValue(section,"passenger_seat",(int)preset.PassengerSeat);cfg.SetValue(section,"steering_wheel",preset.SteeringWheel);
             cfg.SetValue(section,"defrost",preset.Defrost);
         }
+        cfg.SetValue("units","system",Units.Name(units));
+        cfg.SetValue("cold_range","enabled",coldRange.Enabled);cfg.SetValue("cold_range","start_f",coldRange.StartF);
+        cfg.SetValue("cold_range","coldest_f",coldRange.ColdestF);cfg.SetValue("cold_range","loss_percent",coldRange.LossPercent);
         if(disclaimer!=null) {
             cfg.SetValue("disclaimer","version",disclaimer.Version);
             cfg.SetValue("disclaimer","account",disclaimer.AccountKey);
@@ -148,6 +160,7 @@ public partial class Main : Control
         else if(screen=="Disclaimer") DisclaimerView();
         else if(screen=="Limits") LimitsScreen();
         else if(screen=="Places") PlacesScreen();
+        else if(screen=="Range") RangeScreen();
         else LiveScreen();
         if(liveMode)Nav();
         if(notice.Length>0)
@@ -216,7 +229,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,new("#0b1520"));Rect(0,851,460,1,new("#294053"));
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;

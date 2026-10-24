@@ -168,6 +168,7 @@ public partial class Main
             if(history.Count>30)history.RemoveRange(0,history.Count-30);
             PersistSnapshot();
             liveBusy=false;if(IsInsideTree())Render();
+            _ = UpdateOutsideTemperature();
             }
         }
     }
@@ -209,7 +210,8 @@ public partial class Main
         canvas.AddChild(new CarFrame {Name="CarFrame",Position=new(20,139),Size=new(420,215),Charging=charge?.Charging==true,Moving=s?.Moving==true});
         Label(24,369,190,20,"CHARGE",11,Muted,true);Label(294,369,130,20,"EST. RANGE",11,Muted,true);
         Label(21,391,180,60,Value(s?.Battery,"%"),46,Blue,true);
-        Label(288,403,150,42,s?.RangeMiles is double range?$"{range:0} mi":"—",28,White,true);
+        Label(288,398,150,42,s?.RangeMiles is double range?Units.Distance(range,units):"—",28,White,true).Name="Range";
+        ColdRangeLine(s);
         for(int i=0;i<20;i++)Rect(24+i*20.5f,459,17,9,s?.Battery is int soc && i<soc/5.0?Blue:new("#243446"));
         HealthStrip(s);
         Label(24,509,412,36,"Reported: "+ReportedTime(s?.ReportedAt),11,Muted,false,true);
@@ -249,12 +251,12 @@ public partial class Main
     {
         var s=CurrentState;
         Title("CABIN, YOUR WAY.","Hyundai remote climate · electric vehicles");
-        Label(24,196,412,26,"Reported: climate "+OnOff(s?.ClimateOn,"on","off")+" · setpoint "+Value(s?.TemperatureF,"°F"),14,White,true);
+        Label(24,196,412,26,"Reported: climate "+OnOff(s?.ClimateOn,"on","off")+" · setpoint "+(s?.TemperatureF is int set?Units.Setpoint(set,units):"—"),14,White,true);
         if(s?.DriverSeat!=null||s?.PassengerSeat!=null||s?.SteeringWheelHeat!=null)
             Label(24,224,412,22,"Seats: driver "+SeatCodes.Reported(s?.DriverSeat)+" · passenger "+SeatCodes.Reported(s?.PassengerSeat)+
                 " · wheel "+OnOff(s?.SteeringWheelHeat,"on","off"),11,Muted);
         Panel(24,256,412,104,new("#0e2031"));
-        Label(142,274,220,68,$"{liveTemperature}°F",40,White,true);
+        Label(142,274,220,68,Units.Setpoint(liveTemperature,units),40,White,true).Name="ClimateTemperature";
         LiveButton(43,282,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
         LiveButton(366,282,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
         Label(24,374,198,22,"DRIVER SEAT",11,Muted,true);Label(238,374,198,22,"PASSENGER SEAT",11,Muted,true);
@@ -268,7 +270,7 @@ public partial class Main
         defrost.Toggled+=value=>{climateDefrost=value;SavePrefs();};canvas.AddChild(defrost);
         // Presets start climate right away with their saved settings.
         foreach(var (preset,x,name) in new[]{(warmPreset,24,"PresetWarm"),(coolPreset,238,"PresetCool")})
-            CommandFeedback(RemoteButton(x,498,198,44,$"{preset.Name}  ·  {preset.TemperatureF}°F",13,()=>StartClimatePreset(preset),false,name),ActionKind.Climate,false,true,preset.TemperatureF);
+            CommandFeedback(RemoteButton(x,498,198,44,$"{preset.Name}  ·  {Units.Setpoint(preset.TemperatureF,units)}",13,()=>StartClimatePreset(preset),false,name),ActionKind.Climate,false,true,preset.TemperatureF);
         Label(24,546,412,52,(SeatsSupported?"Seats, steering wheel and defrost are sent with each climate start; rear seats and rear-window heat stay off. ":
             "Seat control needs a generation 3 vehicle; the steering wheel and defrost still apply. ")+
             "Generation 3 requests a five-minute duration.",10,Muted,false,true);
@@ -345,15 +347,16 @@ public partial class Main
         Label(24,204,412,52,$"{VehicleName}\nVIN …{VinTail}",17,White,true,true);
         Label(24,262,412,28,"Session: "+(demo?"Demo · nothing is sent to Hyundai":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status · "+vault.BiometricName+" on first request":
             "Expired / denied — sign in again"),13,Muted,false,true);
-        Button(24,302,412,46,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
-        LiveButton(24,358,412,46,"Update",13,()=>_ = RefreshLive(false));
-        LiveButton(24,414,412,46,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
-        if(demo)LiveButton(24,470,412,46,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
-        else LiveButton(24,470,412,46,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
-        Button(24,526,412,46,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
-        Button(24,582,412,46,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
-        Button(24,638,412,46,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
-        Label(24,694,412,64,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
+        Button(24,300,412,42,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
+        Button(24,350,412,42,"Range & units  /  "+(units==UnitSystem.Metric?"Metric":"Imperial")+"  ›",13,()=>Navigate("Range"),false,"SettingsRange");
+        LiveButton(24,400,412,42,"Update",13,()=>_ = RefreshLive(false));
+        LiveButton(24,450,412,42,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
+        if(demo)LiveButton(24,500,412,42,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
+        else LiveButton(24,500,412,42,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
+        Button(24,550,412,42,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
+        Button(24,600,412,42,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
+        Button(24,650,412,42,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
+        Label(24,698,412,64,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
             " is required for the first update or command after you open it. Signing out removes the saved login and status.":
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }

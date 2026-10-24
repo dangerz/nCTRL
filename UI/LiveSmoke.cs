@@ -75,6 +75,19 @@ public partial class Main
             return Task.FromResult(response);
         }
     }
+    // The weather service, for smoke runs: always 28°F, never the network.
+    private WeatherFixture? weatherFixture;
+    private sealed class WeatherFixture : HttpMessageHandler
+    {
+        public int Requests;public string LastUrl="";
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
+        {
+            Requests++;LastUrl=request.RequestUri!.ToString();
+            if(request.RequestUri.Host!=OutsideTemperature.Host)throw new Exception("Unexpected weather host");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent("{\"current\":{\"temperature_2m\":28}}",Encoding.UTF8,"application/json")});
+        }
+    }
+    private async Task WaitFrames(int frames=20){for(int i=0;i<frames;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);}
     private async Task LiveSmokeTest()
     {
         try
@@ -102,6 +115,11 @@ public partial class Main
             notice="";Render();await Capture("11-vehicle-selection-test.png");
             await ChooseVehicle();
             if(!liveMode||connection?.State?.Battery!=78||fixture.Commands!=0)throw new Exception("Connect failed or sent a command");
+            // The cold-weather estimate: one weather request with only the rounded area of the car's status location.
+            await WaitFrames();
+            if(weatherFixture!.Requests!=1||!weatherFixture.LastUrl.Contains("latitude=40.1&longitude=-74.2&")||weatherFixture.LastUrl.Contains("40.11")||
+                canvas.GetNodeOrNull<Label>("ColdRange")?.Text!="~129 mi at 28°F"||canvas.GetNode<Label>("Range").Text!="184 mi")
+                throw new Exception("The cold-weather range did not show after one rounded weather request");
             // The connect read starts the read cooldown: warn every time, Cancel sends nothing, an override sends exactly one.
             int reads=fixture.Requests;
             await RefreshLive(false);
@@ -399,6 +417,40 @@ public partial class Main
             if(pendingOverride?.Kind!=RequestKind.Camera||fixture.SvmRequests!=1)throw new Exception("A second capture within 5 minutes was not refused first");
             canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
             if(Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--art-gallery"))await ArtGallery();
+            // Range & units: metric everywhere, the loss setting, and turning the estimate off and on.
+            int weatherBefore=weatherFixture.Requests;
+            Navigate("Settings");canvas.GetNode<Button>("SettingsRange").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Range"||canvas.GetNode<Label>("ColdStartValue").Text!="70°F"||canvas.GetNode<Label>("ColdLowValue").Text!="0°F"||canvas.GetNode<Label>("ColdLossValue").Text!="50%")
+                throw new Exception("Range & units does not show the default settings");
+            await Capture("60-range-units-test.png");
+            canvas.GetNode<Button>("UnitsMetric").EmitSignal(Godot.Button.SignalName.Pressed);
+            canvas.GetNode<Button>("ColdLossUp").EmitSignal(Godot.Button.SignalName.Pressed);
+            canvas.GetNode<Button>("ColdStartDown").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(canvas.GetNode<Label>("ColdLossValue").Text!="55%"||canvas.GetNode<Label>("ColdStartValue").Text!="19°C"||canvas.GetNode<Label>("ColdLowValue").Text!="-18°C")
+                throw new Exception("Range & units steppers did not change the settings in metric");
+            await Capture("61-range-units-metric-test.png");
+            Navigate("Car");
+            // 184 mi at 28°F, losing 55% at 0°F from 66.2°F: about 126 mi.
+            if(canvas.GetNode<Label>("Range").Text!="296 km"||canvas.GetNodeOrNull<Label>("ColdRange")?.Text!="~202 km at -2°C")
+                throw new Exception("The Car screen did not switch to metric");
+            await Capture("62-car-metric-test.png");
+            Navigate("Climate");
+            if(canvas.GetNode<Label>("ClimateTemperature").Text!=Units.Setpoint(liveTemperature,UnitSystem.Metric)||!canvas.GetNode<Button>("PresetWarm").Text.EndsWith("°C"))
+                throw new Exception("Climate did not switch to °C");
+            await Capture("63-climate-metric-test.png");
+            Navigate("Details");
+            if(canvas.GetNode<Label>("Tire0").Text!="248 kPa")throw new Exception("Tires did not switch to kPa");
+            await Capture("64-details-metric-test.png");
+            Navigate("Range");
+            var coldOn=canvas.GetNode<CheckBox>("ColdRangeOn");coldOn.ButtonPressed=false;await WaitFrames(3);
+            Navigate("Car");
+            if(canvas.GetNodeOrNull<Label>("ColdRange")!=null||outside!=null||coldRange.Enabled)throw new Exception("Turning the estimate off did not hide it");
+            await RefreshLive(false);if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            await WaitFrames();
+            if(weatherFixture.Requests!=weatherBefore)throw new Exception("A weather request was sent while the estimate was off");
+            Navigate("Range");canvas.GetNode<CheckBox>("ColdRangeOn").ButtonPressed=true;await WaitFrames();
+            if(weatherFixture.Requests!=weatherBefore+1||outside?.TemperatureF!=28)throw new Exception("Turning the estimate on did not read the temperature once");
+            units=UnitSystem.Imperial;coldRange=ColdRangeSettings.Default;
             // The demo: a pretend car inside the app. Nothing reaches the (test) Hyundai server, and ending it puts everything back.
             var budgetBefore=budget;var linkedBefore=linkedVehicle;var paintBefore=paintHex;int sentBefore=fixture.Requests;
             EndLiveSession();
@@ -410,6 +462,8 @@ public partial class Main
             await WaitForCommandChecks();
             if(connection?.State?.Locked!=false||connection.Pending?.Outcome!=RemoteOutcome.Confirmed)throw new Exception("The demo car did not confirm and report the unlock");
             Navigate("Car");
+            if(canvas.GetNodeOrNull<Label>("ColdRange")?.Text!="~"+Units.Distance(connection.State.RangeMiles!.Value*ColdRange.Factor(DemoHyundai.OutsideF,coldRange),units)+" at 28°F"||
+                weatherFixture.Requests!=weatherBefore+1)throw new Exception("The demo did not show its pretend temperature without a weather request");
             await Capture("53-demo-car-test.png");
             PickPaint("Gravity Gold","b6ab8a");Navigate("Settings");
             if(canvas.GetNodeOrNull<Button>("SignOut")!=null||canvas.GetNodeOrNull<Button>("DemoEnd")==null)throw new Exception("The demo offers Sign out & forget instead of End demo");
@@ -417,7 +471,7 @@ public partial class Main
             canvas.GetNode<Button>("DemoEnd").EmitSignal(Godot.Button.SignalName.Pressed);
             if(demo||connection!=null||!ReferenceEquals(budget,budgetBefore)||linkedVehicle!=linkedBefore||paintHex!=paintBefore||fixture.Requests!=sentBefore)
                 throw new Exception("Ending the demo did not put everything back");
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
