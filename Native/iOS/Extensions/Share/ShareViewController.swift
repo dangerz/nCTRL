@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import UniformTypeIdentifiers
 import CoreLocation
 import Security
@@ -11,23 +12,21 @@ import os
 // send (no saved login, Hyundai refused, no connection), the share is saved for nCTRL to show the next time it opens,
 // without sending again by itself. Each share leaves a receipt for Activity → Shared.
 final class ShareViewController: UIViewController {
-    private let message = UILabel()
+    private let card = SendCardModel()
     private let log = Logger(subsystem: NctrlGroup.appBundleID + ".share", category: "share")
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.03, green: 0.07, blue: 0.11, alpha: 1)
-        message.text = "Reading what you shared…"
-        message.textColor = .white
-        message.font = .boldSystemFont(ofSize: 17)
-        message.numberOfLines = 0
-        message.textAlignment = .center
-        message.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(message)
+        // Your car in its paint, on your app color, from what nCTRL keeps for its widget.
+        let status = WidgetStatus.load(from: NctrlGroup.file("status.json"))
+        let host = UIHostingController(rootView: SendCardView(model: card, status: status, picture: loadPicture(NctrlGroup.file("car.png"))))
+        addChild(host)
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host.view)
         NSLayoutConstraint.activate([
-            message.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            message.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            message.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24)])
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor), host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: view.topAnchor), host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
+        host.didMove(toParent: self)
         Task { await share() }
     }
 
@@ -56,23 +55,23 @@ final class ShareViewController: UIViewController {
         log.info("Share received: \(kinds.joined(separator: ", "), privacy: .public) from \(hosts.joined(separator: ", "), privacy: .public)")
         if urls.isEmpty && texts.isEmpty {
             receipt(id: id, kinds: kinds, hosts: hosts, saved: false, opened: false)
-            show("nCTRL couldn't find a place in what was shared.", for: 2.5)
+            finish(.notSent("nCTRL couldn't find a place in what was shared."), after: 2.5)
             return
         }
 
         // Read the place with nCTRL's Core, then look up an address with Apple's geocoder if needed.
-        message.text = "Finding the place…"
+        card.phase = .working("Finding the place…")
         var place: [String: Any]?
         if let read = await core("read_share", shared) {
             place = read["place"] as? [String: Any]
             if place == nil, let lookup = read["lookup"] as? String, !lookup.isEmpty {
-                message.text = "Looking up the address…"
+                card.phase = .working("Looking up the address…")
                 place = await geocode(lookup, name: read["name"] as? String ?? "")
             }
         }
         guard let place else {
             receipt(id: id, kinds: kinds, hosts: hosts, saved: false, opened: false)
-            show("nCTRL couldn't find a place in what was shared.", for: 2.5)
+            finish(.notSent("nCTRL couldn't find a place in what was shared."), after: 2.5)
             return
         }
         let name = place["name"] as? String ?? "the place"
@@ -83,7 +82,7 @@ final class ShareViewController: UIViewController {
             await handOff(shared, id: id, kinds: kinds, hosts: hosts, unsent: "")
             return
         }
-        message.text = "Sending \(name) to your car…"
+        card.phase = .sending(place: name)
         let session = keychain("com.ngarage.nctrl.session.v1", "session")
         let request: [String: Any] = ["account": account, "session": session ?? NSNull(), "place": place, "limits": limits]
         let result = await core("send", request)
@@ -91,7 +90,7 @@ final class ShareViewController: UIViewController {
             if let updated = result?["session"] as? String { saveSession(updated) }
             receipt(id: id, kinds: kinds, hosts: hosts, saved: true, opened: false, sent: true, place: place)
             log.info("Sent to the car from the Share sheet")
-            show("Sent to your car ✓\n\(name)", for: 1.5)
+            finish(.sent(place: name, detail: place["address"] as? String ?? ""), after: 2.2)
         } else {
             let error = result?["error"] as? String ?? "nCTRL couldn't send it from here."
             log.info("Not sent from the Share sheet: \(error, privacy: .public)")
@@ -107,12 +106,13 @@ final class ShareViewController: UIViewController {
         let saved = save(shared)
         let opened = saved ? await open(URL(string: "nctrl://send")!) : false
         receipt(id: id, kinds: kinds, hosts: hosts, saved: saved, opened: opened)
-        let text = !saved ? "nCTRL couldn't save this." : unsent.isEmpty ? "Saved for nCTRL.\nOpen nCTRL to send it." : "Not sent: \(unsent)\nOpen nCTRL to send it."
-        show(text, for: opened ? 0.2 : 3.5)
+        let phase: SendPhase = !saved ? .notSent("nCTRL couldn't save this.") :
+            unsent.isEmpty ? .handedOff("Open nCTRL to send it.") : .notSent("\(unsent)\nOpen nCTRL to send it.")
+        finish(phase, after: opened ? 0.2 : 3.5)
     }
 
-    private func show(_ text: String, for seconds: Double) {
-        message.text = text
+    private func finish(_ phase: SendPhase, after seconds: Double) {
+        card.phase = phase
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             self.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
         }

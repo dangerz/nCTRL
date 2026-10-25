@@ -110,24 +110,38 @@ public partial class Main
         pendingDestination=null;destinationText="";sentDestination=place;notice="";
         history.Add(("Sent to car: "+place.Name,DateTime.Now.ToString("h:mm tt")+(tracking!=null?" · Hyundai tracking ID received":""),true));
     },"Sending to your car…",SendDestination);
+    // Your car in its paint, cut out (the widget's picture), for the Sent To Car dialog.
+    private Texture2D? sentCar;private string sentCarFor="";
+    private Texture2D SentCar()
+    {
+        string key=carModel.Id+"/"+paintHex;
+        if(sentCar==null||sentCarFor!=key) {
+            var image=new Image();
+            image.LoadPngFromBuffer(WidgetPicture());
+            sentCar=ImageTexture.CreateFromImage(image);sentCarFor=key;
+        }
+        return sentCar;
+    }
     private void SentDialog()
     {
         var place=sentDestination!;bool offer=ClimateOffered;
         canvas.AddChild(new ColorRect {Name="SentShade",Size=new(460,920),Color=new(0,0,0,.72f),MouseFilter=MouseFilterEnum.Stop});
-        Panel(24,260,412,offer?330:250,Skin.Card);
-        Label(44,282,372,34,"SENT TO CAR",22,Blue,true).Name="SentTitle";
-        Label(44,324,372,26,place.Name,16,White,true);
+        Panel(24,180,412,offer?410:330,Skin.Card);
+        canvas.AddChild(new TextureRect {Name="SentCar",Position=new(54,192),Size=new(352,104),Texture=SentCar(),
+            ExpandMode=TextureRect.ExpandModeEnum.IgnoreSize,StretchMode=TextureRect.StretchModeEnum.KeepAspectCentered,MouseFilter=MouseFilterEnum.Ignore});
+        Label(44,302,372,34,"SENT TO CAR",22,Blue,true).Name="SentTitle";
+        Label(44,344,372,26,place.Name,16,White,true);
         string at=Destinations.Format(place.Latitude,place.Longitude);
-        Label(44,352,372,44,place.Address.Length>0&&place.Address!=place.Name?place.Address:place.Name==at?"":at,12,Muted,false,true).VerticalAlignment=VerticalAlignment.Top;
-        Label(44,398,372,24,"It goes to your car's navigation.",12,Muted,false,true);
-        if(!offer){Button(44,446,372,48,"OK",14,()=>{sentDestination=null;Navigate("Locate");},true,"SentOk");return;}
+        Label(44,372,372,44,place.Address.Length>0&&place.Address!=place.Name?place.Address:place.Name==at?"":at,12,Muted,false,true).VerticalAlignment=VerticalAlignment.Top;
+        Label(44,416,372,24,"Shared with your "+CarTitle+"'s navigation.",12,Muted,false,true).Name="SentCarName";
+        if(!offer){Button(44,452,372,48,"OK",14,()=>{sentDestination=null;Navigate("Locate");},true,"SentOk");return;}
         // Get the car ready: your Warm up preset, or Cool down when it's hot outside.
         var preset=ClimatePreset.ForOutside(outside?.TemperatureF,warmPreset,coolPreset);
-        Label(44,432,372,22,"GET THE CAR READY?",11,Muted,true);
-        RemoteButton(44,458,372,48,"Start "+preset.Name+"  ·  "+Units.Setpoint(preset.TemperatureF,units),14,
+        Label(44,450,372,22,"GET THE CAR READY?",11,Muted,true);
+        RemoteButton(44,476,372,48,"Start "+preset.Name+"  ·  "+Units.Setpoint(preset.TemperatureF,units),14,
             ()=>{sentDestination=null;Navigate("Car");StartClimatePreset(preset);},true,"SentClimate");
-        Button(44,518,180,44,"Not now",13,()=>{sentDestination=null;Navigate("Locate");},false,"SentOk");
-        Button(236,518,180,44,"Disable this",13,()=>{
+        Button(44,534,180,44,"Not now",13,()=>{sentDestination=null;Navigate("Locate");},false,"SentOk");
+        Button(236,534,180,44,"Disable this",13,()=>{
             climateOffer=false;SavePrefs();sentDestination=null;screen="Locate";
             notice="nCTRL won't offer climate after sending a place. Turn it back on in Settings.";noticeError=false;Render();
         },false,"SentDisable");

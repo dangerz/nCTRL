@@ -3,7 +3,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 // Draws the widget's views on a Mac from a status.json and car.png, for checking the layouts without a phone:
-//   swiftc -parse-as-library Widget/WidgetViews.swift Preview/RenderWidget.swift -o render && ./render status.json car.png out/
+//   swiftc -parse-as-library Shared/NctrlStyle.swift Widget/WidgetViews.swift Preview/RenderWidget.swift -o render && ./render status.json car.png out/
 @main
 struct RenderWidget {
     @MainActor static func main() {
