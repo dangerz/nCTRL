@@ -6,8 +6,8 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-// Places shared to nCTRL from other apps (the Share extension saves them in the App Group): each opens Send to car,
-// filled in, to confirm. A Google Maps short link is opened once to read the place (ShortLinks). Every share,
+// Places shared to nCTRL from other apps (the Share extension saves them in the App Group): each opens Send to car
+// and goes to the car right away (places typed in Send to car still wait for the button). A Google Maps short link is opened once to read the place (ShortLinks). Every share,
 // including ones that couldn't be read, is listed under Activity → Shared (the last 20, in the device Keychain).
 public partial class Main
 {
@@ -86,7 +86,15 @@ public partial class Main
             Render();
         }
         await RecordShare(new(DateTimeOffset.UtcNow,item.Source,item.Kinds,place,place==null?problem:"",opened));
-        if(place!=null)await LoadDestinationMap(place);
+        if(place!=null){_ = LoadDestinationMap(place);await SendShared(place);}
+    }
+    // Waits for any request already running (such as the read when the app opens), then sends. If you've moved on,
+    // or something is still running after 30 seconds, the place stays on Send to car for you to send.
+    private async Task SendShared(Destination place)
+    {
+        for(int i=0;i<300&&(liveBusy||monitoringCommand);i++)await ToSignal(GetTree().CreateTimer(0.1),SceneTreeTimer.SignalName.Timeout);
+        if(screen!="Send"||pendingDestination!=place||liveBusy||monitoringCommand)return;
+        await SendDestination();
     }
     private Task<string?> ResolveShortLink(string link)
     {

@@ -304,19 +304,20 @@ public partial class Main
             if(!sharedFixture.ContainsKey("status.json")||!sharedFixture.ContainsKey("car.png"))throw new Exception("Turning the widget on did not fill it again");
             await Capture("73-appearance-widget-test.png");
             SaveSmokeFile("widget-status.json",sharedFixture["status.json"]);SaveSmokeFile("widget-car.png",sharedFixture["car.png"]);
-            // Shared from Apple Maps (its contact card has the place): Send to car opens with it, nothing sent yet.
+            // Shared from Apple Maps (its contact card has the place): sent to the car right away, then Sent To Car.
+            async Task SharedSent(){for(int i=0;i<600&&(lookingUp||liveBusy||sentDestination==null);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);}
             int shared=fixture.Destinations;
             sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"urls\":[\"https://maps.apple/p/abc\"],\"texts\":[\"BEGIN:VCARD\\r\\nFN:Central Park\\r\\nitem1.ADR;type=WORK:;;5th Ave;New York;NY;10022;\\r\\nitem2.URL;type=pref:http://maps.apple.com/?ll=40.7812\\\\,-73.9665\\r\\nEND:VCARD\"]}");
-            CheckShared();
-            if(screen!="Send"||pendingDestination?.Name!="Central Park"||pendingDestination.Address!="5th Ave, New York, NY 10022"||sharedFixture.ContainsKey("share.json"))
-                throw new Exception("An Apple Maps share did not open Send to car with the place");
+            CheckShared();await SharedSent();
+            if(sentDestination is not {Name: "Central Park",Address: "5th Ave, New York, NY 10022"}||fixture.Destinations!=shared+1||sharedFixture.ContainsKey("share.json")||
+                canvas.GetNodeOrNull<Label>("SentTitle")==null)throw new Exception("An Apple Maps share was not sent to the car right away");
             await Capture("74-shared-place-test.png");
+            canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
             // Shared from Google Maps (name, address and a short link): looked up by its address, keeping its name.
             sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"urls\":[\"https://maps.app.goo.gl/xyz\"],\"texts\":[\"Corner Cafe\\n1 Main St, Springfield\\nhttps://maps.app.goo.gl/xyz\"]}");
-            CheckShared();for(int i=0;i<30&&lookingUp;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            if(pendingDestination?.Name!="Corner Cafe"||pendingDestination.Latitude!=40.26)throw new Exception("A Google Maps share was not looked up by its address");
-            canvas.GetNode<Button>("DestinationCancel").EmitSignal(Godot.Button.SignalName.Pressed);
-            if(fixture.Destinations!=shared)throw new Exception("A shared place was sent without confirming");
+            CheckShared();await SharedSent();
+            if(sentDestination is not {Name: "Corner Cafe",Latitude: 40.26}||fixture.Destinations!=shared+2)throw new Exception("A Google Maps share was not looked up by its address and sent");
+            canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
             // A Google Maps share with only its short link: opened once (a test redirect) for the place's pin and name.
             // The extension's receipts come too, including a share it couldn't save.
             shortLinkFixture=new RedirectFixture();
@@ -324,10 +325,10 @@ public partial class Main
             sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"id\":\"g1\",\"urls\":[\"https://maps.app.goo.gl/only\"],\"texts\":[],\"kinds\":[\"link\"]}");
             sharedFixture["share-log.json"]=Encoding.UTF8.GetBytes("[{\"id\":\"g1\",\"at\":\""+at+"\",\"kinds\":[\"link\"],\"hosts\":[\"maps.app.goo.gl\"],\"saved\":true,\"opened\":false},"+
                 "{\"id\":\"x\",\"at\":\""+at+"\",\"kinds\":[\"text\"],\"hosts\":[],\"saved\":false,\"opened\":false}]");
-            CheckShared();for(int i=0;i<60&&lookingUp;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            if(pendingDestination?.Name!="Corner Cafe"||pendingDestination.Latitude!=40.26||pendingDestination.Longitude!=-74.51)
-                throw new Exception("A Google Maps short link was not read for its pin and name");
-            canvas.GetNode<Button>("DestinationCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            CheckShared();await SharedSent();
+            if(sentDestination is not {Name: "Corner Cafe",Latitude: 40.26,Longitude: -74.51}||fixture.Destinations!=shared+3)
+                throw new Exception("A Google Maps short link was not read for its pin and name, and sent");
+            canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
             // Activity → Shared lists every share, newest first; a place opens again in Send to car; Clear empties it.
             Navigate("Activity");canvas.GetNode<Button>("ActivityShared").EmitSignal(Godot.Button.SignalName.Pressed);
             if(sharedHistory.Count!=4||sharedHistory[0] is not {Source: "Google Maps",Opened: false,Place.Name: "Corner Cafe"}||sharedHistory[1].Place!=null||
@@ -335,7 +336,7 @@ public partial class Main
                 throw new Exception("Activity → Shared does not list the shares");
             await Capture("75-activity-shared-test.png");
             ((Button)canvas.FindChild("Shared3",true,false)).EmitSignal(Godot.Button.SignalName.Pressed);
-            if(screen!="Send"||pendingDestination?.Name!="Central Park"||fixture.Destinations!=shared)throw new Exception("A shared place did not open again in Send to car");
+            if(screen!="Send"||pendingDestination?.Name!="Central Park"||fixture.Destinations!=shared+3)throw new Exception("A shared place did not open again in Send to car (without sending)");
             pendingDestination=null;Navigate("Activity");
             canvas.GetNode<Button>("SharedClear").EmitSignal(Godot.Button.SignalName.Pressed);
             for(int i=0;i<10;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
