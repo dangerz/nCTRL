@@ -9,6 +9,19 @@ public partial class Main
     private RequestBudget budget=new(new MemoryBudgetStore());
     private const string LimitsFile="user://request-limits.json";
     // Counts and timestamps only; no account data.
+    // On iPhone the limits live in the App Group, shared with the Share extension (which sends through the same
+    // limits); the counts kept before move there once.
+    private static IRequestBudgetStore LimitsStore()
+    {
+        string group=NativeVaultBridge.GroupPath();
+        if(group.Length==0)return new FileBudgetStore(LimitsFile);
+        string shared=System.IO.Path.Combine(group,"request-limits.json");
+        var store=new PathBudgetStore(shared);
+        try {
+            if(!System.IO.File.Exists(shared)&&FileAccess.FileExists(LimitsFile))store.Save(new FileBudgetStore(LimitsFile).Load());
+        } catch(Exception) { } // Starts fresh if the move fails.
+        return store;
+    }
     private sealed class FileBudgetStore(string path) : IRequestBudgetStore
     {
         public string Load(){using var file=FileAccess.Open(path,FileAccess.ModeFlags.Read);return file?.GetAsText()??"";}

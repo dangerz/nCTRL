@@ -20,6 +20,16 @@ public partial class Main
     private HttpMessageHandler? shortLinkFixture;
 #endif
 
+    // Hyundai's session, shared with the Share extension after each request so it can send without signing in.
+    private string sessionShared="";
+    private async Task ShareSession()
+    {
+        if(demo||!vault.Present||!vault.HasAccount||connection?.ExportSession() is not {} session)return;
+        string json=session.Encode();
+        if(json==sessionShared)return;
+        try {await vault.SaveSessionAsync(json,liveLifetime.Token);sessionShared=json;}
+        catch(Exception ex) when(ex is VaultException or OperationCanceledException) { } // The extension signs in instead.
+    }
     private async Task LoadShared()
     {
         if(!vault.Present||demo){sharedPersisted=false;return;}
@@ -47,8 +57,13 @@ public partial class Main
     {
         var receipts=SharedHistory.Receipts(TakeGroup("share-log.json"));
         // Shares the extension couldn't save still belong in the list, so you can see they happened.
-        foreach(var r in receipts.Where(r=>!r.Saved))
+        foreach(var r in receipts.Where(r=>!r.Saved&&!r.Sent))
             _ = RecordShare(new(r.At,r.Source,r.Kinds.Length>0?r.Kinds:"nothing",null,"Nothing in it looked like a place, so nothing was saved",r.Opened));
+        // Places the Share sheet sent to the car itself, while nCTRL was closed.
+        foreach(var r in receipts.Where(r=>r.Sent&&r.Place!=null)) {
+            _ = RecordShare(new(r.At,r.Source,r.Kinds,r.Place,""));
+            history.Add(("Sent to car: "+r.Place!.Name,r.At.ToLocalTime().ToString("h:mm tt")+" · from the Share sheet",true));
+        }
         string json=heldShare??TakeGroup("share.json");heldShare=null;
         if(json.Length==0)return;
         if(!liveMode||DisclaimerRequired) {
@@ -61,32 +76,27 @@ public partial class Main
     private async Task ProcessShare(SharedItem item,bool? opened)
     {
         pendingDestination=null;destinationText="";sentDestination=null;screen="Send";notice="";noticeError=false;
-        var place=item.Place;string problem="",lookup=item.Lookup,name=item.Name;
-        if(place==null&&item.ShortLink.Length>0) {
-            lookingUp=true;notice="Reading the Google Maps link…";Render();
-            string? full=null;
-            try {full=await ResolveShortLink(item.ShortLink);} catch(Exception) { } finally {lookingUp=false;}
-            if(full!=null) {
-                var (found,more)=Destinations.FromText(full);
-                place=found;
-                if(place!=null&&name.Length>0&&place.Name==Destinations.Format(place.Latitude,place.Longitude))place=place with {Name=name};
-                if(place==null&&lookup.Length==0)lookup=more;
-            } else if(lookup.Length==0)problem="Only a Google Maps short link, and it didn't lead to a place";
-        }
+        if(item.Place==null&&item.ShortLink.Length>0){lookingUp=true;notice="Reading the Google Maps link…";Render();}
+        ShareResult read;
+        try {read=await ShareSender.ReadAsync(item,ResolveShortLink);} finally {lookingUp=false;}
+        var place=read.Place;string problem=read.Problem,lookup=read.Lookup,name=read.Name;
         if(place==null&&lookup.Length>0) {
             destinationText=lookup;lookingUp=true;notice="Looking up the address with Apple Maps…";Render();
             try {place=await LookUpAddress(lookup);} finally {lookingUp=false;}
             if(place!=null&&name.Length>0)place=place with {Name=name};
             if(place==null)problem="Apple Maps couldn't find “"+lookup+"”";
         }
-        if(place==null&&problem.Length==0)problem="Nothing in it looked like a place";
         if(screen=="Send") {
             if(place!=null){pendingDestination=place;notice="";noticeError=false;}
             else {notice=problem+".";noticeError=true;}
             Render();
         }
         await RecordShare(new(DateTimeOffset.UtcNow,item.Source,item.Kinds,place,place==null?problem:"",opened));
-        if(place!=null){_ = LoadDestinationMap(place);await SendShared(place);}
+        if(place==null)return;
+        _ = LoadDestinationMap(place);
+        // The Share sheet already tried and Hyundai refused, or it couldn't reach Hyundai: don't try again by itself.
+        if(item.Unsent.Length>0){notice="The Share sheet couldn't send it: "+item.Unsent+" Tap Send to car to try again.";noticeError=true;Render();return;}
+        await SendShared(place);
     }
     // Waits for any request already running (such as the read when the app opens), then sends. If you've moved on,
     // or something is still running after 30 seconds, the place stays on Send to car for you to send.

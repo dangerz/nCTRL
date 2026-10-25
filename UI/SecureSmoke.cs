@@ -159,6 +159,7 @@ public partial class Main
             if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
             if(sharedFixture.ContainsKey("status.json")||sharedFixture.ContainsKey("car.png"))throw new Exception("Sign out did not clear the widget");
             if(!fake.Ops.Contains("shared_forget")||sharedHistory.Count!=0)throw new Exception("Sign out did not delete the shared places");
+            if(!fake.Ops.Contains("session_save")||!fake.Ops.Contains("session_forget"))throw new Exception("Hyundai's session was not shared with the Share sheet, or not deleted on sign-out");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             // The demo is open before acceptance, never touches secure storage, and leaves the gate as it was.
             int ops=fake.Ops.Count;

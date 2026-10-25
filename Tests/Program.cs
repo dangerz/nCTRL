@@ -25,6 +25,7 @@ static class Program
         await DestinationTests.Run();
         WidgetShareTests.Run();
         await SharedTests.Run();
+        await ShareSenderTests.Run();
         await MapTests.Run();
         MapViewTests.Run();
     }

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- nCTRL's Core (the Hyundai client and its helpers), compiled with NativeAOT into a small iOS library for the
+       Share extension, so it can send to the car without the app. Same source as the app; no Godot. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <AssemblyName>NctrlCore</AssemblyName>
+    <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
+    <!-- As Godot's SDK does for the app's own iOS build (Godot.NET.Sdk iOS.props/targets). -->
+    <PublishAot>true</PublishAot>
+    <PublishAotUsingRuntimePack>true</PublishAotUsingRuntimePack>
+    <UseNativeAOTRuntime>true</UseNativeAOTRuntime>
+    <LinkStandardCPlusPlusLibrary>true</LinkStandardCPlusPlusLibrary>
+    <NativeLib>Shared</NativeLib>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../Core/*.cs" />
+    <!-- App extensions may only use extension-safe API; mark the library as such. -->
+    <LinkerArg Include="-Wl,-application_extension" />
+    <LinkerArg Include="-install_name '@rpath/NctrlCore.framework/NctrlCore'" />
+  </ItemGroup>
+  <Target Name="NctrlIosLinkerArgs" BeforeTargets="IlcCompile">
+    <Exec Command="xcrun --sdk iphoneos --show-sdk-path" ConsoleToMSBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="NctrlIosSdk" />
+    </Exec>
+    <ItemGroup>
+      <LinkerArg Include="-miphoneos-version-min=17.0 -isysroot %22$(NctrlIosSdk)%22" />
+    </ItemGroup>
+  </Target>
+  <ItemGroup>
+  </ItemGroup>
+</Project>

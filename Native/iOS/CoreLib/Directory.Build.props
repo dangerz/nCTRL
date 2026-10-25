@@ -1,0 +1,7 @@
+<Project>
+  <!-- Build output goes to the git-ignored Native/iOS/build folder, away from the Godot project's scripts. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../build/corelib/obj/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../build/corelib/bin/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

@@ -113,6 +113,10 @@ public sealed class AccountVault
     public Task<string> LoadLocationAsync(CancellationToken ct)=>bridge.Present?Request("location_load","",ct):throw new VaultException("unavailable");
     public Task SaveLocationAsync(string json,CancellationToken ct)=>bridge.Present?Request("location_save",json,ct):throw new VaultException("unavailable");
     public Task ForgetLocationAsync(CancellationToken ct)=>bridge.Present?Request("location_forget","",ct):throw new VaultException("unavailable");
+    // Hyundai's session for the Share extension (SharedSession), in the App Group's Keychain group. Empty text means none.
+    public Task<string> LoadSessionAsync(CancellationToken ct)=>bridge.Present?Request("session_load","",ct):throw new VaultException("unavailable");
+    public Task SaveSessionAsync(string json,CancellationToken ct)=>bridge.Present?Request("session_save",json,ct):throw new VaultException("unavailable");
+    public Task ForgetSessionAsync(CancellationToken ct)=>bridge.Present?Request("session_forget","",ct):throw new VaultException("unavailable");
     // Places shared to nCTRL from other apps: their own device-only item. Empty text means none.
     public Task<string> LoadSharedAsync(CancellationToken ct)=>bridge.Present?Request("shared_load","",ct):throw new VaultException("unavailable");
     public Task SaveSharedAsync(string json,CancellationToken ct)=>bridge.Present?Request("shared_save",json,ct):throw new VaultException("unavailable");

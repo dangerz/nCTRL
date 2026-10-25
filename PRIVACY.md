@@ -17,7 +17,7 @@ nCTRL sends nothing anywhere else. Its developer receives no data from the app.
 
 ## What nCTRL keeps on your phone
 
-- **Your saved login,** if you choose to save it: email, password and service PIN, in the iOS Keychain, encrypted by iOS, readable only while your phone is unlocked and locked to this device. It is never synced. nCTRL uses it without Face ID, like the Hyundai app, so anyone with your unlocked phone can use nCTRL.
+- **Your saved login,** if you choose to save it: email, password and service PIN, in the iOS Keychain, encrypted by iOS, readable only while your phone is unlocked and locked to this device. It is never synced. nCTRL uses it without Face ID, like the Hyundai app, so anyone with your unlocked phone can use nCTRL. nCTRL's Share extension can read it too, along with Hyundai's current session (also in the Keychain, on this device only), so a place you share is sent to your car without opening the app. Sign out & forget deletes both.
 - **What the widget shows** (battery, range, locks, charging, when it updated, the car's name and picture, your colors), in a folder on this phone shared only with nCTRL's widget and Share extension. No location, VIN or account details. Turning the widget off in Settings → Appearance, or Sign out & forget, deletes it.
 - **A place you share to nCTRL** from another app (the link and text that app shared), in that same folder until nCTRL opens it, then deleted, plus a short note per share (the kinds of items and link hosts, whether it was saved and nCTRL opened; never the content).
 - **Your shared places** (Activity → Shared): the last 20 places shared to nCTRL, with when and from where, in the iOS Keychain on this device only. **Clear shared places** or Sign out & forget deletes them.

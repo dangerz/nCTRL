@@ -63,6 +63,19 @@ public static class NativeVaultBridge
         catch(DllNotFoundException){return false;}
         catch(EntryPointNotFoundException){return false;}
     }
+    // The App Group folder (shared with the widget and the Share extension); empty without one.
+    public static string GroupPath()
+    {
+        if(!HasAppGroup)return "";
+        try {
+            IntPtr p=ng_group_path();
+            if(p==IntPtr.Zero)return "";
+            try {return Marshal.PtrToStringUTF8(p)??"";} finally {ng_vault_free_text(p);}
+        }
+        catch(DllNotFoundException){return "";}
+        catch(EntryPointNotFoundException){return "";}
+    }
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern IntPtr ng_group_path();
     // A file from the Share extension (share.json, share-log.json), taken once; empty when there is none.
     public static string GroupTake(string name)
     {

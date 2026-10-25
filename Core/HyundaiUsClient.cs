@@ -84,6 +84,18 @@ public sealed class HyundaiUsClient : IDisposable
     public HyundaiUsClient(HttpMessageHandler handler,TimeProvider? clock=null,RequestBudget? budget=null)
     { this.clock=clock??TimeProvider.System;this.budget=budget??new RequestBudget(new MemoryBudgetStore(),this.clock);http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(45),MaxResponseContentBufferSize=8*1024*1024}; } // Surround View pictures arrive inline.
 
+    /// <summary>The session for another part of nCTRL to pick up (the Share extension), or null without one.</summary>
+    public SharedSession? ExportSession()=>access.Length>0&&Selected is {} vehicle?new(access,refresh,expires,vehicle):null;
+    /// <summary>Picks up a session (no request). The password and PIN are kept for commands and for renewing an
+    /// expired token, which EnsureToken does on the next request without a new sign-in.</summary>
+    public void ResumeSession(string email,string secret,string servicePin,SharedSession session)
+    {
+        Clear();
+        username=email.Trim();password=secret;pin=servicePin;
+        access=session.AccessToken;refresh=session.RefreshToken;expires=session.Expires;Selected=session.Vehicle;
+    }
+    /// <summary>Chooses an enrolled vehicle without reading its status (for a single command).</summary>
+    public void UseVehicle(EnrolledVehicle vehicle){Selected=vehicle;State=null;Location=null;Pending=null;}
     // implicit: a sign-in nCTRL performs for a saved account as part of a user action. It counts toward
     // the daily cap but is never refused by the sign-in cooldown.
     public async Task<IReadOnlyList<EnrolledVehicle>> LoginAsync(string email,string secret,string servicePin,CancellationToken ct,bool implicitSignIn=false)

@@ -57,6 +57,11 @@ static class SharedTests
         Check(SharedHistory.Decode("nope").Count==0&&SharedHistory.Decode("{\"version\":2,\"shared\":[]}").Count==0,"Damaged history reads as empty");
         var receipts=SharedHistory.Receipts("[{\"id\":\"a\",\"at\":\"2026-10-24T20:00:00Z\",\"kinds\":[\"link\",\"text\"],\"hosts\":[\"maps.app.goo.gl\"],\"saved\":true,\"opened\":false},{\"at\":\"bad\"}]");
         Check(receipts.Count==1&&receipts[0]==new SharedReceipt("a",now,"link, text","Google Maps",true,false),"The Share extension's receipts");
+        var sentHere=SharedHistory.Receipts("[{\"id\":\"s\",\"at\":\"2026-10-24T20:00:00Z\",\"kinds\":[\"link\"],\"hosts\":[\"maps.apple.com\"],\"saved\":true,\"opened\":false,\"sent\":true,"+
+            "\"place\":{\"name\":\"Central Park\",\"address\":\"New York, NY\",\"zip\":\"\",\"lat\":40.7812,\"lon\":-73.9665}}]");
+        Check(sentHere.Count==1&&sentHere[0].Sent&&sentHere[0].Place?.Name=="Central Park"&&sentHere[0].Source=="Apple Maps","A place the Share sheet sent itself comes back with its receipt");
+        Check(Destinations.FromShare("{\"version\":1,\"urls\":[\"https://maps.apple.com/?ll=40.78,-73.96&q=Park\"],\"texts\":[],\"unsent\":\"Hyundai is rate limiting requests.\"}").Unsent==
+            "Hyundai is rate limiting requests.","A share the Share sheet couldn't send says why");
         Console.WriteLine($"PASS: {count} shared-place checks (no network).");
     }
 }

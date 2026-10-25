@@ -152,6 +152,9 @@ public sealed class RequestBudget
         return minutes%60==0?Unit(minutes/60,"hour"):Unit(minutes/60,"hour")+" "+Unit(minutes%60,"minute");
     }
 
+    /// <summary>Re-reads the stored state, for when another process shares it (the Share extension sends through
+    /// the same limits while the app is in the background).</summary>
+    public void Reload(){lock(sync)Load();}
     // Stored state is untrusted: anything malformed resets to defaults, and timestamps
     // too far in the future (clock changes, tampering) are clamped.
     private void Load()

@@ -61,6 +61,8 @@ public partial class Main
         Render();
         if(!smoke)NativeVaultBridge.RestoreForeground();
         // Like the Hyundai app, read status on every return.
+        // The Share sheet may have sent through the same request limits while nCTRL was in the background.
+        budget.Reload();
         if(!smoke){ReadOnOpen();CheckShared();_ = UpdateOutsideTemperature();}
     }
     private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
@@ -101,6 +103,7 @@ public partial class Main
             await vault.ForgetPlacesAsync(liveLifetime.Token);EnsureLive(version);
             await vault.ForgetLocationAsync(liveLifetime.Token);EnsureLive(version);
             await vault.ForgetSharedAsync(liveLifetime.Token);EnsureLive(version);
+            await vault.ForgetSessionAsync(liveLifetime.Token);EnsureLive(version);sessionShared="";
             manualAccountEntry=true;notice="Signed out. Saved account removed from this device.";
         },"Removing saved account…");
     }

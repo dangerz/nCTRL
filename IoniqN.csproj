@@ -7,6 +7,6 @@
     <LangVersion>12</LangVersion>
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
-  <ItemGroup><Compile Remove="Tests/**/*.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Tests/**/*.cs" /><Compile Remove="Native/**/*.cs" /></ItemGroup>
   <Import Project="Native/iOS/Vault.targets" />
 </Project>

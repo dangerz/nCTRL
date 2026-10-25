@@ -120,11 +120,26 @@ NG_EXPORT char *ng_geocode_result(int *state) {
     }
 }
 // Files shared with the widget and the Share extension, in the App Group "group.<app bundle ID>".
+// The App Group ("group.<app bundle ID>"), or nil in a build without it. Its name is also a Keychain access group
+// the Share extension can read: the saved login and Hyundai's session are kept there.
+static NSString *appGroup(void) {
+    static NSString *group;static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *name=[@"group." stringByAppendingString:NSBundle.mainBundle.bundleIdentifier?:@""];
+        if([NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:name])group=name;
+    });
+    return group;
+}
 static NSURL *groupFile(NSString *name) {
-    if(name.length==0 || [name containsString:@"/"] || [name hasPrefix:@"."])return nil;
-    NSString *group=[@"group." stringByAppendingString:NSBundle.mainBundle.bundleIdentifier?:@""];
-    NSURL *folder=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:group];
+    if(name.length==0 || [name containsString:@"/"] || [name hasPrefix:@"."] || !appGroup())return nil;
+    NSURL *folder=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:appGroup()];
     return folder?[folder URLByAppendingPathComponent:name]:nil;
+}
+// The App Group folder's path (for the shared request limits), freed with ng_vault_free; NULL without one.
+NG_EXPORT char *ng_group_path(void) {
+    NSURL *folder=appGroup()?[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:appGroup()]:nil;
+    const char *path=folder.path.UTF8String;
+    return path?strdup(path):NULL;
 }
 extern "C" void ng_widget_reload_swift(void);
 // Writes (or, with no bytes, deletes) one shared file, then asks the widget to redraw. Returns 1 when done.
@@ -182,6 +197,15 @@ static NSMutableDictionary *locationQuery(void) {
               (__bridge id)kSecAttrService:@"com.ngarage.nctrl.location.v1",(__bridge id)kSecAttrAccount:@"location",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
 }
+// Hyundai's session (tokens and the selected car), shared with the Share extension through the App Group's Keychain
+// access group so it can send without signing in again. Device-only, no Face ID gate.
+static NSMutableDictionary *sessionQuery(void) {
+    NSMutableDictionary *q=[@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+              (__bridge id)kSecAttrService:@"com.ngarage.nctrl.session.v1",(__bridge id)kSecAttrAccount:@"session",
+              (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
+    if(appGroup())q[(__bridge id)kSecAttrAccessGroup]=appGroup();
+    return q;
+}
 // Places shared to nCTRL from other apps (Activity → Shared), stored the same way.
 static NSMutableDictionary *sharedQuery(void) {
     return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
@@ -201,6 +225,7 @@ static void initialize(void) {
             SecItemDelete((__bridge CFDictionaryRef)placesQuery());
             SecItemDelete((__bridge CFDictionaryRef)locationQuery());
             SecItemDelete((__bridge CFDictionaryRef)sharedQuery());
+            SecItemDelete((__bridge CFDictionaryRef)sessionQuery());
             [defaults setBool:YES forKey:@"NGVaultInstalledV1"];
         }
     });
@@ -258,9 +283,11 @@ NG_EXPORT int ng_vault_has_account(void) {
     initialize();return itemExists(query()) || itemExists(legacyQuery());
 }
 // Writes the saved login to its item (replacing any) and removes the legacy Face ID item.
+// In the App Group's access group when there is one, so the Share extension can read it too.
 static OSStatus storeAccount(NSData *data) {
     SecItemDelete((__bridge CFDictionaryRef)query());
     NSMutableDictionary *item=query();
+    if(appGroup())item[(__bridge id)kSecAttrAccessGroup]=appGroup();
     item[(__bridge id)kSecValueData]=data;
     item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
     OSStatus status=SecItemAdd((__bridge CFDictionaryRef)item,NULL);
@@ -298,9 +325,12 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             }
         });return;
     }
-    NSString *kind=[op hasPrefix:@"places_"]?@"places_":[op hasPrefix:@"location_"]?@"location_":[op hasPrefix:@"shared_"]?@"shared_":nil;
+    NSString *kind=nil;NSMutableDictionary *(*itemQuery)(void)=NULL;
+    if([op hasPrefix:@"places_"]){kind=@"places_";itemQuery=placesQuery;}
+    else if([op hasPrefix:@"location_"]){kind=@"location_";itemQuery=locationQuery;}
+    else if([op hasPrefix:@"shared_"]){kind=@"shared_";itemQuery=sharedQuery;}
+    else if([op hasPrefix:@"session_"]){kind=@"session_";itemQuery=sessionQuery;}
     if(kind) {
-        NSMutableDictionary *(*itemQuery)(void)=[kind isEqualToString:@"places_"]?placesQuery:[kind isEqualToString:@"location_"]?locationQuery:sharedQuery;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
             @synchronized(guard){if(ticket!=generation)return;
                 if([op isEqualToString:[kind stringByAppendingString:@"load"]]) {
@@ -355,9 +385,12 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
     }
     // Unlock: read the saved login without any prompt.
     {
-        NSMutableDictionary *q=query();q[(__bridge id)kSecReturnData]=@YES;
+        NSMutableDictionary *q=query();q[(__bridge id)kSecReturnData]=@YES;q[(__bridge id)kSecReturnAttributes]=@YES;
         CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
-        NSData *data=value?CFBridgingRelease(value):nil;
+        NSDictionary *found=value?CFBridgingRelease(value):nil;
+        NSData *data=found[(__bridge id)kSecValueData];
+        // A login saved before the App Group existed moves into it (no prompt).
+        if(status==errSecSuccess && data && appGroup() && ![found[(__bridge id)kSecAttrAccessGroup] isEqual:appGroup()])storeAccount(data);
         if(status!=errSecItemNotFound) {
             NSString *account=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
             finish(ticket,account!=nil,account?@"":errorCode(status),account);return;

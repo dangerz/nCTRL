@@ -20,6 +20,9 @@ If you manually sign in with Save account unchecked, an existing saved login is 
 - `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`: encrypted by iOS with the device's keys, readable only while the phone is unlocked, device-bound and never in backups to another device.
 - `kSecAttrSynchronizable = false`: no iCloud Keychain synchronization.
 - No biometric access control, so reading it never prompts.
+- In the App Group's Keychain access group (`group.<app bundle ID>`) when the build has the App Group, so nCTRL's Share extension can read it to send a shared place to the car. A login saved before the App Group existed moves into it on the next unlock, with no prompt.
+
+Hyundai's session (access and refresh tokens, when the access token expires, and the selected car's ID, VIN, name, model and generation) is kept in another item in the same group (`com.ngarage.nctrl.session.v1`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, not synchronized). The app updates it after each request; the Share extension uses it to send without signing in again and saves it back if it renewed the token. Sign out & forget deletes it, and it is cleared on a fresh install.
 
 Older builds kept the login behind Face ID (`kSecAccessControlBiometryCurrentSet`, service `com.ngarage.bluelink.credentials.v1`). The first unlock after updating asks for Face ID once to read that item, moves the login to the new item and deletes the old one. Cancelling leaves it in place; signing in again replaces it. Sign out & forget deletes both.
 

@@ -9,7 +9,7 @@ namespace NGarage.Core;
 public sealed record Destination(string Name,string Address,double Latitude,double Longitude,string Zip="");
 /// <summary>What a share from another app holds: a place when it has coordinates, otherwise what to look up (and the
 /// shared name), or a Google Maps short link to open. Source and Kinds describe it for Activity → Shared.</summary>
-public sealed record SharedItem(Destination? Place,string Lookup,string Name,string ShortLink,string Source,string Kinds,string Id);
+public sealed record SharedItem(Destination? Place,string Lookup,string Name,string ShortLink,string Source,string Kinds,string Id,string Unsent="");
 
 public static class Destinations
 {
@@ -87,7 +87,7 @@ public static class Destinations
     public static SharedItem FromShare(string json)
     {
         var links=new System.Collections.Generic.List<string>();var texts=new System.Collections.Generic.List<string>();
-        var kinds=new System.Collections.Generic.List<string>();string id="";
+        var kinds=new System.Collections.Generic.List<string>();string id="",unsent="";
         try {
             if(json.Length>256*1024)return Empty;
             using var doc=System.Text.Json.JsonDocument.Parse(json);var r=doc.RootElement;
@@ -96,12 +96,13 @@ public static class Destinations
                     foreach(var item in list.EnumerateArray().Take(10))
                         if(item.ValueKind==System.Text.Json.JsonValueKind.String&&item.GetString() is {Length: >0 and <=MaxText*2} value)into.Add(value);
             if(r.TryGetProperty("id",out var given)&&given.ValueKind==System.Text.Json.JsonValueKind.String)id=Clean(given.GetString(),64);
+            if(r.TryGetProperty("unsent",out var why)&&why.ValueKind==System.Text.Json.JsonValueKind.String)unsent=Clean(why.GetString(),200);
         } catch(Exception){return Empty;}
         bool card=texts.Any(t=>t.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase));
         string source=card?"Apple Maps":Source(links);
         string kindText=kinds.Count>0?string.Join(", ",kinds.Select(k=>Clean(k,20)).Distinct()):
             string.Join(", ",new[]{links.Count>0?"link":"",card?"contact card":"",texts.Any(t=>!t.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase))?"text":""}.Where(k=>k.Length>0));
-        SharedItem Found(Destination? place,string lookup,string name,string shortLink)=>new(place,lookup,name,shortLink,source,kindText,id);
+        SharedItem Found(Destination? place,string lookup,string name,string shortLink)=>new(place,lookup,name,shortLink,source,kindText,id,unsent);
         string name="",address="";var plain=new System.Collections.Generic.List<string>();
         foreach(var text in texts) {
             if(!text.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase)){plain.Add(text);continue;}

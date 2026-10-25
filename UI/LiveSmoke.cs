@@ -368,13 +368,26 @@ public partial class Main
             if(sentDestination is not {Name: "Corner Cafe",Latitude: 40.26,Longitude: -74.51}||fixture.Destinations!=shared+3)
                 throw new Exception("A Google Maps short link was not read for its pin and name, and sent");
             canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Sent by the Share sheet itself while nCTRL was closed: listed in Activity, nothing sent again.
+            sharedFixture["share-log.json"]=Encoding.UTF8.GetBytes("[{\"id\":\"s1\",\"at\":\""+at+"\",\"kinds\":[\"link\"],\"hosts\":[\"maps.apple.com\"],\"saved\":true,\"opened\":false,\"sent\":true,"+
+                "\"place\":{\"name\":\"The Ellipse\",\"address\":\"Washington, DC\",\"zip\":\"20500\",\"lat\":38.8939,\"lon\":-77.0365}}]");
+            int destinationsBefore=fixture.Destinations;
+            CheckShared();
+            if(sharedHistory[0].Place?.Name!="The Ellipse"||!history.Any(h=>h.Title=="Sent to car: The Ellipse"&&h.Detail.EndsWith("from the Share sheet"))||fixture.Destinations!=destinationsBefore)
+                throw new Exception("A place sent from the Share sheet was not listed, or was sent again");
+            // The Share sheet tried and Hyundai refused: nCTRL shows the place but doesn't send it again by itself.
+            sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"id\":\"u1\",\"urls\":[\"https://maps.apple.com/?ll=38.8977,-77.0365&q=Lafayette%20Square\"],\"texts\":[],\"unsent\":\"Hyundai is rate limiting requests.\"}");
+            CheckShared();for(int i=0;i<60;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(pendingDestination?.Name!="Lafayette Square"||sentDestination!=null||fixture.Destinations!=destinationsBefore||!notice.Contains("couldn't send it"))
+                throw new Exception("A share the Share sheet couldn't send was sent again, or not shown");
+            pendingDestination=null;
             // Activity → Shared lists every share, newest first; a place opens again in Send to car; Clear empties it.
             Navigate("Activity");canvas.GetNode<Button>("ActivityShared").EmitSignal(Godot.Button.SignalName.Pressed);
-            if(sharedHistory.Count!=4||sharedHistory[0] is not {Source: "Google Maps",Opened: false,Place.Name: "Corner Cafe"}||sharedHistory[1].Place!=null||
-                !sharedHistory[1].Problem.StartsWith("Nothing in it")||sharedHistory[3].Place?.Name!="Central Park"||canvas.FindChild("Shared0",true,false)==null)
+            if(sharedHistory.Count!=6||sharedHistory[2] is not {Source: "Google Maps",Opened: false,Place.Name: "Corner Cafe"}||sharedHistory[3].Place!=null||
+                !sharedHistory[3].Problem.StartsWith("Nothing in it")||sharedHistory[5].Place?.Name!="Central Park"||canvas.FindChild("Shared0",true,false)==null)
                 throw new Exception("Activity → Shared does not list the shares");
             await Capture("75-activity-shared-test.png");
-            ((Button)canvas.FindChild("Shared3",true,false)).EmitSignal(Godot.Button.SignalName.Pressed);
+            ((Button)canvas.FindChild("Shared5",true,false)).EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Send"||pendingDestination?.Name!="Central Park"||fixture.Destinations!=shared+3)throw new Exception("A shared place did not open again in Send to car (without sending)");
             pendingDestination=null;Navigate("Activity");
             canvas.GetNode<Button>("SharedClear").EmitSignal(Godot.Button.SignalName.Pressed);
@@ -658,7 +671,7 @@ public partial class Main
             if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
             if(Encoding.UTF8.GetString(sharedFixture["status.json"])!=widgetBefore)throw new Exception("The demo changed your widget");
             Skin.Use(AppTheme.DefaultHex);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car with the climate offer (start, disable, Settings), Climate page following the car, widget files, shared places and short links, Activity shared tab, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car with the climate offer (start, disable, Settings), Climate page following the car, widget files, shared places and short links, Share-sheet sends and refusals, Activity shared tab, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

@@ -42,9 +42,9 @@ public partial class Main : Control
 #endif
         if (!smoke) { LoadPrefs(); LoadSnapshot(); }
 #if DEBUG
-        budget = new RequestBudget(smoke ? new MemoryBudgetStore() : new FileBudgetStore(LimitsFile), null, smoke ? SmokeLimits : null);
+        budget = new RequestBudget(smoke ? new MemoryBudgetStore() : LimitsStore(), null, smoke ? SmokeLimits : null);
 #else
-        budget = new RequestBudget(new FileBudgetStore(LimitsFile));
+        budget = new RequestBudget(LimitsStore());
 #endif
         connectionFactory = () => new HyundaiUsClient(budget);
 #if DEBUG

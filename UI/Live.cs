@@ -169,6 +169,7 @@ public partial class Main
             PersistSnapshot();
             liveBusy=false;if(IsInsideTree())Render();
             UpdateWidget();
+            _ = ShareSession();
             if(heldShare!=null&&liveMode)CallDeferred(nameof(CheckShared));
             _ = UpdateOutsideTemperature();
             }

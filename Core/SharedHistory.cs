@@ -11,9 +11,9 @@ namespace NGarage.Core;
 /// <summary>A place shared to nCTRL (Activity → Shared): when, from where, what kinds of items came, and the place
 /// it led to or why it couldn't be read. Opened is whether the Share extension could bring nCTRL forward.</summary>
 public sealed record SharedEntry(DateTimeOffset At,string Source,string Kinds,Destination? Place,string Problem,bool? Opened=null);
-/// <summary>The Share extension's note about one share (share-log.json): no content, only what kinds of items
-/// came, the link hosts, and whether it saved the share and opened nCTRL.</summary>
-public sealed record SharedReceipt(string Id,DateTimeOffset At,string Kinds,string Source,bool Saved,bool Opened);
+/// <summary>The Share extension's note about one share (share-log.json): what kinds of items came, the link hosts,
+/// whether it saved the share and opened nCTRL, and, when it sent the place to the car itself, that place.</summary>
+public sealed record SharedReceipt(string Id,DateTimeOffset At,string Kinds,string Source,bool Saved,bool Opened,bool Sent=false,Destination? Place=null);
 
 public static class SharedHistory
 {
@@ -75,7 +75,8 @@ public static class SharedHistory
                     v.EnumerateArray().Where(x=>x.ValueKind==JsonValueKind.String).Select(x=>Destinations.Clean(x.GetString(),40)):Array.Empty<string>();
                 bool Flag(string key)=>r.TryGetProperty(key,out var v)&&v.ValueKind==JsonValueKind.True;
                 if(!DateTimeOffset.TryParse(Text("at"),CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal,out var at))continue;
-                receipts.Add(new(Text("id"),at,string.Join(", ",List("kinds")),Destinations.Source(List("hosts").Select(h=>"https://"+h)),Flag("saved"),Flag("opened")));
+                var place=Flag("sent")&&r.TryGetProperty("place",out var p)?ShareSender.ReadPlace(p):null;
+                receipts.Add(new(Text("id"),at,string.Join(", ",List("kinds")),Destinations.Source(List("hosts").Select(h=>"https://"+h)),Flag("saved"),Flag("opened"),place!=null,place));
             }
         } catch(Exception){return new List<SharedReceipt>();}
         return receipts;
