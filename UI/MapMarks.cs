@@ -53,7 +53,11 @@ public partial class CarMarker : Control
     public override void _Draw()
     {
         DrawSetTransform(Size/2,Mathf.DegToRad((float)(Heading??0)),Vector2.One);
-        if(Picture!=null){DrawTextureRect(Picture,new Rect2(-Width/2-2,-Length/2-2,Width+4,Length+4),false);return;}
+        if(Picture!=null) {
+            // The picture's own shape, as long as the drawn car.
+            float tall=Length+4,wide=tall*Picture.GetWidth()/Picture.GetHeight();
+            DrawTextureRect(Picture,new Rect2(-wide/2,-tall/2,wide,tall),false);return;
+        }
         float w=Width/2,l=Length/2;
         foreach(float x in new[]{-w-1,w-3})foreach(float y in new[]{-l+6,l-15})DrawRect(new Rect2(x,y,4,9),Tire);
         var body=new StyleBoxFlat {BgColor=Paint,BorderColor=Colors.White,CornerRadiusTopLeft=7,CornerRadiusTopRight=7,CornerRadiusBottomLeft=5,CornerRadiusBottomRight=5};

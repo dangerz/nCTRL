@@ -10,8 +10,8 @@ namespace NGarage.Core;
 public enum CarSupport { Electric, Gas, PictureOnly }
 public sealed record CarModel(string Id,string Name,string Picture,CarSupport Support)
 {
-    /// <summary>The top-down picture for the map marker (front up, transparent, 128 × 256), when it exists.</summary>
-    public string TopPicture=>Id=="ioniq5n"?"hyundai_ioniq_5_n_top.png":Picture.Replace("_pixel.png","_top.png");
+    /// <summary>The top-down picture for the map marker (front up, transparent), named after the side picture.</summary>
+    public string TopPicture=>Picture.Replace(".png","_top.png");
 }
 
 /// <summary>The car pictures nCTRL can show. The picture only changes how the car looks; status and

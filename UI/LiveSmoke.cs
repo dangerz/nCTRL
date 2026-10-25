@@ -242,8 +242,8 @@ public partial class Main
             await OpenVehicleLocation();
             if(connection!.Location==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null||fixture.Commands!=0)
                 throw new Exception("Location entry did not automatically load map without a command");
-            if(canvas.GetNodeOrNull<CarMarker>("VehicleMap/CarMarker") is not {Heading: 135} marker||marker.Position!=new Vector2(176,130))
-                throw new Exception("The car marker is not centered and turned the way the car faces");
+            if(canvas.GetNodeOrNull<CarMarker>("VehicleMap/CarMarker") is not {Heading: 135,Picture: not null} marker||marker.Position!=new Vector2(176,130))
+                throw new Exception("The car marker is not its top-down picture, centered and turned the way the car faces");
             await Capture("19-vehicle-map-test.png");
             // Your phone close by: the map zooms out to show both. Far away: the car stays close up and an arrow points to you.
             ShowPhone(40.27,-74.52,25);for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);

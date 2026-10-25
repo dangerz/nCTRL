@@ -25,6 +25,7 @@ static class CarModelTests
 
         Check(CarModels.CleanName("  Blue   Thunder ")=="Blue Thunder"&&CarModels.CleanName("Line\nbreak\t")=="Line break","Names are one tidy line");
         Check(CarModels.CleanName(new string('x',40)).Length==CarModels.MaxName&&CarModels.CleanName("   ")=="","Names are capped, and blank stays blank");
+        Check(CarModels.All.All(m=>System.IO.File.Exists(System.IO.Path.Combine(AppContext.BaseDirectory,"../../../../Assets",m.TopPicture))),"Every model has its top-down map picture");
         Console.WriteLine($"PASS: {count} car-model checks.");
     }
 }
