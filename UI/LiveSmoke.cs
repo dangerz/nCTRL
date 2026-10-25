@@ -275,6 +275,37 @@ public partial class Main
             await Capture("72-sent-to-car-test.png");
             canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
             if(sentDestination!=null||screen!="Locate")throw new Exception("OK did not close the Sent To Car dialog");
+            // The widget: the status and painted car are in the (test) App Group, with nothing identifying in them.
+            if(!sharedFixture.TryGetValue("status.json",out var widgetJson)||!sharedFixture.TryGetValue("car.png",out var widgetCar))
+                throw new Exception("The widget's status and picture were not written");
+            string widgetText=Encoding.UTF8.GetString(widgetJson);
+            using(var widgetImage=new Image()) {
+                if(widgetImage.LoadPngFromBuffer(widgetCar)!=Error.Ok||widgetImage.DetectAlpha()==Image.AlphaMode.None||widgetImage.GetWidth()>460)
+                    throw new Exception("The widget's car picture is not a small picture with a transparent background");
+            }
+            if(!widgetText.Contains("\"battery\":")||widgetText.Contains("TESTVIN")||widgetText.Contains("40.1")||widgetText.Contains("74.")||widgetText.Contains("tester"))
+                throw new Exception("The widget's status is missing or holds identifying details");
+            // Turning it off deletes what the widget shows; on writes it again.
+            Navigate("Appearance");
+            canvas.GetNode<CheckBox>("WidgetOn").ButtonPressed=false;
+            if(sharedFixture.ContainsKey("status.json")||sharedFixture.ContainsKey("car.png"))throw new Exception("Turning the widget off did not delete its files");
+            canvas.GetNode<CheckBox>("WidgetOn").ButtonPressed=true;
+            if(!sharedFixture.ContainsKey("status.json")||!sharedFixture.ContainsKey("car.png"))throw new Exception("Turning the widget on did not fill it again");
+            await Capture("73-appearance-widget-test.png");
+            SaveSmokeFile("widget-status.json",sharedFixture["status.json"]);SaveSmokeFile("widget-car.png",sharedFixture["car.png"]);
+            // Shared from Apple Maps (its contact card has the place): Send to car opens with it, nothing sent yet.
+            int shared=fixture.Destinations;
+            sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"urls\":[\"https://maps.apple/p/abc\"],\"texts\":[\"BEGIN:VCARD\\r\\nFN:Central Park\\r\\nitem1.ADR;type=WORK:;;5th Ave;New York;NY;10022;\\r\\nitem2.URL;type=pref:http://maps.apple.com/?ll=40.7812\\\\,-73.9665\\r\\nEND:VCARD\"]}");
+            CheckShared();
+            if(screen!="Send"||pendingDestination?.Name!="Central Park"||pendingDestination.Address!="5th Ave, New York, NY 10022"||sharedFixture.ContainsKey("share.json"))
+                throw new Exception("An Apple Maps share did not open Send to car with the place");
+            await Capture("74-shared-place-test.png");
+            // Shared from Google Maps (name, address and a short link): looked up by its address, keeping its name.
+            sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"urls\":[\"https://maps.app.goo.gl/xyz\"],\"texts\":[\"Corner Cafe\\n1 Main St, Springfield\\nhttps://maps.app.goo.gl/xyz\"]}");
+            CheckShared();for(int i=0;i<30&&lookingUp;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(pendingDestination?.Name!="Corner Cafe"||pendingDestination.Latitude!=40.26)throw new Exception("A Google Maps share was not looked up by its address");
+            canvas.GetNode<Button>("DestinationCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(fixture.Destinations!=shared)throw new Exception("A shared place was sent without confirming");
             Navigate("Car");
             // Within the hourly limit, reopening shows the last known location marked old, without a request.
             int located=fixture.Requests;await OpenVehicleLocation();
@@ -530,6 +561,7 @@ public partial class Main
             PickAppColor("bb8efa");
             // The demo: a pretend car inside the app. Nothing reaches the (test) Hyundai server, and ending it puts everything back.
             var budgetBefore=budget;var linkedBefore=linkedVehicle;var paintBefore=paintHex;int sentBefore=fixture.Requests;
+            string widgetBefore=Encoding.UTF8.GetString(sharedFixture["status.json"]);
             EndLiveSession();
             canvas.GetNode<Button>("DemoStart").EmitSignal(Godot.Button.SignalName.Pressed);
             for(int i=0;i<600&&(liveBusy||connection?.State==null);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
@@ -549,8 +581,9 @@ public partial class Main
             if(demo||connection!=null||!ReferenceEquals(budget,budgetBefore)||linkedVehicle!=linkedBefore||paintHex!=paintBefore||fixture.Requests!=sentBefore)
                 throw new Exception("Ending the demo did not put everything back");
             if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
+            if(Encoding.UTF8.GetString(sharedFixture["status.json"])!=widgetBefore)throw new Exception("The demo changed your widget");
             Skin.Use(AppTheme.DefaultHex);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car, widget files, shared places, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
@@ -611,6 +644,16 @@ public partial class Main
             await Capture($"art-{model.Id}.png");
         }
         cars[CarKey]=(keep,name);SelectCar();Render();
+    }
+    // Saves a file next to the screenshots (windowed runs only), e.g. what the widget would show.
+    private void SaveSmokeFile(string filename,byte[] bytes)
+    {
+        if(DisplayServer.GetName()=="headless")return;
+        string directory="user://";
+        foreach(string arg in OS.GetCmdlineUserArgs())
+            if(arg.StartsWith("--smoke-output="))directory=arg.Substring("--smoke-output=".Length).TrimEnd('/','\\')+"/";
+        using var file=Godot.FileAccess.Open(directory+filename,Godot.FileAccess.ModeFlags.Write);
+        file?.StoreBuffer(bytes);
     }
     private async Task Capture(string filename)
     {

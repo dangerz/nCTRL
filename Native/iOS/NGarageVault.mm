@@ -119,6 +119,35 @@ NG_EXPORT char *ng_geocode_result(int *state) {
         geoResult=nil;geoState=0;return copy;
     }
 }
+// Files shared with the widget and the Share extension, in the App Group "group.<app bundle ID>".
+static NSURL *groupFile(NSString *name) {
+    if(name.length==0 || [name containsString:@"/"] || [name hasPrefix:@"."])return nil;
+    NSString *group=[@"group." stringByAppendingString:NSBundle.mainBundle.bundleIdentifier?:@""];
+    NSURL *folder=[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:group];
+    return folder?[folder URLByAppendingPathComponent:name]:nil;
+}
+extern "C" void ng_widget_reload_swift(void);
+// Writes (or, with no bytes, deletes) one shared file, then asks the widget to redraw. Returns 1 when done.
+NG_EXPORT int ng_group_write(const char *name, const unsigned char *bytes, int length) {
+    NSURL *file=groupFile(name?[NSString stringWithUTF8String:name]:@"");
+    if(!file || length<0 || length>4*1024*1024)return 0;
+    BOOL ok;
+    if(!bytes || length==0){NSError *error=nil;ok=[NSFileManager.defaultManager removeItemAtURL:file error:&error] || error.code==NSFileNoSuchFileError;}
+    else ok=[[NSData dataWithBytes:bytes length:(NSUInteger)length] writeToURL:file options:NSDataWritingAtomic|NSDataWritingFileProtectionCompleteUntilFirstUserAuthentication error:nil];
+    if(ok)dispatch_async(dispatch_get_main_queue(), ^{ng_widget_reload_swift();});
+    return ok?1:0;
+}
+// A place shared to nCTRL from another app (written by the Share extension), taken once: returned as
+// UTF-8 JSON and deleted. Freed with ng_vault_free. NULL when there is none.
+NG_EXPORT char *ng_share_take(void) {
+    NSURL *file=groupFile(@"share.json");
+    NSData *data=file?[NSData dataWithContentsOfURL:file]:nil;
+    if(file)[NSFileManager.defaultManager removeItemAtURL:file error:nil];
+    if(data.length==0 || data.length>256*1024)return NULL;
+    char *copy=(char *)calloc(data.length+1,1);
+    if(copy)memcpy(copy,data.bytes,data.length);
+    return copy;
+}
 static NSObject *guard;
 static NSData *resultData;
 static LAContext *activeContext;

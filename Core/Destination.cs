@@ -71,6 +71,52 @@ public static class Destinations
         double lat=double.Parse(m.Groups[1].Value,CultureInfo.InvariantCulture),lon=double.Parse(m.Groups[2].Value,CultureInfo.InvariantCulture);
         return Math.Abs(lat)<=90&&Math.Abs(lon)<=180&&!(lat==0&&lon==0)?(lat,lon):null;
     }
+    /// <summary>A place shared to nCTRL from another app (share.json from the Share extension: its links and
+    /// texts). Apple Maps includes a contact card with the place's name, address and a link with coordinates;
+    /// Google Maps shares "Name / Address / short link" text, which is looked up by its address (the short link
+    /// is never opened). Returns the place when it has coordinates, otherwise what to look up and the shared name.</summary>
+    public static (Destination? Place,string Lookup,string Name) FromShare(string json)
+    {
+        var links=new System.Collections.Generic.List<string>();var texts=new System.Collections.Generic.List<string>();
+        try {
+            if(json.Length>256*1024)return (null,"","");
+            using var doc=System.Text.Json.JsonDocument.Parse(json);var r=doc.RootElement;
+            foreach(var (key,into) in new[]{("urls",links),("texts",texts)})
+                if(r.TryGetProperty(key,out var list)&&list.ValueKind==System.Text.Json.JsonValueKind.Array)
+                    foreach(var item in list.EnumerateArray().Take(5))
+                        if(item.ValueKind==System.Text.Json.JsonValueKind.String&&item.GetString() is {Length: >0 and <=MaxText*2} value)into.Add(value);
+        } catch(Exception){return (null,"","");}
+        string name="",address="";var plain=new System.Collections.Generic.List<string>();
+        foreach(var text in texts) {
+            if(!text.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase)){plain.Add(text);continue;}
+            // Folded lines continue with a space; values escape commas, semicolons and colons.
+            foreach(var line in Regex.Replace(text,@"\r?\n[ \t]","").Split('\n')) {
+                int colon=line.IndexOf(':');if(colon<1)continue;
+                string field=line[..colon].ToUpperInvariant(),value=line[(colon+1)..].Trim();
+                string Unescape(string v)=>v.Replace("\\,",",").Replace("\\;",";").Replace("\\:",":").Replace("\\n"," ");
+                if(field=="FN"||field.EndsWith(".FN"))name=Clean(Unescape(value),MaxName);
+                else if(field.Split(';')[0].EndsWith("ADR")&&address.Length==0) {
+                    var parts=value.Split(';').Select(p=>Clean(Unescape(p),MaxAddress)).ToArray();
+                    string Part(int i)=>i<parts.Length?parts[i]:"";
+                    address=Clean(string.Join(", ",new[]{Part(2),Part(3),(Part(4)+" "+Part(5)).Trim()}.Where(p=>p.Length>0)),MaxAddress);
+                }
+                else if(field.Split(';')[0].EndsWith("URL"))links.Add(Unescape(value));
+            }
+        }
+        foreach(var link in links)
+            if(FromText(link).Place is {} place) {
+                bool unnamed=place.Name==Format(place.Latitude,place.Longitude)||place.Name=="Shared location";
+                return (place with {Name=unnamed&&name.Length>0?name:place.Name,Address=place.Address.Length>0?place.Address:address},"","");
+            }
+        foreach(var text in plain) {
+            if(FromText(text).Place is {} typed)return (typed,"","");
+            var lines=text.Split('\n').Select(l=>Clean(l,MaxAddress)).Where(l=>l.Length>0&&!Uri.TryCreate(l,UriKind.Absolute,out _)).ToList();
+            if(lines.Count==0)continue;
+            if(name.Length==0)name=Clean(lines[0],MaxName);
+            if(address.Length==0&&lines.Count>1)address=Clean(string.Join(", ",lines.Skip(1)),MaxAddress);
+        }
+        return (null,address.Length>0?address:name,name);
+    }
     /// <summary>A place from the phone's address lookup (JSON with name, address, zip, lat, lon); null if unusable.</summary>
     public static Destination? FromLookup(string json)
     {

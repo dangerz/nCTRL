@@ -57,7 +57,7 @@ public partial class Main : Control
         EnterOffline();
         _ = LoadPlaces();
         // Smoke tests call the check themselves.
-        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(ReadOnOpen));_ = UpdateOutsideTemperature();}
+        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(ReadOnOpen));CallDeferred(nameof(CheckShared));CallDeferred(nameof(UpdateWidget));_ = UpdateOutsideTemperature();}
         Render();
 #if DEBUG
         if (vaultSmoke) _ = SecureSmokeTest();
@@ -80,6 +80,7 @@ public partial class Main : Control
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         Skin.Use(cfg.GetValue("appearance","theme",AppTheme.DefaultHex).AsString());
+        widgetEnabled=cfg.GetValue("appearance","widget",true).AsBool();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
         cars.Clear();
         if(cfg.HasSection("cars"))foreach(string key in cfg.GetSectionKeys("cars")) {
@@ -102,6 +103,7 @@ public partial class Main : Control
     private void SavePrefs()
     {
         // The demo saves nothing; its changes are undone when it ends.
+        if(!demo)UpdateWidget();
         if(smoke||demo) return;
         if(PrefsConfig().Save(Prefs) != Error.Ok) { notice = "Could not save preferences on this device."; noticeError=true; }
     }
@@ -112,6 +114,7 @@ public partial class Main : Control
         cfg.SetValue("appearance","name",paintName);
         cfg.SetValue("appearance","garage",garageName);
         cfg.SetValue("appearance","theme",Skin.Hex);
+        cfg.SetValue("appearance","widget",widgetEnabled);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
         foreach(var (key,car) in cars)cfg.SetValue("cars",key,new[]{car.Model,car.Name});
         cfg.SetValue("climate","driver_seat",(int)driverSeat);

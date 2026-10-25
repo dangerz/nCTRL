@@ -43,9 +43,10 @@ public partial class Main
         Label(24,630,412,58,"Hyundai sends the place to your car's navigation, which needs Bluelink's Guidance features. Addresses are looked up by Apple; the place you send goes to Hyundai.",10,Muted,false,true);
         Button(24,694,412,44,"Back to map",13,()=>Navigate("Locate"),false,"DestinationBack");
     }
-    private async Task FindDestination(string text)
+    // name: the shared place's own name, kept over the looked-up one.
+    private async Task FindDestination(string text,string name="")
     {
-        if(lookingUp||liveBusy)return;
+        if(lookingUp)return;
         destinationText=text;
         var (place,lookup)=Destinations.FromText(text);
         if(place==null&&lookup.Length==0){notice="Type an address, coordinates or a maps link.";noticeError=true;Render();return;}
@@ -59,6 +60,7 @@ public partial class Main
                 noticeError=true;Render();return;
             }
         }
+        if(name.Length>0)place=place with {Name=name};
         pendingDestination=place;notice="";noticeError=false;Render();
         await LoadDestinationMap(place);
     }

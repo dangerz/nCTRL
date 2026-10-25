@@ -151,10 +151,12 @@ public partial class Main
             if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
             _Notification((int)NotificationApplicationPaused);_Notification((int)NotificationApplicationResumed);await Settle();
             if(parked==null)throw new Exception("Session was not parked before sign-out");
+            if(!sharedFixture.ContainsKey("status.json"))throw new Exception("The widget was not filled from the signed-in status");
             await ForgetAccount();if(parked!=null)throw new Exception("Sign out did not discard the parked session");if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
             if(linkedVehicle.Length!=0||snapshot!=null)throw new Exception("Forget retained the linked vehicle or saved status");
             if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
             if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
+            if(sharedFixture.ContainsKey("status.json")||sharedFixture.ContainsKey("car.png"))throw new Exception("Sign out did not clear the widget");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             // The demo is open before acceptance, never touches secure storage, and leaves the gate as it was.
             int ops=fake.Ops.Count;
@@ -167,7 +169,7 @@ public partial class Main
             if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op!="places_load"))
                 throw new Exception("The demo touched secure storage or the disclaimer");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, reading on open without Face ID, session reuse, commands and location without Face ID, override device check, account re-acceptance, stale-result rejection, ignored places storage, old location, overdue charge update, forget, demo isolation. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, reading on open without Face ID, session reuse, commands and location without Face ID, override device check, account re-acceptance, stale-result rejection, ignored places storage, old location, overdue charge update, widget filled then cleared on forget, demo isolation. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }

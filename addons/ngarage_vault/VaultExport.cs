@@ -19,6 +19,8 @@ public partial class VaultAndroidExport : EditorExportPlugin
         if(GetExportPlatform() is EditorExportPlatformIos)
         {
             AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to confirm the risk disclaimer and limit overrides in nCTRL.</string>");
+            // nctrl:// opens the app: from the widget (Car screen) and from the Share extension (Send to car).
+            AddAppleEmbeddedPlatformPlistContent("<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>nctrl</string><key>CFBundleURLSchemes</key><array><string>nctrl</string></array></dict></array>");
             // While the map is open, to show where you are next to the car. Used on the phone only.
             AddAppleEmbeddedPlatformPlistContent("<key>NSLocationWhenInUseUsageDescription</key><string>Show where you are on nCTRL's car map. Your location stays on this iPhone.</string>");
             // Add-only photo access, for saving Surround View pictures you choose to keep.

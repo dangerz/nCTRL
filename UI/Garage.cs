@@ -50,7 +50,12 @@ public partial class Main
         Button(24,344,412,44,"Model  /  "+carModel.Name+"  ›",13,()=>Navigate("Model"),false,"SettingsModel");
         Button(24,396,412,44,"Car color  /  "+paintName+"  ›",13,()=>Navigate("Paint"),false,"SettingsPaint");
         Button(24,448,412,44,"App color  /  "+AppTheme.Name(Skin.Hex)+"  ›",13,()=>Navigate("AppColor"),false,"SettingsAppColor");
-        Hero(504,172);
+        var widget=new CheckBox {Name="WidgetOn",Position=new(24,498),Size=new(412,36),Text="Show status in nCTRL's widgets",ButtonPressed=widgetEnabled};
+        widget.AddThemeFontOverride("font",regular);widget.AddThemeFontSizeOverride("font_size",13);
+        // Off deletes what the widgets show; on fills them again from the last status.
+        widget.Toggled+=value=>{widgetEnabled=value;if(!value)ClearWidget();SavePrefs();};
+        canvas.AddChild(widget);
+        Hero(540,136);
         Button(24,686,412,48,"Back to settings",13,()=>Navigate("Settings"));
     }
     private LineEdit NameInput(int y,string nodeName,string text,string placeholder,int maxLength)

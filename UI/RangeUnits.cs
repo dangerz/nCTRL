@@ -31,7 +31,7 @@ public partial class Main
             outsideTried=now;outsideArea=area;
             var reading=await weather.ReadAsync(at,now,liveLifetime.Token);
             if(version!=liveEpoch||!coldRange.Enabled)return;
-            outside=reading;
+            outside=reading;UpdateWidget();
             if(IsInsideTree()&&!liveBusy&&screen is "Car" or "Range")Render();
         }
         catch(Exception) { } // No estimate this time.

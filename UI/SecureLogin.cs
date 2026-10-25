@@ -61,7 +61,7 @@ public partial class Main
         Render();
         if(!smoke)NativeVaultBridge.RestoreForeground();
         // Like the Hyundai app, read status on every return.
-        if(!smoke){ReadOnOpen();_ = UpdateOutsideTemperature();}
+        if(!smoke){ReadOnOpen();CheckShared();_ = UpdateOutsideTemperature();}
     }
     private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
     private void SavedLoginScreen()
@@ -89,7 +89,7 @@ public partial class Main
         if(liveBusy)return;
         if(demo){EndLiveSession();return;}
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();EndLiveSession();
+        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();heldShare=null;EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
         // Car names and pictures go with the account too.
         linkedVehicle="";disclaimer=null;cars.Clear();SelectCar();SavePrefs();

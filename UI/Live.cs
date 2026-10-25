@@ -168,6 +168,8 @@ public partial class Main
             if(history.Count>30)history.RemoveRange(0,history.Count-30);
             PersistSnapshot();
             liveBusy=false;if(IsInsideTree())Render();
+            UpdateWidget();
+            if(heldShare!=null&&liveMode)CallDeferred(nameof(CheckShared));
             _ = UpdateOutsideTemperature();
             }
         }

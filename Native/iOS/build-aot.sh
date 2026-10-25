@@ -14,5 +14,10 @@ mkdir -p "$output_dir"
 sdk_root="$(xcrun --sdk "$sdk" --show-sdk-path)"
 xcrun --sdk "$sdk" clang++ -target "$triple" -isysroot "$sdk_root" -fobjc-arc -fmodules -std=c++17 -O2 \
   -c "$script_dir/NGarageVault.mm" -o "$output_dir/NGarageVault.o"
-xcrun libtool -static -o "$output_dir/NGarageVault.a" "$output_dir/NGarageVault.o"
+# The widget refresh call is Swift-only (WidgetKit), so it is compiled separately and linked with the Swift runtime.
+xcrun --sdk "$sdk" swiftc -target "$triple" -sdk "$sdk_root" -parse-as-library -O -module-name NGarageWidgetReload \
+  -emit-object "$script_dir/WidgetReload.swift" -o "$output_dir/WidgetReload.o"
+xcrun libtool -static -o "$output_dir/NGarageVault.a" "$output_dir/NGarageVault.o" "$output_dir/WidgetReload.o"
+swift_lib="$(dirname "$(xcrun --sdk "$sdk" -f swiftc)")/../lib/swift/$sdk"
+printf '%s\n' "-L$sdk_root/usr/lib/swift" "-L$swift_lib" "-framework" "WidgetKit" "-Wl,-rpath,/usr/lib/swift" > "$output_dir/link.rsp"
 echo "Built the nCTRL vault for $1."

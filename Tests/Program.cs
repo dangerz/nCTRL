@@ -23,6 +23,7 @@ static class Program
         await SurroundViewTests.Run();
         await DemoTests.Run();
         await DestinationTests.Run();
+        WidgetShareTests.Run();
         await MapTests.Run();
         MapViewTests.Run();
     }
