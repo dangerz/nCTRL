@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
 # Adds nCTRL's widget and its "Send to car" Share extension to the Xcode project Godot exports, with an App Group
 # shared by the app and both extensions ("group.<app bundle ID>"). The Share extension sends to the car with nCTRL's C#
-# Core, built here with NativeAOT (Native/iOS/CoreLib) into NctrlCore.framework, embedded in the app. Godot regenerates
+# Core, built here with NativeAOT (Native/iOS/CoreLib) into NctrlCore.xcframework (with its debug symbols), embedded
+# in the app. Godot regenerates
 # the project on every export, so run this after each one:
 #
 #   ruby Native/iOS/add-extensions.rb <folder that holds nCTRL.xcodeproj>
@@ -35,8 +36,11 @@ FileUtils.touch(File.join(build, '.gdignore')) # Keeps Godot from importing the 
 published = File.join(build, 'corelib', 'publish')
 output = IO.popen(['dotnet', 'publish', File.join(__dir__, 'CoreLib', 'NctrlCore.csproj'), '-c', 'Release', '-r', 'ios-arm64', '-o', published], err: [:child, :out], &:read)
 abort("Building NctrlCore failed:\n#{output.lines.last(15).join}") unless $?.success?
-framework = File.join(export, 'NctrlCore.framework')
-FileUtils.rm_rf(framework)
+# A framework with its debug symbols, packaged as an xcframework so Xcode puts the dSYM in the archive (App Store
+# Connect warns "Upload Symbols Failed" without it).
+staging = File.join(build, 'corelib', 'framework')
+FileUtils.rm_rf(staging)
+framework = File.join(staging, 'NctrlCore.framework')
 FileUtils.mkdir_p(framework)
 FileUtils.cp(File.join(published, 'NctrlCore.dylib'), File.join(framework, 'NctrlCore'))
 Xcodeproj::Plist.write_to_path({
@@ -45,8 +49,20 @@ Xcodeproj::Plist.write_to_path({
   'CFBundleShortVersionString' => release.build_settings['MARKETING_VERSION'] || '1.0',
   'CFBundleVersion' => release.build_settings['CURRENT_PROJECT_VERSION'] || '1', 'MinimumOSVersion' => '17.0'
 }, File.join(framework, 'Info.plist'))
-core = project.main_group.new_reference('NctrlCore.framework')
-core.last_known_file_type = 'wrapper.framework'
+symbols = File.join(staging, 'NctrlCore.framework.dSYM')
+FileUtils.mkdir_p(File.join(symbols, 'Contents', 'Resources', 'DWARF'))
+FileUtils.cp(File.join(published, 'NctrlCore.dylib.dsym', 'Contents', 'Resources', 'DWARF', 'NctrlCore.dylib'),
+             File.join(symbols, 'Contents', 'Resources', 'DWARF', 'NctrlCore'))
+dsym_info = Xcodeproj::Plist.read_from_path(File.join(published, 'NctrlCore.dylib.dsym', 'Contents', 'Info.plist'))
+dsym_info['CFBundleIdentifier'] = 'com.apple.xcode.dsym.NctrlCore'
+Xcodeproj::Plist.write_to_path(dsym_info, File.join(symbols, 'Contents', 'Info.plist'))
+FileUtils.rm_rf(File.join(export, 'NctrlCore.framework')) # From earlier versions of this script.
+xcframework = File.join(export, 'NctrlCore.xcframework')
+FileUtils.rm_rf(xcframework)
+output = IO.popen(['xcodebuild', '-create-xcframework', '-framework', framework, '-debug-symbols', symbols, '-output', xcframework], err: [:child, :out], &:read)
+abort("Packaging NctrlCore failed:\n#{output}") unless $?.success?
+core = project.main_group.new_reference('NctrlCore.xcframework')
+core.last_known_file_type = 'wrapper.xcframework'
 embed_frameworks = app.copy_files_build_phases.find { |p| p.name == 'Embed Frameworks' } || app.new_copy_files_build_phase('Embed Frameworks')
 embed_frameworks.dst_subfolder_spec = '10' # Frameworks
 embed_frameworks.add_file_reference(core, true).settings = { 'ATTRIBUTES' => %w[CodeSignOnCopy RemoveHeadersOnCopy] }

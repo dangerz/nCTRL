@@ -41,10 +41,11 @@ static class ShareSenderTests
                 }
                 Check(demo.Requests==before+1&&demo.LastDestination.Contains("\"name\":\"Central Park\""),"Exactly one request: no new sign-in with a session");
                 Check(new RequestBudget(new PathBudgetStore(limits)).Status(RequestKind.Command).UsedToday==1,"Counted in the shared request limits file");
-                // A second send within the command cooldown is refused by the shared limits, not sent.
+                // Destinations skip the command cooldown: a second send right away goes through, and still counts.
                 string again=await ShareSender.SendAsync(Request(account,session.Encode(),park,limits),demo,default);
                 using(var r=JsonDocument.Parse(again))
-                    Check(!r.RootElement.GetProperty("ok").GetBoolean()&&demo.Requests==before+1,"The shared limits refuse a send too soon after another");
+                    Check(r.RootElement.GetProperty("ok").GetBoolean()&&demo.Requests==before+2&&
+                        new RequestBudget(new PathBudgetStore(limits)).Status(RequestKind.Command).UsedToday==2,"A second send right away isn't held by the command cooldown, and is counted");
             }
             // No session from the app yet: signs in, and with one car on the account, sends to it.
             File.Delete(limits);

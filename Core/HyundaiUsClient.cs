@@ -237,8 +237,10 @@ public sealed class HyundaiUsClient : IDisposable
         }
         finally { gate.Release(); }
     }
-    /// <summary>Sends a destination to the car's navigation (rcs/stc/sendPoi, as Hyundai's own app does). Counts as
-    /// a command and is never retried. Returns Hyundai's tracking ID when it gives one.</summary>
+    /// <summary>Sends a destination to the car's navigation (rcs/stc/sendPoi, as Hyundai's own app does). It goes to
+    /// Hyundai's map service, not the car, so it neither waits for nor starts the command cooldown; it still counts
+    /// toward the daily command cap and stops while Hyundai is rate limiting. Never retried. Returns Hyundai's tracking
+    /// ID when it gives one.</summary>
     public async Task<string?> SendDestinationAsync(Destination place,CancellationToken ct)
     {
         await gate.WaitAsync(ct);
@@ -247,7 +249,7 @@ public sealed class HyundaiUsClient : IDisposable
             NeedVehicle();
             if(!Destinations.Valid(place))throw new BluelinkException("That place has no valid location. Nothing was sent.");
             await EnsureToken(ct);
-            budget.Acquire(RequestKind.Command);
+            budget.Acquire(RequestKind.Command,enforceCooldown:false,startsCooldown:false);
             // The map service ("GIS") handles destinations; other commands go to the car service.
             var reply=await RequestAsync(RequestKind.Command,HttpMethod.Post,"/ac/v2/rcs/stc/sendPoi",RequestJson.Destination(username,Selected!.Vin,place),true,true,ct,
                 new Dictionary<string,string>{{"to","GIS"},{"APPCLOUD-VIN",Selected!.Vin}},stage:"Send to car");

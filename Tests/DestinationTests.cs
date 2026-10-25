@@ -54,6 +54,23 @@ static class DestinationTests
         Check(watcher.Path=="/ac/v2/rcs/stc/sendPoi"&&watcher.Method==HttpMethod.Post&&watcher.To=="GIS"&&!watcher.Headers.Contains("Location:")&&
             !watcher.Headers.Contains("deviceId")&&!watcher.Headers.Contains("deviceMeid"),"POST to the map service, with no phone location or device ID");
         Check(tid=="demo"&&budget.Status(RequestKind.Command).UsedToday==commands+1,"Hyundai's tracking ID comes back, and it counts as one command");
+        // With nCTRL's real limits (30 s between commands): a destination right after a command goes through, and a
+        // command right after a destination isn't held either.
+        var strict=new RequestBudget(new MemoryBudgetStore());
+        using(var c2=new HyundaiUsClient(new DemoHyundai(Array.Empty<byte>()),null,strict)) {
+            var mine=await c2.LoginAsync(DemoHyundai.Email,"demo","0000",default);c2.UseVehicle(mine[0]);
+            await c2.ExecuteAsync(new(ActionKind.Lock),null,default);
+            bool held=false;
+            try {await c2.SendDestinationAsync(place,default);await c2.SendDestinationAsync(place,default);} catch(RequestLimitException){held=true;}
+            Check(!held&&strict.Status(RequestKind.Command).UsedToday==3,"Destinations aren't held by the command cooldown, and still count toward the daily cap");
+        }
+        using(var c3=new HyundaiUsClient(new DemoHyundai(Array.Empty<byte>()),null,new RequestBudget(new MemoryBudgetStore()))) {
+            var mine=await c3.LoginAsync(DemoHyundai.Email,"demo","0000",default);c3.UseVehicle(mine[0]);
+            await c3.SendDestinationAsync(place,default);
+            bool held=false;
+            try {await c3.ExecuteAsync(new(ActionKind.Lock),null,default);} catch(RequestLimitException){held=true;}
+            Check(!held,"A destination doesn't start the command cooldown");
+        }
         int sent=watcher.Count;bool refused=false;
         try {await client.SendDestinationAsync(new Destination("Nowhere","",double.NaN,0),default);} catch(BluelinkException){refused=true;}
         Check(refused&&watcher.Count==sent,"A place without a valid location is never sent");
