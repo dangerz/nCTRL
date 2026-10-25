@@ -24,7 +24,7 @@ public partial class Main
         if(liveBusy||demo)return;
         EndLiveSession(false);
         demoReturnPrefs=PrefsConfig();demoReturnSnapshot=snapshot;demoReturnBudget=budget;demoReturnFactory=connectionFactory;
-        demo=true;snapshot=null;persistedState=null;ignoredPlaces.Clear();ForgetOutside();
+        demo=true;snapshot=null;persistedState=null;ignoredPlaces.Clear();ForgetOutside();sharedHistory=Array.Empty<SharedEntry>();
         budget=new RequestBudget(new MemoryBudgetStore(),null,DemoLimits);
         var service=new DemoHyundai(CarPicture(CarModels.Default).GetImage().SavePngToBuffer());
         connectionFactory=()=>new HyundaiUsClient(service,null,budget);
@@ -48,5 +48,6 @@ public partial class Main
         demoReturnPrefs=null;demoReturnSnapshot=null;demoReturnBudget=null;demoReturnFactory=null;
         savedLocation=storedLocation=null;savedFor="";savedLoaded=false;ignoredPlaces.Clear();ForgetOutside();
         _ = LoadPlaces();
+        _ = LoadShared();
     }
 }

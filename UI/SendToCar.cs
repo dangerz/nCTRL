@@ -35,7 +35,7 @@ public partial class Main
                 map.AddChild(new TextureRect {Position=new((float)tile.Left,(float)tile.Top),Size=new(256,256),Texture=texture,MouseFilter=MouseFilterEnum.Ignore});
             map.AddChild(new PlacePin {Name="DestinationPin",Position=new(194,62),Size=new(24,38)});
             Label(24,460,412,26,place.Name,17,White,true).Name="DestinationName";
-            Label(24,488,412,44,place.Address.Length>0?place.Address:"No street address",12,Muted,false,true).Name="DestinationAddress";
+            Label(24,488,412,44,place.Address.Length>0&&place.Address!=place.Name?place.Address:"No street address",12,Muted,false,true).Name="DestinationAddress";
             Label(24,532,412,20,Destinations.Format(place.Latitude,place.Longitude),11,Muted);
             RemoteButton(24,566,264,52,"Send to car",14,()=>_ = SendDestination(),true,"DestinationSend");
             Button(300,566,136,52,"Cancel",13,()=>{pendingDestination=null;Render();},false,"DestinationCancel");

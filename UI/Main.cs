@@ -56,6 +56,7 @@ public partial class Main : Control
         // Cold launch: open straight to the Car screen with the last saved status, if any.
         EnterOffline();
         _ = LoadPlaces();
+        _ = LoadShared();
         // Smoke tests call the check themselves.
         if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(ReadOnOpen));CallDeferred(nameof(CheckShared));CallDeferred(nameof(UpdateWidget));_ = UpdateOutsideTemperature();}
         Render();

@@ -364,8 +364,13 @@ public partial class Main
     }
     private void LiveActivity()
     {
-        Title("YOUR RECENT ACTIVITY.","Hyundai requests · session-only history");
-        int y=204;
+        Title("YOUR RECENT ACTIVITY.",activityTab=="Shared"?"Places shared to nCTRL · the last 20, on this device":"Hyundai requests · session-only history");
+        foreach(var (tab,x) in new[]{("Requests",24),("Shared",238)}) {
+            var b=Button(x,194,198,40,tab,13,()=>{activityTab=tab;Render();},false,"Activity"+tab);
+            if(activityTab==tab)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
+        }
+        if(activityTab=="Shared"){SharedTab();return;}
+        int y=246;
         for(int i=history.Count-1;i>=Math.Max(0,history.Count-4);i--){var item=history[i];
             Panel(24,y,412,99,Skin.Card,false);Rect(24,y,3,99,item.Ok?Blue:Red);
             Label(42,y+7,375,53,item.Title,12,White,true,true);Label(42,y+64,375,24,item.Detail,10,Muted);y+=111;}

@@ -137,10 +137,10 @@ NG_EXPORT int ng_group_write(const char *name, const unsigned char *bytes, int l
     if(ok)dispatch_async(dispatch_get_main_queue(), ^{ng_widget_reload_swift();});
     return ok?1:0;
 }
-// A place shared to nCTRL from another app (written by the Share extension), taken once: returned as
-// UTF-8 JSON and deleted. Freed with ng_vault_free. NULL when there is none.
-NG_EXPORT char *ng_share_take(void) {
-    NSURL *file=groupFile(@"share.json");
+// A file written by the Share extension (the shared place, its receipts), taken once: returned as UTF-8 and
+// deleted. Freed with ng_vault_free. NULL when there is none.
+NG_EXPORT char *ng_group_take(const char *name) {
+    NSURL *file=groupFile(name?[NSString stringWithUTF8String:name]:@"");
     NSData *data=file?[NSData dataWithContentsOfURL:file]:nil;
     if(file)[NSFileManager.defaultManager removeItemAtURL:file error:nil];
     if(data.length==0 || data.length>256*1024)return NULL;
@@ -182,6 +182,12 @@ static NSMutableDictionary *locationQuery(void) {
               (__bridge id)kSecAttrService:@"com.ngarage.nctrl.location.v1",(__bridge id)kSecAttrAccount:@"location",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
 }
+// Places shared to nCTRL from other apps (Activity → Shared), stored the same way.
+static NSMutableDictionary *sharedQuery(void) {
+    return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+              (__bridge id)kSecAttrService:@"com.ngarage.nctrl.shared.v1",(__bridge id)kSecAttrAccount:@"shared",
+              (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
+}
 static void initialize(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -194,6 +200,7 @@ static void initialize(void) {
             SecItemDelete((__bridge CFDictionaryRef)legacyQuery());
             SecItemDelete((__bridge CFDictionaryRef)placesQuery());
             SecItemDelete((__bridge CFDictionaryRef)locationQuery());
+            SecItemDelete((__bridge CFDictionaryRef)sharedQuery());
             [defaults setBool:YES forKey:@"NGVaultInstalledV1"];
         }
     });
@@ -291,10 +298,9 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
             }
         });return;
     }
-    BOOL places=[op hasPrefix:@"places_"];
-    if(places||[op hasPrefix:@"location_"]) {
-        NSString *kind=places?@"places_":@"location_";
-        NSMutableDictionary *(*itemQuery)(void)=places?placesQuery:locationQuery;
+    NSString *kind=[op hasPrefix:@"places_"]?@"places_":[op hasPrefix:@"location_"]?@"location_":[op hasPrefix:@"shared_"]?@"shared_":nil;
+    if(kind) {
+        NSMutableDictionary *(*itemQuery)(void)=[kind isEqualToString:@"places_"]?placesQuery:[kind isEqualToString:@"location_"]?locationQuery:sharedQuery;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
             @synchronized(guard){if(ticket!=generation)return;
                 if([op isEqualToString:[kind stringByAppendingString:@"load"]]) {

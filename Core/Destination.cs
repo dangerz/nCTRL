@@ -7,12 +7,17 @@ namespace NGarage.Core;
 
 /// <summary>A place to send to the car's navigation.</summary>
 public sealed record Destination(string Name,string Address,double Latitude,double Longitude,string Zip="");
+/// <summary>What a share from another app holds: a place when it has coordinates, otherwise what to look up (and the
+/// shared name), or a Google Maps short link to open. Source and Kinds describe it for Activity → Shared.</summary>
+public sealed record SharedItem(Destination? Place,string Lookup,string Name,string ShortLink,string Source,string Kinds,string Id);
 
 public static class Destinations
 {
     public const int MaxName=60,MaxAddress=200,MaxText=2000;
     private static readonly Regex Pair=new(@"(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)",RegexOptions.CultureInvariant);
     private static readonly Regex GoogleAt=new(@"@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)",RegexOptions.CultureInvariant);
+    // A Google Maps place's own pin (the "@" pair is only where the map was centered).
+    private static readonly Regex GooglePin=new(@"!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)",RegexOptions.CultureInvariant);
 
     public static bool Valid(Destination place)=>double.IsFinite(place.Latitude)&&double.IsFinite(place.Longitude)&&
         Math.Abs(place.Latitude)<=90&&Math.Abs(place.Longitude)<=180&&!(place.Latitude==0&&place.Longitude==0)&&
@@ -41,11 +46,16 @@ public static class Destinations
             .Select(p=>p.Split('=',2)).Where(p=>p.Length==2)
             .GroupBy(p=>p[0].ToLowerInvariant()).ToDictionary(g=>g.Key,g=>Uri.UnescapeDataString(g.First()[1].Replace('+',' ')));
         string Value(params string[] keys)=>keys.Select(k=>query.TryGetValue(k,out var v)?v:"").FirstOrDefault(v=>v.Length>0)??"";
-        string name=Clean(Value("name","q"),MaxName),address=Clean(Value("address","daddr"),MaxAddress);
+        // Google's cookie notice wraps the real link.
+        if(uri.Host.StartsWith("consent.",StringComparison.OrdinalIgnoreCase)&&Value("continue") is {Length: >0} wrapped&&wrapped!=raw)return FromText(wrapped);
+        string name=Clean(Value("name","q","query"),MaxName),address=Clean(Value("address","daddr"),MaxAddress);
+        string decoded=Uri.UnescapeDataString(raw);
         (double,double)? at=null;
         foreach(string key in new[]{"coordinate","ll","daddr","q","sll","query"})
             if(Value(key) is {Length: >0} v&&Coordinates(v,true) is {} found){at=found;break;}
-        if(at==null&&GoogleAt.Match(raw) is {Success: true} m)at=(double.Parse(m.Groups[1].Value,CultureInfo.InvariantCulture),double.Parse(m.Groups[2].Value,CultureInfo.InvariantCulture));
+        foreach(var pattern in new[]{GooglePin,GoogleAt})
+            if(at==null&&pattern.Match(decoded) is {Success: true} m)
+                at=(double.Parse(m.Groups[1].Value,CultureInfo.InvariantCulture),double.Parse(m.Groups[2].Value,CultureInfo.InvariantCulture));
         if(uri.Host.Contains("google",StringComparison.OrdinalIgnoreCase)&&uri.AbsolutePath.Contains("/place/")) {
             string place=Clean(Uri.UnescapeDataString(uri.AbsolutePath.Split("/place/")[1].Split('/')[0].Replace('+',' ')),MaxAddress);
             if(name.Length==0)name=Clean(place,MaxName);if(address.Length==0)address=place;
@@ -71,21 +81,27 @@ public static class Destinations
         double lat=double.Parse(m.Groups[1].Value,CultureInfo.InvariantCulture),lon=double.Parse(m.Groups[2].Value,CultureInfo.InvariantCulture);
         return Math.Abs(lat)<=90&&Math.Abs(lon)<=180&&!(lat==0&&lon==0)?(lat,lon):null;
     }
-    /// <summary>A place shared to nCTRL from another app (share.json from the Share extension: its links and
-    /// texts). Apple Maps includes a contact card with the place's name, address and a link with coordinates;
-    /// Google Maps shares "Name / Address / short link" text, which is looked up by its address (the short link
-    /// is never opened). Returns the place when it has coordinates, otherwise what to look up and the shared name.</summary>
-    public static (Destination? Place,string Lookup,string Name) FromShare(string json)
+    /// <summary>A place shared to nCTRL from another app (share.json from the Share extension: its links, texts and the
+    /// kinds of items). Apple Maps includes a contact card with the place's name, address and a link with coordinates;
+    /// Google Maps shares a short link (opened by the app to read the place) and sometimes "Name / Address" text.</summary>
+    public static SharedItem FromShare(string json)
     {
         var links=new System.Collections.Generic.List<string>();var texts=new System.Collections.Generic.List<string>();
+        var kinds=new System.Collections.Generic.List<string>();string id="";
         try {
-            if(json.Length>256*1024)return (null,"","");
+            if(json.Length>256*1024)return Empty;
             using var doc=System.Text.Json.JsonDocument.Parse(json);var r=doc.RootElement;
-            foreach(var (key,into) in new[]{("urls",links),("texts",texts)})
+            foreach(var (key,into) in new[]{("urls",links),("texts",texts),("kinds",kinds)})
                 if(r.TryGetProperty(key,out var list)&&list.ValueKind==System.Text.Json.JsonValueKind.Array)
-                    foreach(var item in list.EnumerateArray().Take(5))
+                    foreach(var item in list.EnumerateArray().Take(10))
                         if(item.ValueKind==System.Text.Json.JsonValueKind.String&&item.GetString() is {Length: >0 and <=MaxText*2} value)into.Add(value);
-        } catch(Exception){return (null,"","");}
+            if(r.TryGetProperty("id",out var given)&&given.ValueKind==System.Text.Json.JsonValueKind.String)id=Clean(given.GetString(),64);
+        } catch(Exception){return Empty;}
+        bool card=texts.Any(t=>t.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase));
+        string source=card?"Apple Maps":Source(links);
+        string kindText=kinds.Count>0?string.Join(", ",kinds.Select(k=>Clean(k,20)).Distinct()):
+            string.Join(", ",new[]{links.Count>0?"link":"",card?"contact card":"",texts.Any(t=>!t.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase))?"text":""}.Where(k=>k.Length>0));
+        SharedItem Found(Destination? place,string lookup,string name,string shortLink)=>new(place,lookup,name,shortLink,source,kindText,id);
         string name="",address="";var plain=new System.Collections.Generic.List<string>();
         foreach(var text in texts) {
             if(!text.Contains("BEGIN:VCARD",StringComparison.OrdinalIgnoreCase)){plain.Add(text);continue;}
@@ -106,16 +122,30 @@ public static class Destinations
         foreach(var link in links)
             if(FromText(link).Place is {} place) {
                 bool unnamed=place.Name==Format(place.Latitude,place.Longitude)||place.Name=="Shared location";
-                return (place with {Name=unnamed&&name.Length>0?name:place.Name,Address=place.Address.Length>0?place.Address:address},"","");
+                return Found(place with {Name=unnamed&&name.Length>0?name:place.Name,Address=place.Address.Length>0?place.Address:address},"","","");
             }
         foreach(var text in plain) {
-            if(FromText(text).Place is {} typed)return (typed,"","");
+            if(FromText(text).Place is {} typed)return Found(typed,"","","");
             var lines=text.Split('\n').Select(l=>Clean(l,MaxAddress)).Where(l=>l.Length>0&&!Uri.TryCreate(l,UriKind.Absolute,out _)).ToList();
+            foreach(var line in text.Split('\n'))if(Uri.TryCreate(line.Trim(),UriKind.Absolute,out var inText))links.Add(inText.ToString());
             if(lines.Count==0)continue;
             if(name.Length==0)name=Clean(lines[0],MaxName);
             if(address.Length==0&&lines.Count>1)address=Clean(string.Join(", ",lines.Skip(1)),MaxAddress);
         }
-        return (null,address.Length>0?address:name,name);
+        return Found(null,address.Length>0?address:name,name,links.FirstOrDefault(ShortLinks.IsGoogleShort)??"");
+    }
+    private static readonly SharedItem Empty=new(null,"","","","","","");
+    /// <summary>Where a share came from, judged from its links.</summary>
+    public static string Source(System.Collections.Generic.IEnumerable<string> links)
+    {
+        foreach(var link in links) {
+            if(!Uri.TryCreate(link,UriKind.Absolute,out var uri))continue;
+            string host=uri.Host.ToLowerInvariant();
+            if(host is "maps.apple.com" or "maps.apple"||host.EndsWith(".maps.apple.com"))return "Apple Maps";
+            if(host.EndsWith("goo.gl")||host=="g.co"||host.Contains("google."))return "Google Maps";
+            return Clean(host,40);
+        }
+        return "Text";
     }
     /// <summary>A place from the phone's address lookup (JSON with name, address, zip, lat, lon); null if unusable.</summary>
     public static Destination? FromLookup(string json)

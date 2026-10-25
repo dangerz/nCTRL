@@ -5,13 +5,12 @@ using System.Collections.Generic;
 
 // The home-screen widget and the Share extension (Native/iOS/Extensions), through the App Group they share
 // with the app. The widget gets the car's status and painted picture from here; nothing in it is sent anywhere.
-// A place shared to nCTRL from another app opens Send to car, filled in, to confirm.
+// Places shared to nCTRL from other apps are handled in UI/SharedPlaces.cs.
 public partial class Main
 {
     private bool widgetEnabled=true;
     private string widgetWritten="",widgetPictureFor="";
     private bool widgetCleared;
-    private string? heldShare;
 #if DEBUG
     // Smoke tests keep the App Group's files in memory.
     private readonly Dictionary<string,byte[]> sharedFixture=new();
@@ -64,28 +63,5 @@ public partial class Main
         }
         var used=image.GetUsedRect();
         return (used.Size.X>0?image.GetRegion(used):image).SavePngToBuffer();
-    }
-
-    // A place shared from another app: opens Send to car with it (after signing in, if the app isn't open yet).
-    private void CheckShared()
-    {
-        string json=heldShare??TakeShared();heldShare=null;
-        if(json.Length==0)return;
-        if(!liveMode||DisclaimerRequired) {
-            if(vault.HasAccount&&!DisclaimerRequired){heldShare=json;return;} // Picked up once the car is open.
-            notice="Open your car in nCTRL first, then share the place again.";noticeError=true;Render();return;
-        }
-        var (place,lookup,name)=Destinations.FromShare(json);
-        pendingDestination=null;destinationText="";sentDestination=null;screen="Send";notice="";noticeError=false;
-        if(place!=null){pendingDestination=place;Render();_ = LoadDestinationMap(place);}
-        else if(lookup.Length>0){destinationText=lookup;Render();_ = FindDestination(lookup,name);}
-        else {notice="nCTRL couldn't find a place in what was shared.";noticeError=true;Render();}
-    }
-    private string TakeShared()
-    {
-#if DEBUG
-        if(smoke){if(!sharedFixture.Remove("share.json",out var bytes))return "";return System.Text.Encoding.UTF8.GetString(bytes);}
-#endif
-        return NativeVaultBridge.TakeShare();
     }
 }

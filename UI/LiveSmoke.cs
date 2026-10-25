@@ -78,6 +78,17 @@ public partial class Main
             return Task.FromResult(response);
         }
     }
+    // A Google Maps short link, for smoke runs: redirects once to a full Google Maps place address.
+    private sealed class RedirectFixture : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
+        {
+            if(request.RequestUri!.Host!="maps.app.goo.gl")throw new Exception("Unexpected short link host");
+            var response=new HttpResponseMessage(HttpStatusCode.Found);
+            response.Headers.Location=new Uri("https://www.google.com/maps/place/Corner+Cafe/@40.2,-74.4,15z/data=!3m1!4b1!3d40.26!4d-74.51");
+            return Task.FromResult(response);
+        }
+    }
     // The weather service, for smoke runs: always 28°F, never the network.
     private WeatherFixture? weatherFixture;
     private sealed class WeatherFixture : HttpMessageHandler
@@ -306,6 +317,30 @@ public partial class Main
             if(pendingDestination?.Name!="Corner Cafe"||pendingDestination.Latitude!=40.26)throw new Exception("A Google Maps share was not looked up by its address");
             canvas.GetNode<Button>("DestinationCancel").EmitSignal(Godot.Button.SignalName.Pressed);
             if(fixture.Destinations!=shared)throw new Exception("A shared place was sent without confirming");
+            // A Google Maps share with only its short link: opened once (a test redirect) for the place's pin and name.
+            // The extension's receipts come too, including a share it couldn't save.
+            shortLinkFixture=new RedirectFixture();
+            string at=DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+            sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"id\":\"g1\",\"urls\":[\"https://maps.app.goo.gl/only\"],\"texts\":[],\"kinds\":[\"link\"]}");
+            sharedFixture["share-log.json"]=Encoding.UTF8.GetBytes("[{\"id\":\"g1\",\"at\":\""+at+"\",\"kinds\":[\"link\"],\"hosts\":[\"maps.app.goo.gl\"],\"saved\":true,\"opened\":false},"+
+                "{\"id\":\"x\",\"at\":\""+at+"\",\"kinds\":[\"text\"],\"hosts\":[],\"saved\":false,\"opened\":false}]");
+            CheckShared();for(int i=0;i<60&&lookingUp;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(pendingDestination?.Name!="Corner Cafe"||pendingDestination.Latitude!=40.26||pendingDestination.Longitude!=-74.51)
+                throw new Exception("A Google Maps short link was not read for its pin and name");
+            canvas.GetNode<Button>("DestinationCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Activity → Shared lists every share, newest first; a place opens again in Send to car; Clear empties it.
+            Navigate("Activity");canvas.GetNode<Button>("ActivityShared").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(sharedHistory.Count!=4||sharedHistory[0] is not {Source: "Google Maps",Opened: false,Place.Name: "Corner Cafe"}||sharedHistory[1].Place!=null||
+                !sharedHistory[1].Problem.StartsWith("Nothing in it")||sharedHistory[3].Place?.Name!="Central Park"||canvas.FindChild("Shared0",true,false)==null)
+                throw new Exception("Activity → Shared does not list the shares");
+            await Capture("75-activity-shared-test.png");
+            ((Button)canvas.FindChild("Shared3",true,false)).EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Send"||pendingDestination?.Name!="Central Park"||fixture.Destinations!=shared)throw new Exception("A shared place did not open again in Send to car");
+            pendingDestination=null;Navigate("Activity");
+            canvas.GetNode<Button>("SharedClear").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<10;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(sharedHistory.Count!=0)throw new Exception("Clear did not empty the shared places");
+            activityTab="Requests";
             Navigate("Car");
             // Within the hourly limit, reopening shows the last known location marked old, without a request.
             int located=fixture.Requests;await OpenVehicleLocation();
@@ -583,7 +618,7 @@ public partial class Main
             if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
             if(Encoding.UTF8.GetString(sharedFixture["status.json"])!=widgetBefore)throw new Exception("The demo changed your widget");
             Skin.Use(AppTheme.DefaultHex);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car, widget files, shared places, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car, widget files, shared places and short links, Activity shared tab, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

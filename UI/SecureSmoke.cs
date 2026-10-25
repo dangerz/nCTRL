@@ -15,7 +15,7 @@ public partial class Main
         public bool Present=>true;
         public bool CancelNext,Hold;
         public int Unlocks;
-        public string Places="",Location="";
+        public string Places="",Location="",Shared="";
         public readonly System.Collections.Generic.List<string> Ops=new();
         private string? saved;
         private string result="";
@@ -25,12 +25,13 @@ public partial class Main
             Ops.Add(op);
             if(op=="unlock")Unlocks++;
             if(Hold)return;
-            if(CancelNext&&!op.StartsWith("places_")&&!op.StartsWith("location_")){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
+            if(CancelNext&&!op.StartsWith("places_")&&!op.StartsWith("location_")&&!op.StartsWith("shared_")){CancelNext=false;result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
             if(op=="save")saved=data;if(op=="forget")saved=null;
             if(op=="places_save")Places=data;if(op=="places_forget")Places="";
             if(op=="location_save")Location=data;if(op=="location_forget")Location="";
+            if(op=="shared_save")Shared=data;if(op=="shared_forget")Shared="";
             result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");
-                w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:op=="location_load"?Location:"");});
+                w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:op=="location_load"?Location:op=="shared_load"?Shared:"");});
         }
         public string TakeResult(){var s=result;result="";return s;}
         public void Cancel(){result="";}
@@ -157,6 +158,7 @@ public partial class Main
             if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
             if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
             if(sharedFixture.ContainsKey("status.json")||sharedFixture.ContainsKey("car.png"))throw new Exception("Sign out did not clear the widget");
+            if(!fake.Ops.Contains("shared_forget")||sharedHistory.Count!=0)throw new Exception("Sign out did not delete the shared places");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             // The demo is open before acceptance, never touches secure storage, and leaves the gate as it was.
             int ops=fake.Ops.Count;
@@ -166,7 +168,7 @@ public partial class Main
             if(!demo||connection?.State==null||DisclaimerRequired)throw new Exception("The demo did not open from the disclaimer screen");
             EndLiveSession();
             for(int i=0;i<10;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op!="places_load"))
+            if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op is not ("places_load" or "shared_load")))
                 throw new Exception("The demo touched secure storage or the disclaimer");
             AssertAccountOnly();
             GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, reading on open without Face ID, session reuse, commands and location without Face ID, override device check, account re-acceptance, stale-result rejection, ignored places storage, old location, overdue charge update, widget filled then cleared on forget, demo isolation. Fake native bridge only.");

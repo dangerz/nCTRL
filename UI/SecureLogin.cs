@@ -89,7 +89,7 @@ public partial class Main
         if(liveBusy)return;
         if(demo){EndLiveSession();return;}
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();heldShare=null;EndLiveSession();
+        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();heldShare=null;sharedHistory=Array.Empty<SharedEntry>();EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
         // Car names and pictures go with the account too.
         linkedVehicle="";disclaimer=null;cars.Clear();SelectCar();SavePrefs();
@@ -100,6 +100,7 @@ public partial class Main
             // Ignored places go with the account.
             await vault.ForgetPlacesAsync(liveLifetime.Token);EnsureLive(version);
             await vault.ForgetLocationAsync(liveLifetime.Token);EnsureLive(version);
+            await vault.ForgetSharedAsync(liveLifetime.Token);EnsureLive(version);
             manualAccountEntry=true;notice="Signed out. Saved account removed from this device.";
         },"Removing saved account…");
     }

@@ -63,12 +63,12 @@ public static class NativeVaultBridge
         catch(DllNotFoundException){return false;}
         catch(EntryPointNotFoundException){return false;}
     }
-    // A place shared from another app, taken once (JSON from the Share extension); empty when there is none.
-    public static string TakeShare()
+    // A file from the Share extension (share.json, share-log.json), taken once; empty when there is none.
+    public static string GroupTake(string name)
     {
         if(!HasAppGroup)return "";
         try {
-            IntPtr p=ng_share_take();
+            IntPtr p=ng_group_take(name);
             if(p==IntPtr.Zero)return "";
             try {return Marshal.PtrToStringUTF8(p)??"";} finally {ng_vault_free_text(p);}
         }
@@ -76,7 +76,7 @@ public static class NativeVaultBridge
         catch(EntryPointNotFoundException){return "";}
     }
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern int ng_group_write([MarshalAs(UnmanagedType.LPUTF8Str)]string name,byte[]? bytes,int length);
-    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern IntPtr ng_share_take();
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern IntPtr ng_group_take([MarshalAs(UnmanagedType.LPUTF8Str)]string name);
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_phone_locate();
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern int ng_phone_location(out double latitude,out double longitude,out double accuracy);
     public static bool CanSavePhotos=>OS.GetName()=="iOS";

@@ -44,11 +44,13 @@ static class WidgetShareTests
         var apple=Destinations.FromShare(Share(new[]{"https://maps.apple/p/abc123"},new[]{card}));
         Check(apple.Place==new Destination("Central Park","5th Ave, at 59th St, New York, NY 10022",40.7812,-73.9665),"Apple Maps: the contact card's place, name and address");
         var google=Destinations.FromShare(Share(new[]{"https://maps.app.goo.gl/xyz"},new[]{"Corner Cafe\n1 Main St, Springfield, DC 20500\nhttps://maps.app.goo.gl/xyz"}));
-        Check(google.Place==null&&google.Lookup=="1 Main St, Springfield, DC 20500"&&google.Name=="Corner Cafe","Google Maps: looked up by its address, keeping its name");
+        Check(google.Place==null&&google.Lookup=="1 Main St, Springfield, DC 20500"&&google.Name=="Corner Cafe"&&google.ShortLink=="https://maps.app.goo.gl/xyz"&&
+            google.Source=="Google Maps"&&google.Kinds=="link, text","Google Maps: its address and name, and its short link to open");
+        Check(apple.Source=="Apple Maps"&&apple.Kinds=="link, contact card","Apple Maps is recognized by its contact card");
         Check(Destinations.FromShare(Share(new[]{"https://maps.apple.com/?ll=38.8977,-77.0365&q=The%20Ellipse"},new string[0])).Place is {Name: "The Ellipse"},"A plain maps link");
         Check(Destinations.FromShare(Share(new string[0],new[]{"38.8977, -77.0365"})).Place is {Latitude: 38.8977},"Shared coordinates");
-        Check(Destinations.FromShare(Share(new[]{"https://example.com/page"},new string[0]))==(null,"",""),"A link with no place");
-        Check(Destinations.FromShare("not json")==(null,"","")&&Destinations.FromShare("{}")==(null,"",""),"Damaged or empty shares are ignored");
+        Check(Destinations.FromShare(Share(new[]{"https://example.com/page"},new string[0])) is {Place: null,Lookup: "",ShortLink: "",Source: "example.com"},"A link with no place");
+        Check(Destinations.FromShare("not json") is {Place: null,Lookup: "",Source: ""}&&Destinations.FromShare("{}") is {Place: null,Lookup: ""},"Damaged or empty shares are ignored");
         Console.WriteLine($"PASS: {count} widget and sharing checks.");
     }
 }
