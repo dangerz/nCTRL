@@ -28,6 +28,17 @@ static class PresetTests
         Check(s.Charging==true&&s.ChargingPowerKw==7.2&&s.ChargeMinutesLeft==95,"Charging power and minutes left parsed");
         using var other=JsonDocument.Parse("{\"vehicleStatus\":{\"evStatus\":{\"remainTime2\":{\"atc\":{\"value\":2,\"unit\":2}}}}}");
         Check(HyundaiUsClient.ParseState(other.RootElement).ChargeMinutesLeft==null,"Unknown time units are not interpreted");
+        // After sending a place: warm up unless it's hot outside; unknown temperature warms up.
+        var warmUp=ClimatePreset.WarmUp with {TemperatureF=78};var coolDown=ClimatePreset.CoolDown;
+        Check(ClimatePreset.ForOutside(28,warmUp,coolDown)==warmUp&&ClimatePreset.ForOutside(74.9,warmUp,coolDown)==warmUp&&ClimatePreset.ForOutside(null,warmUp,coolDown)==warmUp,
+            "Warm up when it's cool, or the temperature isn't known, using your saved preset");
+        Check(ClimatePreset.ForOutside(75,warmUp,coolDown)==coolDown&&ClimatePreset.ForOutside(95,warmUp,coolDown)==coolDown,"Cool down when it's hot");
+        // Reported climate settings, for the Climate page while climate is on.
+        Check(SeatCodes.Mode(0)==SeatMode.Off&&SeatCodes.Mode(2)==SeatMode.Off&&SeatCodes.Mode(3)==SeatMode.CoolLow&&SeatCodes.Mode(8)==SeatMode.HeatHigh&&
+            SeatCodes.Mode(1)==null&&SeatCodes.Mode(null)==null&&SeatCodes.Mode(9)==null,"Reported seat codes back to settings; on-without-a-level is left alone");
+        using(var climate=JsonDocument.Parse("{\"vehicleStatus\":{\"airCtrlOn\":true,\"defrost\":true}}"))
+            Check(HyundaiUsClient.ParseState(climate.RootElement) is {ClimateOn: true,Defrost: true},"Front defrost is read with climate");
+        using(var none=JsonDocument.Parse("{\"vehicleStatus\":{}}"))Check(HyundaiUsClient.ParseState(none.RootElement).Defrost==null,"Unreported defrost stays unknown");
         Console.WriteLine($"PASS: {count} preset and charging checks.");
     }
 }

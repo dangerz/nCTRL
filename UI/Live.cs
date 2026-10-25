@@ -250,27 +250,48 @@ public partial class Main
     private bool SeatsSupported=>VehicleGeneration==3;
     private ClimateOptions CurrentClimateOptions()=>
         new(SeatsSupported?driverSeat:SeatMode.Off,SeatsSupported?passengerSeat:SeatMode.Off,wheelHeat,climateDefrost);
+    // While the car reports climate on, the controls show its settings (from each new report); your own choices
+    // come back when it reports climate off. Changing a control makes it your choice.
+    private LiveVehicleState? climateSyncedFrom;
+    private (int Temperature,SeatMode Driver,SeatMode Passenger,bool Wheel,bool Defrost)? climateBeforeSync;
+    private void SyncClimateControls(LiveVehicleState? s)
+    {
+        if(s==null||ReferenceEquals(s,climateSyncedFrom))return;
+        climateSyncedFrom=s;
+        if(s.ClimateOn==true) {
+            climateBeforeSync??=(liveTemperature,driverSeat,passengerSeat,wheelHeat,climateDefrost);
+            if(s.TemperatureF is int t&&t is >=62 and <=82)liveTemperature=t;
+            if(SeatCodes.Mode(s.DriverSeat) is SeatMode driver)driverSeat=driver;
+            if(SeatCodes.Mode(s.PassengerSeat) is SeatMode passenger)passengerSeat=passenger;
+            if(s.SteeringWheelHeat is bool wheel)wheelHeat=wheel;
+            if(s.Defrost is bool front)climateDefrost=front;
+        } else if(s.ClimateOn==false&&climateBeforeSync is var (t,d,p,w,f)) {
+            liveTemperature=t;driverSeat=d;passengerSeat=p;wheelHeat=w;climateDefrost=f;climateBeforeSync=null;
+        }
+    }
     private void LiveClimate()
     {
         var s=CurrentState;
+        SyncClimateControls(s);
         Title("CABIN, YOUR WAY.","Hyundai remote climate · electric vehicles");
-        Label(24,196,412,26,"Reported: climate "+OnOff(s?.ClimateOn,"on","off")+" · setpoint "+(s?.TemperatureF is int set?Units.Setpoint(set,units):"—"),14,White,true);
-        if(s?.DriverSeat!=null||s?.PassengerSeat!=null||s?.SteeringWheelHeat!=null)
-            Label(24,224,412,22,"Seats: driver "+SeatCodes.Reported(s?.DriverSeat)+" · passenger "+SeatCodes.Reported(s?.PassengerSeat)+
-                " · wheel "+OnOff(s?.SteeringWheelHeat,"on","off"),11,Muted);
+        Label(24,190,412,30,s?.ClimateOn switch {
+            true=>"CLIMATE ON"+(s.TemperatureF is int set?"  ·  "+Units.Setpoint(set,units):""),false=>"CLIMATE OFF",_=>"CLIMATE STATUS UNKNOWN"},
+            18,s?.ClimateOn==true?Red:s?.ClimateOn==false?White:Muted,true).Name="ClimateStatus";
+        Label(24,222,412,22,s?.ClimateOn==true?"Showing the car's current settings from its last report.":
+            s?.ClimateOn==false?"Your settings for the next start.":"Tap Update for the car's climate status.",11,Muted).Name="ClimateSource";
         Panel(24,256,412,104,Skin.Card);
         Label(142,274,220,68,Units.Setpoint(liveTemperature,units),40,White,true).Name="ClimateTemperature";
-        LiveButton(43,282,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);Render();});
-        LiveButton(366,282,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);Render();});
+        LiveButton(43,282,51,51,"−",27,()=>{liveTemperature=Math.Max(62,liveTemperature-1);climateBeforeSync=null;Render();});
+        LiveButton(366,282,51,51,"+",27,()=>{liveTemperature=Math.Min(82,liveTemperature+1);climateBeforeSync=null;Render();});
         Label(24,374,198,22,"DRIVER SEAT",11,Muted,true);Label(238,374,198,22,"PASSENGER SEAT",11,Muted,true);
-        SeatChoice(24,398,driverSeat,"DriverSeat").ItemSelected+=i=>{driverSeat=(SeatMode)(int)i;SavePrefs();};
-        SeatChoice(238,398,passengerSeat,"PassengerSeat").ItemSelected+=i=>{passengerSeat=(SeatMode)(int)i;SavePrefs();};
+        SeatChoice(24,398,driverSeat,"DriverSeat").ItemSelected+=i=>{driverSeat=(SeatMode)(int)i;climateBeforeSync=null;SavePrefs();};
+        SeatChoice(238,398,passengerSeat,"PassengerSeat").ItemSelected+=i=>{passengerSeat=(SeatMode)(int)i;climateBeforeSync=null;SavePrefs();};
         var wheel=new CheckBox {Name="SteeringWheelHeat",Position=new(24,452),Size=new(210,40),Text="Heated steering wheel",ButtonPressed=wheelHeat,Disabled=liveBusy};
         wheel.AddThemeFontOverride("font",regular);wheel.AddThemeFontSizeOverride("font_size",13);
-        wheel.Toggled+=value=>{wheelHeat=value;SavePrefs();};canvas.AddChild(wheel);
+        wheel.Toggled+=value=>{wheelHeat=value;climateBeforeSync=null;SavePrefs();};canvas.AddChild(wheel);
         var defrost=new CheckBox {Name="Defrost",Position=new(238,452),Size=new(198,40),Text="Front defrost",ButtonPressed=climateDefrost,Disabled=liveBusy};
         defrost.AddThemeFontOverride("font",regular);defrost.AddThemeFontSizeOverride("font_size",13);
-        defrost.Toggled+=value=>{climateDefrost=value;SavePrefs();};canvas.AddChild(defrost);
+        defrost.Toggled+=value=>{climateDefrost=value;climateBeforeSync=null;SavePrefs();};canvas.AddChild(defrost);
         // Presets start climate right away with their saved settings.
         foreach(var (preset,x,name) in new[]{(warmPreset,24,"PresetWarm"),(coolPreset,238,"PresetCool")})
             CommandFeedback(RemoteButton(x,498,198,44,$"{preset.Name}  ·  {Units.Setpoint(preset.TemperatureF,units)}",13,()=>StartClimatePreset(preset),false,name),ActionKind.Climate,false,true,preset.TemperatureF);
@@ -286,6 +307,7 @@ public partial class Main
     private void StartClimatePreset(ClimatePreset preset)
     {
         if(liveBusy||monitoringCommand)return;
+        climateBeforeSync=null;
         liveTemperature=preset.TemperatureF;driverSeat=preset.DriverSeat;passengerSeat=preset.PassengerSeat;
         wheelHeat=preset.SteeringWheel;climateDefrost=preset.Defrost;SavePrefs();
         _ = SendLive(new(ActionKind.Climate,preset.TemperatureF,true,preset.Options(SeatsSupported)));
@@ -350,16 +372,17 @@ public partial class Main
         Label(24,204,412,52,$"{VehicleName}\nVIN …{VinTail}",17,White,true,true);
         Label(24,262,412,28,"Session: "+(demo?"Demo · nothing is sent to Hyundai":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status":
             "Expired / denied — sign in again"),13,Muted,false,true);
-        Button(24,300,412,42,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
-        Button(24,350,412,42,"Range & units  /  "+(units==UnitSystem.Metric?"Metric":"Imperial")+"  ›",13,()=>Navigate("Range"),false,"SettingsRange");
-        LiveButton(24,400,412,42,"Update",13,()=>_ = RefreshLive(false));
-        LiveButton(24,450,412,42,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
-        if(demo)LiveButton(24,500,412,42,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
-        else LiveButton(24,500,412,42,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
-        Button(24,550,412,42,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
-        Button(24,600,412,42,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
-        Button(24,650,412,42,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
-        Label(24,698,412,64,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status.":
+        Button(24,300,412,40,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
+        Button(24,346,412,40,"Range & units  /  "+(units==UnitSystem.Metric?"Metric":"Imperial")+"  ›",13,()=>Navigate("Range"),false,"SettingsRange");
+        Button(24,392,412,40,"Offer climate after Send to car  /  "+(climateOffer?"On":"Off"),13,()=>{climateOffer=!climateOffer;SavePrefs();Render();},false,"SettingsClimateOffer");
+        LiveButton(24,438,412,40,"Update",13,()=>_ = RefreshLive(false));
+        LiveButton(24,484,412,40,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
+        if(demo)LiveButton(24,530,412,40,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
+        else LiveButton(24,530,412,40,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
+        Button(24,576,412,40,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
+        Button(24,622,412,40,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
+        Button(24,668,412,40,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
+        Label(24,712,412,60,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status.":
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }
     private void LiveActivity()

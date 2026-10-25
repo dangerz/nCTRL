@@ -11,6 +11,9 @@ public partial class Main
     private string destinationText="";
     private Destination? pendingDestination,sentDestination;
     private bool lookingUp;
+    // After a place is sent, offer to start climate (Warm up, or Cool down when it's hot). Settings turns it off or on.
+    private bool climateOffer=true;
+    private bool ClimateOffered=>climateOffer&&connection?.Selected?.Electric==true;
     private readonly List<(MapTile Tile,Texture2D Texture)> destinationTiles=new();
     private Destination? destinationTilesFor;
 #if DEBUG
@@ -109,14 +112,24 @@ public partial class Main
     },"Sending to your car…",SendDestination);
     private void SentDialog()
     {
-        var place=sentDestination!;
+        var place=sentDestination!;bool offer=ClimateOffered;
         canvas.AddChild(new ColorRect {Name="SentShade",Size=new(460,920),Color=new(0,0,0,.72f),MouseFilter=MouseFilterEnum.Stop});
-        Panel(24,300,412,250,Skin.Card);
-        Label(44,322,372,34,"SENT TO CAR",22,Blue,true).Name="SentTitle";
-        Label(44,364,372,26,place.Name,16,White,true);
+        Panel(24,260,412,offer?330:250,Skin.Card);
+        Label(44,282,372,34,"SENT TO CAR",22,Blue,true).Name="SentTitle";
+        Label(44,324,372,26,place.Name,16,White,true);
         string at=Destinations.Format(place.Latitude,place.Longitude);
-        Label(44,392,372,60,place.Address.Length>0?place.Address:place.Name==at?"":at,12,Muted,false,true).VerticalAlignment=VerticalAlignment.Top;
-        Label(44,452,372,30,"It goes to your car's navigation.",12,Muted,false,true);
-        Button(44,486,372,48,"OK",14,()=>{sentDestination=null;Navigate("Locate");},true,"SentOk");
+        Label(44,352,372,44,place.Address.Length>0&&place.Address!=place.Name?place.Address:place.Name==at?"":at,12,Muted,false,true).VerticalAlignment=VerticalAlignment.Top;
+        Label(44,398,372,24,"It goes to your car's navigation.",12,Muted,false,true);
+        if(!offer){Button(44,446,372,48,"OK",14,()=>{sentDestination=null;Navigate("Locate");},true,"SentOk");return;}
+        // Get the car ready: your Warm up preset, or Cool down when it's hot outside.
+        var preset=ClimatePreset.ForOutside(outside?.TemperatureF,warmPreset,coolPreset);
+        Label(44,432,372,22,"GET THE CAR READY?",11,Muted,true);
+        RemoteButton(44,458,372,48,"Start "+preset.Name+"  ·  "+Units.Setpoint(preset.TemperatureF,units),14,
+            ()=>{sentDestination=null;Navigate("Car");StartClimatePreset(preset);},true,"SentClimate");
+        Button(44,518,180,44,"Not now",13,()=>{sentDestination=null;Navigate("Locate");},false,"SentOk");
+        Button(236,518,180,44,"Disable this",13,()=>{
+            climateOffer=false;SavePrefs();sentDestination=null;screen="Locate";
+            notice="nCTRL won't offer climate after sending a place. Turn it back on in Settings.";noticeError=false;Render();
+        },false,"SentDisable");
     }
 }

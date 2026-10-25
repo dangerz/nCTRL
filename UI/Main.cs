@@ -93,6 +93,7 @@ public partial class Main : Control
         passengerSeat=SeatPreference(cfg.GetValue("climate","passenger_seat",0).AsInt32());
         wheelHeat=cfg.GetValue("climate","steering_wheel",false).AsBool();
         climateDefrost=cfg.GetValue("climate","defrost",false).AsBool();
+        climateOffer=cfg.GetValue("climate","offer_after_send",true).AsBool();
         warmPreset=LoadPreset(cfg,"preset_warm",ClimatePreset.WarmUp);coolPreset=LoadPreset(cfg,"preset_cool",ClimatePreset.CoolDown);
         units=Units.Parse(cfg.GetValue("units","system","imperial").AsString());
         var cold=ColdRangeSettings.Default;
@@ -118,10 +119,13 @@ public partial class Main : Control
         cfg.SetValue("appearance","widget",widgetEnabled);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
         foreach(var (key,car) in cars)cfg.SetValue("cars",key,new[]{car.Model,car.Name});
-        cfg.SetValue("climate","driver_seat",(int)driverSeat);
-        cfg.SetValue("climate","passenger_seat",(int)passengerSeat);
-        cfg.SetValue("climate","steering_wheel",wheelHeat);
-        cfg.SetValue("climate","defrost",climateDefrost);
+        // Your own climate choices, not the car's settings the Climate page may be showing.
+        var (_,driver,passenger,wheel,front)=climateBeforeSync??(liveTemperature,driverSeat,passengerSeat,wheelHeat,climateDefrost);
+        cfg.SetValue("climate","driver_seat",(int)driver);
+        cfg.SetValue("climate","passenger_seat",(int)passenger);
+        cfg.SetValue("climate","steering_wheel",wheel);
+        cfg.SetValue("climate","defrost",front);
+        cfg.SetValue("climate","offer_after_send",climateOffer);
         foreach(var (section,preset) in new[]{("preset_warm",warmPreset),("preset_cool",coolPreset)}) {
             cfg.SetValue(section,"temperature",preset.TemperatureF);cfg.SetValue(section,"driver_seat",(int)preset.DriverSeat);
             cfg.SetValue(section,"passenger_seat",(int)preset.PassengerSeat);cfg.SetValue(section,"steering_wheel",preset.SteeringWheel);

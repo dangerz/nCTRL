@@ -18,6 +18,9 @@ public static class SeatCodes
     public static string Label(SeatMode mode)=>mode switch {
         SeatMode.HeatLow=>"Heat low",SeatMode.HeatMedium=>"Heat medium",SeatMode.HeatHigh=>"Heat high",
         SeatMode.CoolLow=>"Cool low",SeatMode.CoolMedium=>"Cool medium",SeatMode.CoolHigh=>"Cool high",_=>"Off"};
+    /// <summary>The setting a reported code stands for; null for "on" without a level, or anything unknown.</summary>
+    public static SeatMode? Mode(int? code)=>code switch {
+        0 or 2=>SeatMode.Off,3=>SeatMode.CoolLow,4=>SeatMode.CoolMedium,5=>SeatMode.CoolHigh,6=>SeatMode.HeatLow,7=>SeatMode.HeatMedium,8=>SeatMode.HeatHigh,_=>null};
     // Reported codes: 0 and 2 are off, 1 is on without a level.
     public static string Reported(int? code)=>code switch {
         0 or 2=>"Off",1=>"On",3=>"Cool low",4=>"Cool medium",5=>"Cool high",6=>"Heat low",7=>"Heat medium",8=>"Heat high",_=>"—"};

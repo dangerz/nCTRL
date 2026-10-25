@@ -31,10 +31,12 @@ public partial class Main
         public bool ChargingOverdue;
         // The reported location carries a speed.
         public bool Moving;
+        // The car reports climate on at 68°F: driver seat cool low, passenger off, steering wheel and defrost off.
+        public bool ClimateOn;
         // Surround View: a picture whose capture time moves forward once a capture is requested.
         public string SvmImage="";public int SvmRequests;
-        // Destinations sent to the car.
-        public int Destinations;
+        // Destinations sent to the car, and climate starts.
+        public int Destinations,ClimateStarts;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
@@ -54,6 +56,7 @@ public partial class Main
             }
             if(route=="/ac/v2/svm/findMyCarSVM")SvmRequests++;
             if(route=="/ac/v2/rcs/stc/sendPoi")Destinations++;
+            if(route=="/ac/v2/evc/fatc/start")ClimateStarts++;
             string body=route switch {
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
@@ -69,6 +72,9 @@ public partial class Main
             if(Charging&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"batteryCharge\":false","\"batteryCharge\":true,\"realTimePower\":7.2,\"remainTime2\":{\"atc\":{\"value\":95,\"unit\":1}}")
                     .Replace("2026-10-22T10:00:00Z",DateTimeOffset.UtcNow.AddHours(ChargingOverdue?-3:0).ToString("yyyy-MM-ddTHH:mm:ssZ"));
+            if(ClimateOn&&route.EndsWith("/vehicleStatus"))
+                body=body.Replace("\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1}",
+                    "\"airCtrlOn\":true,\"airTemp\":{\"value\":\"68\",\"unit\":1},\"seatHeaterVentState\":{\"flSeatHeatState\":3,\"frSeatHeatState\":0},\"steerWheelHeat\":0,\"defrost\":false");
             if(Moving&&route.EndsWith("/vehicleStatus"))
                 body=body.Replace("\"lon\":-74.222222}}","\"lon\":-74.222222},\"speed\":{\"value\":34,\"unit\":1}}");
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
@@ -283,9 +289,32 @@ public partial class Main
             for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(fixture.Destinations!=sends+1||canvas.GetNodeOrNull<Label>("SentTitle")?.Text!="SENT TO CAR"||!fixture.LastBody.Contains("\"actionType\":\"SAVE\"")||
                 !fixture.LastBody.Contains("\"lat\":\"40.260000\""))throw new Exception("Send to car did not send once and show Sent To Car");
+            // It's 28°F at the (test) car, so the dialog offers your Warm up preset; starting it sends one climate start.
+            if(canvas.GetNodeOrNull<Button>("SentClimate")?.Text.StartsWith("Start Warm up  ·  "+Units.Setpoint(warmPreset.TemperatureF,units))!=true||
+                canvas.GetNodeOrNull<Button>("SentDisable")==null)throw new Exception("Sent To Car does not offer to start the Warm up preset");
             await Capture("72-sent-to-car-test.png");
-            canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
-            if(sentDestination!=null||screen!="Locate")throw new Exception("OK did not close the Sent To Car dialog");
+            int climateStarts=fixture.ClimateStarts;
+            canvas.GetNode<Button>("SentClimate").EmitSignal(Godot.Button.SignalName.Pressed);
+            await WaitForCommandChecks();
+            if(sentDestination!=null||screen!="Car"||fixture.ClimateStarts!=climateStarts+1)
+                throw new Exception("Starting climate from Sent To Car did not close the dialog and start Warm up");
+            // The car reports climate on (started from anywhere): the Climate page shows its settings; when it reports
+            // off, your own choices come back.
+            var mine=(driverSeat,passengerSeat,wheelHeat,climateDefrost);
+            async Task ReadAgain(){
+                await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);await RefreshLive(false);
+                if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            }
+            fixture.ClimateOn=true;await ReadAgain();Navigate("Climate");
+            if(canvas.GetNode<Label>("ClimateStatus").Text!="CLIMATE ON  ·  68°F"||canvas.GetNode<Label>("ClimateTemperature").Text!="68°F"||
+                canvas.GetNode<OptionButton>("DriverSeat").Selected!=(int)SeatMode.CoolLow||canvas.GetNode<OptionButton>("PassengerSeat").Selected!=(int)SeatMode.Off||
+                canvas.GetNode<CheckBox>("SteeringWheelHeat").ButtonPressed||canvas.GetNode<CheckBox>("Defrost").ButtonPressed)
+                throw new Exception("The Climate page does not show the car's reported climate settings");
+            await Capture("76-climate-on-test.png");
+            fixture.ClimateOn=false;await ReadAgain();Navigate("Climate");
+            if(canvas.GetNode<Label>("ClimateStatus").Text!="CLIMATE OFF"||(driverSeat,passengerSeat,wheelHeat,climateDefrost)!=mine)
+                throw new Exception("Your climate choices did not come back when the car reported climate off");
+            await Capture("77-climate-off-test.png");
             // The widget: the status and painted car are in the (test) App Group, with nothing identifying in them.
             if(!sharedFixture.TryGetValue("status.json",out var widgetJson)||!sharedFixture.TryGetValue("car.png",out var widgetCar))
                 throw new Exception("The widget's status and picture were not written");
@@ -312,12 +341,22 @@ public partial class Main
             if(sentDestination is not {Name: "Central Park",Address: "5th Ave, New York, NY 10022"}||fixture.Destinations!=shared+1||sharedFixture.ContainsKey("share.json")||
                 canvas.GetNodeOrNull<Label>("SentTitle")==null)throw new Exception("An Apple Maps share was not sent to the car right away");
             await Capture("74-shared-place-test.png");
-            canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Disable this: no more offers, saved as a preference.
+            canvas.GetNode<Button>("SentDisable").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(climateOffer||sentDestination!=null||!notice.Contains("Turn it back on in Settings"))throw new Exception("Disable this did not turn off the climate offer");
             // Shared from Google Maps (name, address and a short link): looked up by its address, keeping its name.
             sharedFixture["share.json"]=Encoding.UTF8.GetBytes("{\"version\":1,\"urls\":[\"https://maps.app.goo.gl/xyz\"],\"texts\":[\"Corner Cafe\\n1 Main St, Springfield\\nhttps://maps.app.goo.gl/xyz\"]}");
             CheckShared();await SharedSent();
             if(sentDestination is not {Name: "Corner Cafe",Latitude: 40.26}||fixture.Destinations!=shared+2)throw new Exception("A Google Maps share was not looked up by its address and sent");
+            if(canvas.GetNodeOrNull<Button>("SentClimate")!=null||canvas.GetNode<Button>("SentOk").Text!="OK")throw new Exception("The climate offer still showed after Disable this");
+            await Capture("74-sent-without-offer-test.png");
             canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Settings turns it back on.
+            Navigate("Settings");
+            if(canvas.GetNode<Button>("SettingsClimateOffer").Text!="Offer climate after Send to car  /  Off")throw new Exception("Settings does not show the climate offer is off");
+            canvas.GetNode<Button>("SettingsClimateOffer").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(!climateOffer||canvas.GetNode<Button>("SettingsClimateOffer").Text!="Offer climate after Send to car  /  On")throw new Exception("Settings did not turn the climate offer back on");
+            await Capture("74-settings-climate-offer-test.png");
             // A Google Maps share with only its short link: opened once (a test redirect) for the place's pin and name.
             // The extension's receipts come too, including a share it couldn't save.
             shortLinkFixture=new RedirectFixture();
@@ -619,7 +658,7 @@ public partial class Main
             if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
             if(Encoding.UTF8.GetString(sharedFixture["status.json"])!=widgetBefore)throw new Exception("The demo changed your widget");
             Skin.Use(AppTheme.DefaultHex);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car, widget files, shared places and short links, Activity shared tab, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car with the climate offer (start, disable, Settings), Climate page following the car, widget files, shared places and short links, Activity shared tab, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

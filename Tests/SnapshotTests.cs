@@ -10,7 +10,7 @@ static class SnapshotTests
         string account=VehicleLink.AccountKey("tester@example.invalid");
         string vehicle=VehicleLink.Fingerprint(account,"TESTVIN0000000001");
         var state=new LiveVehicleState(true,false,72,78,true,false,184.5,80,90,"2026-10-22T10:00:00Z",
-            new DateTimeOffset(2026,10,23,14,5,0,TimeSpan.Zero),8,null,true);
+            new DateTimeOffset(2026,10,23,14,5,0,TimeSpan.Zero),8,null,true,Defrost:true);
         var snapshot=new VehicleSnapshot(account,vehicle,"Test Ioniq 5 N","000001",3,state);
         string json=snapshot.Encode();
         var back=VehicleSnapshot.Decode(json);

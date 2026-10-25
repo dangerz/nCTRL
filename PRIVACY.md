@@ -25,7 +25,7 @@ nCTRL sends nothing anywhere else. Its developer receives no data from the app.
 - **Your car's last status** (battery, range, doors, climate and charging, plus when it was reported), so the app can open without a request. It holds no location, email or full VIN; the account and car are identified only by one-way hashes.
 - **The car's last known location,** in its own Keychain item on this device only, so the map can show where the car was when a new location can't be requested.
 - **Ignored places** you add (a name and a location), in the Keychain on this device only.
-- **Preferences:** paint, app color, garage and car names, the car picture you picked, climate presets, metric or imperial, the cold-weather range settings, request-limit counts, and when you accepted the risk disclaimer (tied to a hash of your account, not your email).
+- **Preferences:** paint, app color, garage and car names, whether to offer climate after sending a place, the car picture you picked, climate presets, metric or imperial, the cold-weather range settings, request-limit counts, and when you accepted the risk disclaimer (tied to a hash of your account, not your email).
 - **The outside temperature** stays in the app's memory only and is never saved.
 - **Map pictures** downloaded from OpenStreetMap, cached for about a week. They contain no car marker or account data.
 - **Surround View pictures** stay in the app's memory until you leave the app. One is saved to your photo library only if you tap **Save to Photos**, which uses add-only access: nCTRL can add a picture but never see your library.

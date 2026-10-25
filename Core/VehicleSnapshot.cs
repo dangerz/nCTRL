@@ -25,7 +25,7 @@ public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint
             if(s.RangeMiles is double range)w.WriteNumber("rangeMiles",range);else w.WriteNull("rangeMiles");
             Int(w,"acLimit",s.AcLimit);Int(w,"dcLimit",s.DcLimit);
             w.WriteString("reportedAt",s.ReportedAt);w.WriteString("retrievedAt",s.RetrievedAt.ToString("O",CultureInfo.InvariantCulture));
-            Int(w,"driverSeat",s.DriverSeat);Int(w,"passengerSeat",s.PassengerSeat);Bool(w,"steeringWheelHeat",s.SteeringWheelHeat);
+            Int(w,"driverSeat",s.DriverSeat);Int(w,"passengerSeat",s.PassengerSeat);Bool(w,"steeringWheelHeat",s.SteeringWheelHeat);Bool(w,"defrost",s.Defrost);
             if(s.ChargingPowerKw is double kw)w.WriteNumber("chargingPowerKw",kw);
             Int(w,"chargeMinutesLeft",s.ChargeMinutesLeft);
             // Health and openings only; the status location is never saved.
@@ -62,7 +62,7 @@ public sealed record VehicleSnapshot(string AccountKey,string VehicleFingerprint
                     Bool(h,"frontLeftDoor"),Bool(h,"frontRightDoor"),Bool(h,"rearLeftDoor"),Bool(h,"rearRightDoor"),Bool(h,"tailgate"),Bool(h,"hood"),
                     Bool(h,"frontLeftWindow"),Bool(h,"frontRightWindow"),Bool(h,"rearLeftWindow"),Bool(h,"rearRightWindow"),
                     Bool(h,"tireWarning"),Bool(h,"washerFluidLow"),Bool(h,"brakeFluidWarning"),Bool(h,"keyFobBatteryLow")):null,
-                null,r.TryGetProperty("chargingPowerKw",out var kw)&&kw.ValueKind==JsonValueKind.Number?kw.GetDouble():null,Int(r,"chargeMinutesLeft"));
+                null,r.TryGetProperty("chargingPowerKw",out var kw)&&kw.ValueKind==JsonValueKind.Number?kw.GetDouble():null,Int(r,"chargeMinutesLeft"),Defrost:Bool(r,"defrost"));
             return new(account,vehicle,name,vinTail,r.GetProperty("generation").GetInt32(),state,Bool(r,"atIgnoredPlace")==true);
         } catch(Exception) {return null;}
     }

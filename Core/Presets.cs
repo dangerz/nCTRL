@@ -13,6 +13,11 @@ public sealed record ClimatePreset(string Name,int TemperatureF,SeatMode DriverS
 {
     public static readonly ClimatePreset WarmUp=new("Warm up",76,SeatMode.HeatHigh,SeatMode.HeatHigh,true,true),
         CoolDown=new("Cool down",66,SeatMode.CoolHigh,SeatMode.CoolHigh,false,false);
+    // At or above this outside temperature, getting the car ready means cooling it down.
+    public const double HotF=75;
+    /// <summary>The preset to offer for an outside temperature: Cool down when it's hot, otherwise (or when the
+    /// temperature isn't known) Warm up.</summary>
+    public static ClimatePreset ForOutside(double? outsideF,ClimatePreset warm,ClimatePreset cool)=>outsideF>=HotF?cool:warm;
     public ClimateOptions Options(bool seatsSupported)=>
         new(seatsSupported?DriverSeat:SeatMode.Off,seatsSupported?PassengerSeat:SeatMode.Off,SteeringWheel,Defrost);
     // Stored settings are untrusted: out-of-range values fall back to the preset's defaults.
