@@ -10,7 +10,7 @@ import os
 // the App Group's Keychain group: Core reads the place (opening a Google Maps short link if that's all there is),
 // Apple's geocoder looks up an address, and Core sends it through the same request limits as the app. If it can't
 // send (no saved login, Hyundai refused, no connection), the share is saved for nCTRL to show the next time it opens,
-// without sending again by itself. Each share leaves a receipt for Activity → Shared.
+// without sending again by itself. Each share leaves a note for Activity → Shared, written first and updated as it goes.
 final class ShareViewController: UIViewController {
     private let card = SendCardModel()
     private let log = Logger(subsystem: NctrlGroup.appBundleID + ".share", category: "share")
@@ -31,16 +31,24 @@ final class ShareViewController: UIViewController {
     }
 
     private func share() async {
-        var urls: [String] = [], texts: [String] = [], kinds: [String] = []
+        // A note first, updated at each step, so every share is listed in Activity → Shared with how far it got,
+        // even one that stops part-way.
+        let id = UUID().uuidString
+        note(id, ["stage": "started", "saved": false, "opened": false, "sent": false])
+        var urls: [String] = [], texts: [String] = [], kinds: [String] = [], linkLate = false
         for item in extensionContext?.inputItems as? [NSExtensionItem] ?? [] {
             if let text = item.attributedContentText?.string, !text.isEmpty { texts.append(text); kinds.append("text") }
             for provider in item.attachments ?? [] {
-                if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier), let value = await load(provider, UTType.url) {
+                if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                    // Google Maps makes its link while the sheet is open, which can take several seconds the first time.
+                    card.phase = .working("Waiting for the shared link…")
+                    let (value, late) = await load(provider, UTType.url, seconds: 15)
+                    linkLate = linkLate || late
                     if let url = value as? URL { urls.append(url.absoluteString); kinds.append("link") }
                     else if let data = value as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) { urls.append(url.absoluteString); kinds.append("link") }
                 }
                 for (type, kind) in [(UTType.vCard, "contact card"), (UTType.plainText, "text")] where provider.hasItemConformingToTypeIdentifier(type.identifier) {
-                    if let value = await load(provider, type) {
+                    if let value = await load(provider, type, seconds: 5).value {
                         if let text = value as? String { texts.append(text); kinds.append(kind) }
                         else if let data = value as? Data, let text = String(data: data, encoding: .utf8) { texts.append(text); kinds.append(kind) }
                         else if let url = value as? URL, let text = try? String(contentsOf: url, encoding: .utf8) { texts.append(text); kinds.append(kind) }
@@ -48,64 +56,76 @@ final class ShareViewController: UIViewController {
                 }
             }
         }
-        let id = UUID().uuidString
         let hosts = urls.compactMap { URL(string: $0)?.host }
-        var shared: [String: Any] = ["version": 1, "id": id, "urls": Array(urls.prefix(5)), "texts": texts.prefix(5).map { String($0.prefix(4000)) },
-                                     "kinds": Array(Set(kinds)).sorted(), "at": ISO8601DateFormatter().string(from: Date())]
-        log.info("Share received: \(kinds.joined(separator: ", "), privacy: .public) from \(hosts.joined(separator: ", "), privacy: .public)")
+        let late = "The app didn't hand over the place in time. Try sharing again."
+        note(id, ["stage": "received", "kinds": Array(Set(kinds)).sorted(), "hosts": Array(Set(hosts)).sorted()])
+        log.info("Share received: \(kinds.joined(separator: ", "), privacy: .public) from \(hosts.joined(separator: ", "), privacy: .public), link late: \(linkLate, privacy: .public)")
         if urls.isEmpty && texts.isEmpty {
-            receipt(id: id, kinds: kinds, hosts: hosts, saved: false, opened: false)
-            finish(.notSent("nCTRL couldn't find a place in what was shared."), after: 2.5)
+            fail(id, linkLate ? late : "Nothing came with the share. Try sharing again.")
             return
         }
+        let shared: [String: Any] = ["version": 1, "id": id, "urls": Array(urls.prefix(5)), "texts": texts.prefix(5).map { String($0.prefix(4000)) },
+                                     "kinds": Array(Set(kinds)).sorted(), "at": ISO8601DateFormatter().string(from: Date())]
 
         // Read the place with nCTRL's Core, then look up an address with Apple's geocoder if needed.
         card.phase = .working("Finding the place…")
-        var place: [String: Any]?
-        if let read = await core("read_share", shared) {
-            place = read["place"] as? [String: Any]
-            if place == nil, let lookup = read["lookup"] as? String, !lookup.isEmpty {
-                card.phase = .working("Looking up the address…")
-                place = await geocode(lookup, name: read["name"] as? String ?? "")
-            }
+        guard let read = await core("read_share", shared) else {
+            fail(id, "nCTRL couldn't read the share (its reader didn't start).")
+            return
         }
-        guard let place else {
-            receipt(id: id, kinds: kinds, hosts: hosts, saved: false, opened: false)
-            finish(.notSent("nCTRL couldn't find a place in what was shared."), after: 2.5)
+        var found = read["place"] as? [String: Any]
+        if found == nil, let lookup = read["lookup"] as? String, !lookup.isEmpty {
+            note(id, ["stage": "looking up"])
+            card.phase = .working("Looking up the address…")
+            found = await geocode(lookup, name: read["name"] as? String ?? "")
+            if found == nil { fail(id, linkLate ? late : "Apple Maps couldn't find “\(lookup)”."); return }
+        }
+        guard let place = found else {
+            let problem = (read["problem"] as? String).flatMap { $0.isEmpty ? nil : $0 + "." } ?? "Nothing in it looked like a place."
+            fail(id, linkLate ? late : problem)
             return
         }
         let name = place["name"] as? String ?? "the place"
+        note(id, ["stage": "found", "place": place])
 
         // Send it with the app's saved login and session.
         guard let account = keychain("com.ngarage.nctrl.account.v2", "account"), let limits = NctrlGroup.file("request-limits.json")?.path else {
             // No saved login here yet (or not signed in): nCTRL sends it as usual when it opens.
-            await handOff(shared, id: id, kinds: kinds, hosts: hosts, unsent: "")
+            await handOff(shared, id: id, unsent: "")
             return
         }
+        note(id, ["stage": "sending"])
         card.phase = .sending(place: name)
         let session = keychain("com.ngarage.nctrl.session.v1", "session")
         let request: [String: Any] = ["account": account, "session": session ?? NSNull(), "place": place, "limits": limits]
         let result = await core("send", request)
         if result?["ok"] as? Bool == true {
             if let updated = result?["session"] as? String { saveSession(updated) }
-            receipt(id: id, kinds: kinds, hosts: hosts, saved: true, opened: false, sent: true, place: place)
+            note(id, ["stage": "sent", "saved": true, "sent": true])
             log.info("Sent to the car from the Share sheet")
             finish(.sent(place: name, detail: place["address"] as? String ?? ""), after: 2.2)
         } else {
             let error = result?["error"] as? String ?? "nCTRL couldn't send it from here."
             log.info("Not sent from the Share sheet: \(error, privacy: .public)")
-            await handOff(shared, id: id, kinds: kinds, hosts: hosts, unsent: error)
+            note(id, ["stage": "not sent", "problem": error])
+            await handOff(shared, id: id, unsent: error)
         }
+    }
+
+    private func fail(_ id: String, _ problem: String) {
+        note(id, ["stage": "failed", "problem": problem])
+        log.info("Share not read: \(problem, privacy: .public)")
+        finish(.notSent(problem), after: 3.0)
     }
 
     // Saves the share for nCTRL and tries to bring nCTRL forward. With a reason it wasn't sent (Hyundai refused, no
     // connection), nCTRL shows it on Send to car without sending again by itself; otherwise nCTRL sends it as usual.
-    private func handOff(_ shared: [String: Any], id: String, kinds: [String], hosts: [String], unsent: String) async {
+    private func handOff(_ shared: [String: Any], id: String, unsent: String) async {
         var shared = shared
         if !unsent.isEmpty { shared["unsent"] = unsent }
         let saved = save(shared)
         let opened = saved ? await open(URL(string: "nctrl://send")!) : false
-        receipt(id: id, kinds: kinds, hosts: hosts, saved: saved, opened: opened)
+        note(id, ["stage": "handed off", "saved": saved, "opened": opened])
         let phase: SendPhase = !saved ? .notSent("nCTRL couldn't save this.") :
             unsent.isEmpty ? .handedOff("Open nCTRL to send it.") : .notSent("\(unsent)\nOpen nCTRL to send it.")
         finish(phase, after: opened ? 0.2 : 3.5)
@@ -159,12 +179,13 @@ final class ShareViewController: UIViewController {
          kSecAttrSynchronizable as String: false, kSecAttrAccessGroup as String: "group." + NctrlGroup.appBundleID]
     }
 
-    // Some apps (Google Maps) build what they share while the sheet is open; never wait more than 5 seconds.
-    private func load(_ provider: NSItemProvider, _ type: UTType) async -> NSSecureCoding? {
-        await withTaskGroup(of: NSSecureCoding?.self) { group in
-            group.addTask { try? await provider.loadItem(forTypeIdentifier: type.identifier) }
-            group.addTask { try? await Task.sleep(nanoseconds: 5_000_000_000); return nil }
-            let first = await group.next() ?? nil
+    // Some apps (Google Maps) build what they share while the sheet is open; wait at most this long. late: it didn't
+    // arrive in time.
+    private func load(_ provider: NSItemProvider, _ type: UTType, seconds: Double) async -> (value: NSSecureCoding?, late: Bool) {
+        await withTaskGroup(of: (NSSecureCoding?, Bool).self) { group in
+            group.addTask { (try? await provider.loadItem(forTypeIdentifier: type.identifier), false) }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); return (nil, true) }
+            let first = await group.next() ?? (nil, true)
             group.cancelAll()
             return first
         }
@@ -175,16 +196,20 @@ final class ShareViewController: UIViewController {
         return (try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])) != nil
     }
 
-    // The last 10 receipts, kept until nCTRL reads them: the kinds of items, the link hosts, whether the share was
-    // saved, sent or opened nCTRL, and the place when it was sent from here.
-    private func receipt(id: String, kinds: [String], hosts: [String], saved: Bool, opened: Bool, sent: Bool = false, place: [String: Any]? = nil) {
+    // The last 10 notes about shares, kept until nCTRL reads them (Activity → Shared): when, the kinds of items, the
+    // link hosts, how far it got, whether it was saved, sent or opened nCTRL, why not, and the place once found.
+    private func note(_ id: String, _ fields: [String: Any]) {
         guard let file = NctrlGroup.file("share-log.json") else { return }
-        var receipts = ((try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [[String: Any]]) ?? []
-        var entry: [String: Any] = ["id": id, "at": ISO8601DateFormatter().string(from: Date()), "kinds": Array(Set(kinds)).sorted(),
-                                    "hosts": Array(Set(hosts)).sorted(), "saved": saved, "opened": opened, "sent": sent]
-        if let place { entry["place"] = place }
-        receipts.append(entry)
-        if let data = try? JSONSerialization.data(withJSONObject: Array(receipts.suffix(10))) {
+        var notes = ((try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [[String: Any]]) ?? []
+        if let index = notes.firstIndex(where: { $0["id"] as? String == id }) {
+            notes[index].merge(fields) { $1 }
+        } else {
+            var entry = fields
+            entry["id"] = id
+            entry["at"] = ISO8601DateFormatter().string(from: Date())
+            notes.append(entry)
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: Array(notes.suffix(10))) {
             try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         }
     }

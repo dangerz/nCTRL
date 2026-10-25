@@ -61,6 +61,13 @@ public partial class Main
             if(disclaimer?.AccountKey!=testerKey)throw new Exception("Successful sign-in did not bind disclaimer acceptance");
             await ChooseVehicle();
             if(snapshot==null||snapshot.State.Battery!=78||snapshot.AccountKey!=testerKey)throw new Exception("Connecting did not save the vehicle status");
+            // A share recorded on launch while the saved Shared list is still loading isn't lost when the list arrives.
+            var older=new SharedEntry(DateTimeOffset.UtcNow.AddHours(-1),"Apple Maps","link",new Destination("Older place","",40.7,-74),"");
+            fake.Shared=SharedHistory.Encode(new[]{older});sharedHistory=Array.Empty<SharedEntry>();sharedPersisted=false;
+            await RecordShare(new SharedEntry(DateTimeOffset.UtcNow,"Google Maps","text",null,"The app didn't hand over the place in time"));
+            await LoadShared();
+            if(sharedHistory.Count!=2||sharedHistory[0].Source!="Google Maps"||sharedHistory[1].Place?.Name!="Older place"||!fake.Shared.Contains("hand over"))
+                throw new Exception("A share recorded while the Shared list was loading was lost");
             // Ignored places persist in the (fake) Keychain item, separate from the login.
             await LoadPlaces();if(!placesPersisted)throw new Exception("Ignored places are not stored with the native bridge");
             await StorePlaces(new(){new IgnoredPlace("Home",40.111111,-74.222222)},"Saved.");

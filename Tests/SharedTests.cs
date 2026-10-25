@@ -62,6 +62,10 @@ static class SharedTests
         Check(sentHere.Count==1&&sentHere[0].Sent&&sentHere[0].Place?.Name=="Central Park"&&sentHere[0].Source=="Apple Maps","A place the Share sheet sent itself comes back with its receipt");
         Check(Destinations.FromShare("{\"version\":1,\"urls\":[\"https://maps.apple.com/?ll=40.78,-73.96&q=Park\"],\"texts\":[],\"unsent\":\"Hyundai is rate limiting requests.\"}").Unsent==
             "Hyundai is rate limiting requests.","A share the Share sheet couldn't send says why");
+        var stopped=SharedHistory.Receipts("[{\"id\":\"a\",\"at\":\"2026-10-24T20:00:00Z\",\"stage\":\"started\",\"saved\":false},"+
+            "{\"id\":\"b\",\"at\":\"2026-10-24T20:00:00Z\",\"stage\":\"failed\",\"problem\":\"The app didn't hand over the place in time. Try sharing again.\",\"kinds\":[\"text\"],\"saved\":false}]");
+        Check(stopped[0].Reason=="The Share sheet stopped before anything arrived"&&stopped[1].Reason=="The app didn't hand over the place in time. Try sharing again"&&
+            stopped[1].Kinds=="text","A share that went nowhere says how far it got, or why");
         Console.WriteLine($"PASS: {count} shared-place checks (no network).");
     }
 }

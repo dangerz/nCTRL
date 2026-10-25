@@ -11,9 +11,20 @@ namespace NGarage.Core;
 /// <summary>A place shared to nCTRL (Activity → Shared): when, from where, what kinds of items came, and the place
 /// it led to or why it couldn't be read. Opened is whether the Share extension could bring nCTRL forward.</summary>
 public sealed record SharedEntry(DateTimeOffset At,string Source,string Kinds,Destination? Place,string Problem,bool? Opened=null);
-/// <summary>The Share extension's note about one share (share-log.json): what kinds of items came, the link hosts,
-/// whether it saved the share and opened nCTRL, and, when it sent the place to the car itself, that place.</summary>
-public sealed record SharedReceipt(string Id,DateTimeOffset At,string Kinds,string Source,bool Saved,bool Opened,bool Sent=false,Destination? Place=null);
+/// <summary>The Share extension's note about one share (share-log.json), written as the share starts and updated as it
+/// goes: what kinds of items came, the link hosts, how far it got, whether it saved the share, sent it or opened nCTRL,
+/// why not, and, when it sent the place to the car itself, that place.</summary>
+public sealed record SharedReceipt(string Id,DateTimeOffset At,string Kinds,string Source,bool Saved,bool Opened,bool Sent=false,Destination? Place=null,
+    string Stage="",string Problem="")
+{
+    /// <summary>Why a share that went nowhere went nowhere, for Activity → Shared.</summary>
+    public string Reason=>Problem.Length>0?Problem.TrimEnd('.'):Stage switch {
+        "started"=>"The Share sheet stopped before anything arrived",
+        "received"=>"The Share sheet stopped while reading what was shared",
+        "looking up"=>"The Share sheet stopped while looking up the address",
+        "found" or "sending"=>"The Share sheet stopped while sending",
+        _=>"Nothing in it looked like a place, so nothing was saved"};
+}
 
 public static class SharedHistory
 {
@@ -70,13 +81,14 @@ public static class SharedHistory
         try {
             using var doc=JsonDocument.Parse(json);
             foreach(var r in doc.RootElement.EnumerateArray().Take(10)) {
-                string Text(string key)=>r.TryGetProperty(key,out var v)&&v.ValueKind==JsonValueKind.String?Destinations.Clean(v.GetString(),64):"";
+                string Text(string key,int max=64)=>r.TryGetProperty(key,out var v)&&v.ValueKind==JsonValueKind.String?Destinations.Clean(v.GetString(),max):"";
                 IEnumerable<string> List(string key)=>r.TryGetProperty(key,out var v)&&v.ValueKind==JsonValueKind.Array?
                     v.EnumerateArray().Where(x=>x.ValueKind==JsonValueKind.String).Select(x=>Destinations.Clean(x.GetString(),40)):Array.Empty<string>();
                 bool Flag(string key)=>r.TryGetProperty(key,out var v)&&v.ValueKind==JsonValueKind.True;
                 if(!DateTimeOffset.TryParse(Text("at"),CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal,out var at))continue;
                 var place=Flag("sent")&&r.TryGetProperty("place",out var p)?ShareSender.ReadPlace(p):null;
-                receipts.Add(new(Text("id"),at,string.Join(", ",List("kinds")),Destinations.Source(List("hosts").Select(h=>"https://"+h)),Flag("saved"),Flag("opened"),place!=null,place));
+                receipts.Add(new(Text("id"),at,string.Join(", ",List("kinds")),Destinations.Source(List("hosts").Select(h=>"https://"+h)),Flag("saved"),Flag("opened"),place!=null,place,
+                    Text("stage",20),Text("problem",200)));
             }
         } catch(Exception){return new List<SharedReceipt>();}
         return receipts;

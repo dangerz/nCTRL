@@ -15,6 +15,8 @@ struct RenderShareCard {
         if args.count >= 6 { status.accent = args[4]; status.back = args[5] }
         let picture = loadPicture(URL(fileURLWithPath: args[2]))
         let states: [(SendPhase, String)] = [
+            (.working("Waiting for the shared link…"), "share-waiting"),
+            (.notSent("The app didn't hand over the place in time. Try sharing again."), "share-late"),
             (.sending(place: "Central Park"), "share-sending"),
             (.sent(place: "Central Park", detail: "5th Ave, New York, NY 10022"), "share-sent"),
             (.notSent("Hyundai is rate limiting requests. No automatic retry was sent.\nOpen nCTRL to send it."), "share-not-sent"),

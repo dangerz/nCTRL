@@ -33,7 +33,13 @@ public partial class Main
     private async Task LoadShared()
     {
         if(!vault.Present||demo){sharedPersisted=false;return;}
-        try {sharedHistory=SharedHistory.Decode(await vault.LoadSharedAsync(liveLifetime.Token));sharedPersisted=true;}
+        try {
+            var saved=SharedHistory.Decode(await vault.LoadSharedAsync(liveLifetime.Token));
+            // Shares recorded while the list was loading (CheckShared runs right after launch) go on top, not lost.
+            var added=sharedHistory;sharedHistory=saved;sharedPersisted=true;
+            foreach(var entry in added.Reverse())sharedHistory=SharedHistory.Add(sharedHistory,entry);
+            if(added.Count>0)await vault.SaveSharedAsync(SharedHistory.Encode(sharedHistory),liveLifetime.Token);
+        }
         catch(Exception ex) when(ex is VaultException or OperationCanceledException) {sharedPersisted=false;}
     }
     private async Task RecordShare(SharedEntry entry)
@@ -58,7 +64,7 @@ public partial class Main
         var receipts=SharedHistory.Receipts(TakeGroup("share-log.json"));
         // Shares the extension couldn't save still belong in the list, so you can see they happened.
         foreach(var r in receipts.Where(r=>!r.Saved&&!r.Sent))
-            _ = RecordShare(new(r.At,r.Source,r.Kinds.Length>0?r.Kinds:"nothing",null,"Nothing in it looked like a place, so nothing was saved",r.Opened));
+            _ = RecordShare(new(r.At,r.Source,r.Kinds.Length>0?r.Kinds:"nothing",null,r.Reason,r.Opened));
         // Places the Share sheet sent to the car itself, while nCTRL was closed.
         foreach(var r in receipts.Where(r=>r.Sent&&r.Place!=null)) {
             _ = RecordShare(new(r.At,r.Source,r.Kinds,r.Place,""));
