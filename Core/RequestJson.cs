@@ -22,6 +22,18 @@ internal static class RequestJson
         w.WriteString("username",username);w.WriteString("password",password);
         if(refresh.Length>0){w.WriteString("grant_type","refresh_token");w.WriteString("refresh_token",refresh);}
     });
+    // Send to car: the body Hyundai's own app sends to rcs/stc/sendPoi, one place, saved to the car's navigation.
+    internal static string Destination(string username,string vin,Destination place)=>Object(w=>{
+        static string N(double v)=>v.ToString("0.000000",CultureInfo.InvariantCulture);
+        w.WriteString("username",username);w.WriteString("vin",vin);w.WriteString("actionType","SAVE");
+        w.WriteStartArray("poiInfoList");w.WriteStartObject();
+        w.WriteString("googleRefId","");w.WriteString("phone","");w.WriteString("zip",place.Zip);w.WriteString("isFavorite","0");
+        w.WriteString("note","");w.WriteString("src","HERE");w.WriteNumber("waypointID",0);w.WriteString("poiId","0");
+        w.WriteString("addr",place.Address);
+        w.WriteStartObject("coord");w.WriteString("lat",N(place.Latitude));w.WriteString("alt","0");w.WriteString("lon",N(place.Longitude));w.WriteString("type","0");w.WriteEndObject();
+        w.WriteString("lang","0");w.WriteString("name",place.Name);w.WriteString("placeid","");
+        w.WriteEndObject();w.WriteEndArray();
+    });
     internal static string Doors(string username,string vin,string pin)=>Object(w=>{
         w.WriteString("userName",username);w.WriteString("vin",vin);w.WriteString("pin",pin);
     });

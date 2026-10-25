@@ -18,7 +18,9 @@ public partial class VaultAndroidExport : EditorExportPlugin
         // repeating a template key here dropped this plugin's whole fragment from the exported Info.plist.
         if(GetExportPlatform() is EditorExportPlatformIos)
         {
-            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to unlock your saved Hyundai account in nCTRL on this device.</string>");
+            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to confirm the risk disclaimer and limit overrides in nCTRL.</string>");
+            // While the map is open, to show where you are next to the car. Used on the phone only.
+            AddAppleEmbeddedPlatformPlistContent("<key>NSLocationWhenInUseUsageDescription</key><string>Show where you are on nCTRL's car map. Your location stays on this iPhone.</string>");
             // Add-only photo access, for saving Surround View pictures you choose to keep.
             AddAppleEmbeddedPlatformPlistContent("<key>NSPhotoLibraryAddUsageDescription</key><string>Save the Surround View pictures you choose to your photo library.</string>");
         }

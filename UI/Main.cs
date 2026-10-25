@@ -57,7 +57,7 @@ public partial class Main : Control
         EnterOffline();
         _ = LoadPlaces();
         // Smoke tests call the check themselves.
-        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(CheckChargeOverdue));_ = UpdateOutsideTemperature();}
+        if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(ReadOnOpen));_ = UpdateOutsideTemperature();}
         Render();
 #if DEBUG
         if (vaultSmoke) _ = SecureSmokeTest();
@@ -178,6 +178,7 @@ public partial class Main : Control
         if(pendingOverride!=null)OverrideDialog();
         else if(pendingConfirm!=null)ConfirmDialog();
         else if(pendingPlaceAt!=null)PlaceNameDialog();
+        else if(sentDestination!=null)SentDialog();
     }
     private void Title(string title,string sub)
     {
@@ -244,7 +245,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,Skin.Nav);Rect(0,851,460,1,Skin.NavLine);
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range" or "AppColor"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range" or "AppColor"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look" or "Send"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;

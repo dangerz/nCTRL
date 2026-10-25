@@ -13,6 +13,48 @@ public static class NativeVaultBridge
         catch(EntryPointNotFoundException){return false;}
     }
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_vault_open_map(double latitude,double longitude);
+    // The phone's own position for the map: asks iOS (and the user, the first time), then poll PhoneLocation:
+    // 0 none, 1 locating, 2 located, 3 not allowed, 4 failed, 5 usage text missing. Other platforms have none.
+    public static void PhoneLocate()
+    {
+        if(OS.GetName()!="iOS")return;
+        try {ng_phone_locate();}
+        catch(DllNotFoundException) { }
+        catch(EntryPointNotFoundException) { }
+    }
+    public static (int State,double Latitude,double Longitude,double Accuracy) PhoneLocation()
+    {
+        if(OS.GetName()!="iOS")return (0,0,0,0);
+        try {int state=ng_phone_location(out double lat,out double lon,out double accuracy);return (state,lat,lon,accuracy);}
+        catch(DllNotFoundException){return (0,0,0,0);}
+        catch(EntryPointNotFoundException){return (0,0,0,0);}
+    }
+    // Looks up an address with Apple's geocoder (iPhone only); poll GeocodeResult: 0 none, 1 looking, 2 found
+    // (with the place as JSON), 3 not found, 4 failed.
+    public static bool CanGeocode=>OS.GetName()=="iOS";
+    public static void Geocode(string query)
+    {
+        if(!CanGeocode)return;
+        try {ng_geocode(query);}
+        catch(DllNotFoundException) { }
+        catch(EntryPointNotFoundException) { }
+    }
+    public static (int State,string Place) GeocodeResult()
+    {
+        if(!CanGeocode)return (0,"");
+        try {
+            IntPtr p=ng_geocode_result(out int state);
+            if(p==IntPtr.Zero)return (state,"");
+            try {return (state,Marshal.PtrToStringUTF8(p)??"");} finally {ng_vault_free_text(p);}
+        }
+        catch(DllNotFoundException){return (4,"");}
+        catch(EntryPointNotFoundException){return (4,"");}
+    }
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_geocode([MarshalAs(UnmanagedType.LPUTF8Str)]string query);
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern IntPtr ng_geocode_result(out int state);
+    [DllImport("__Internal",EntryPoint="ng_vault_free",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_vault_free_text(IntPtr pointer);
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_phone_locate();
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern int ng_phone_location(out double latitude,out double longitude,out double accuracy);
     public static bool CanSavePhotos=>OS.GetName()=="iOS";
     // Starts an add-only save to Photos; poll PhotoStatus: 1 saving, 2 saved, 3 not allowed, 4 failed.
     public static bool SavePhoto(byte[] image)

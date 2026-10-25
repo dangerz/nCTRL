@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace NGarage.Core;
 
 /// <summary>The car's last known location, shown (marked old) when a new one can't be requested.
-/// Coordinates are sensitive: kept only in the device Keychain and shown only after Face ID.
+/// Coordinates are sensitive: kept only in the device Keychain.
 /// The vehicle is identified by its account-scoped fingerprint, never the VIN.</summary>
 public static class LastLocation
 {
@@ -37,6 +37,7 @@ public static class LastLocation
         using(var w=new Utf8JsonWriter(stream)) {
             w.WriteStartObject();w.WriteNumber("version",1);w.WriteString("vehicle",vehicle);
             w.WriteNumber("lat",at.Latitude);w.WriteNumber("lon",at.Longitude);
+            if(at.Heading is double heading)w.WriteNumber("head",heading);
             w.WriteString("reported",at.ReportedAt.Length>40?"":at.ReportedAt);
             w.WriteString("received",at.RetrievedAt.ToString("O",CultureInfo.InvariantCulture));
             w.WriteEndObject();
@@ -56,7 +57,8 @@ public static class LastLocation
             if(!DateTimeOffset.TryParse(r.GetProperty("received").GetString(),CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal,out var received))return null;
             // A clock change must not make an old location look new.
             if(received>now)received=now;
-            return new(lat,lon,reported.Length>40?"":reported,received);
+            double? heading=r.TryGetProperty("head",out var head)&&head.TryGetDouble(out double h)&&h>=0&&h<360?h:null;
+            return new(lat,lon,reported.Length>40?"":reported,received,heading);
         } catch(Exception) {return null;}
     }
 }

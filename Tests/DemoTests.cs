@@ -39,7 +39,8 @@ static class DemoTests
         Check(c.Pending?.Outcome==RemoteOutcome.Confirmed,"Flash lights is confirmed");
 
         var at=await c.LocateAsync(default);
-        Check(at.Latitude==DemoHyundai.Latitude&&at.Longitude==DemoHyundai.Longitude,"Location is the public demo place");
+        Check(at.Latitude==DemoHyundai.Latitude&&at.Longitude==DemoHyundai.Longitude&&at.Heading==DemoHyundai.Heading&&
+            s.StatusLocation?.Heading==DemoHyundai.Heading,"Location is the public demo place, with the way the car faces");
         var view=await c.CaptureSurroundViewAsync(null,default,(_,_)=>Task.CompletedTask);
         Check(Encoding.ASCII.GetString(view.Image)=="demo-picture","Surround View returns the given picture");
 

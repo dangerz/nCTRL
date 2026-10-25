@@ -3,17 +3,14 @@ using NGarage.Core;
 using System;
 using System.Threading.Tasks;
 
-// Opening the app shows the Car screen from the last saved status without any request or Face ID.
-// The first Update, command or location request of each foreground session asks for Face ID
-// (which also unlocks the saved login), then the rest of that session needs no further prompts.
+// Opening the app shows the Car screen from the last saved status straight away, then reads a new one
+// (ReadOnOpen). Like the Hyundai app, no request needs Face ID: the saved login is read from the Keychain.
 public partial class Main
 {
     private const string SnapshotFile="user://vehicle-snapshot.json";
     private VehicleSnapshot? snapshot;
     private LiveVehicleState? persistedState;
-    // Face ID (or a typed sign-in) has verified the owner since the app last came to the foreground.
-    private bool sessionVerified;
-    // The saved login unlocked by that Face ID, kept in memory for this foreground session only.
+    // The saved login, read from the Keychain for this foreground session only.
     private SavedAccount? sessionAccount;
 
     private bool Offline=>liveMode&&connection==null;
@@ -21,7 +18,6 @@ public partial class Main
     private string VehicleName=>connection?.Selected is {} v?(v.Name.Length>0?v.Name:v.Model):snapshot?.Name??"";
     private string VinTail=>connection?.Selected is {} v?v.Vin[^6..]:snapshot?.VinTail??"";
     private int? VehicleGeneration=>connection?.Selected?.Generation??(Offline?snapshot?.Generation:null);
-    private bool NeedsFaceId=>vault.HasAccount&&sessionAccount==null&&connection is not {Selected: not null,IsAuthenticated: true};
 
     private bool EnterOffline()
     {
@@ -50,19 +46,18 @@ public partial class Main
         if(!smoke&&FileAccess.FileExists(SnapshotFile))DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(SnapshotFile));
     }
 
-    /// <summary>Returns a signed-in client for the selected vehicle, asking for Face ID first if this
-    /// foreground session has not been verified. FreshRead is true when signing in already read status.
+    /// <summary>Returns a signed-in client for the selected vehicle, signing in with the saved login when
+    /// needed. FreshRead is true when signing in already read status.
     /// Returns no client when the user must choose a vehicle or accept the disclaimer first.</summary>
     private async Task<(HyundaiUsClient? Client,bool FreshRead)> AcquireSession(int version)
     {
-        if(connection is {Selected: not null,IsAuthenticated: true} ready&&(sessionVerified||!vault.HasAccount))return (ready,false);
+        if(connection is {Selected: not null,IsAuthenticated: true} ready)return (ready,false);
         if(!vault.HasAccount) {
             // Session-only login that Hyundai ended: the typed credentials are gone, so sign in again.
             liveMode=false;screen="Connect";
             throw new BluelinkException("Sign in to Bluelink again.");
         }
         sessionAccount??=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
-        sessionVerified=true;
         var account=sessionAccount;
         if(connection is {Selected: not null,IsAuthenticated: true} existing)return (existing,false);
         if(HoldForDisclaimer(account.Email,account.Password,account.Pin,true,true)){DiscardParked();return (null,false);}
@@ -89,7 +84,7 @@ public partial class Main
         if(active==null)return false;
         if(!active.SessionValid||active.Selected==null||key!=VehicleLink.AccountKey(account.Email)){active.Dispose();return false;}
         connection?.Dispose();connection=active;accountKey=key;
-        history.Add(("Session resumed",vault.BiometricName+" verified. No new sign-in was sent.",true));
+        history.Add(("Session resumed","No new sign-in was sent.",true));
         return true;
     }
     private static string Updated(DateTimeOffset? at)

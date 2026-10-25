@@ -90,7 +90,7 @@ public partial class Main
         },"Waiting for confirmation…");
         // Resume the held sign-in only after the gate is recorded; it never ran a request before.
         if(!accepted||version!=liveEpoch)return;
-        // With saved status, open the Car screen; the first request asks for Face ID.
+        // With saved status, open the Car screen.
         if(pending==null){if(EnterOffline())Render();return;}
         if(pending.FromVault)await UnlockAccount();
         else await SignIn(pending.Email,pending.Password,pending.Pin,pending.Remember);

@@ -32,7 +32,7 @@ public partial class Main
         await RunLive(async()=>{
             var active=connectionFactory();connection=active;
             var vehicles=await active.LoginAsync(DemoHyundai.Email,"demo","0000",liveLifetime.Token);EnsureLive(version);
-            accountKey=VehicleLink.AccountKey(DemoHyundai.Email);sessionVerified=true;enrollment=vehicles;selectedIndex=0;
+            accountKey=VehicleLink.AccountKey(DemoHyundai.Email);enrollment=vehicles;selectedIndex=0;
             await ConnectVehicle(active,vehicles[0],version);
             notice="Demo car ready. Everything here is pretend: nothing is sent to Hyundai.";noticeError=false;
         },"Starting the demo…");

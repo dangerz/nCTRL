@@ -23,6 +23,13 @@ public static class Units
     public static string Radius(int meters,UnitSystem units)=>units==UnitSystem.Metric?meters+" m":N(Math.Round(meters*FeetPerMeter/10)*10)+" ft";
     /// <summary>A temperature setting moved one step: 5°F, or 2°C landing on whole degrees.</summary>
     public static double Step(double f,int direction,UnitSystem units)=>units==UnitSystem.Metric?Fahrenheit(Math.Round(Celsius(f))+2*direction):Math.Round(f)+5*direction;
+    /// <summary>A short distance: feet or meters close by, then miles or km with one decimal under 10.</summary>
+    public static string Short(double meters,UnitSystem units)
+    {
+        if(units==UnitSystem.Metric)return meters<1000?N(Math.Round(meters/10)*10)+" m":N(meters/1000,meters<10000?"0.0":"0")+" km";
+        double miles=meters/1609.344;
+        return miles<0.1?N(Math.Round(meters*FeetPerMeter/10)*10)+" ft":N(miles,miles<10?"0.0":"0")+" mi";
+    }
     public static string Name(UnitSystem units)=>units==UnitSystem.Metric?"metric":"imperial";
     public static UnitSystem Parse(string? name)=>name=="metric"?UnitSystem.Metric:UnitSystem.Imperial;
 }

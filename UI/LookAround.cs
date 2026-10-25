@@ -59,7 +59,7 @@ public partial class Main
             throw new BluelinkException(ex.Message+" Surround View may not be available for this vehicle or account.",ex.HttpStatus,ex.ApiErrorCode,ex.ApiSubCode);
         }
         finally {if(version==liveEpoch)lookCapturing=false;}
-    },NeedsFaceId?"Waiting for "+vault.BiometricName+"…":"Asking the car for a Surround View picture…",CaptureLook);
+    },"Asking the car for a Surround View picture…",CaptureLook);
     private static Texture2D? PictureTexture(byte[] bytes)
     {
         if(bytes.Length<4)return null;

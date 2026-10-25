@@ -46,17 +46,15 @@ static class VaultTests
         var read=await vault.UnlockAsync(default);Check(read.Password==account.Password,"Authenticated bridge data returned");
         var reopened=new AccountVault(bridge);Check(reopened.HasAccount&&(await reopened.UnlockAsync(default)).Password==account.Password,"New coordinator unlocks an existing native account");
         bridge.Fail=true;await Rejected(()=>vault.UnlockAsync(default),"cancelled");Check(vault.HasAccount,"Cancelled unlock preserves encrypted account");bridge.Fail=false;
-        bridge.Available=false;await Rejected(()=>vault.UnlockAsync(default),"unavailable");
+        bridge.Available=false;Check(vault.Available&&(await vault.UnlockAsync(default)).Password==account.Password,"The saved login needs no biometrics");
         await vault.ForgetAsync(default);Check(!vault.HasAccount&&bridge.Data==null,"Forget still works without enrolled biometrics");bridge.Available=true;
         bridge.Hang=true;using(var cts=new CancellationTokenSource(20)){
             try{await vault.UnlockAsync(cts.Token);throw new Exception("No cancellation");}
             catch(OperationCanceledException){Check(bridge.Cancels==1,"Cancellation cancels native operation");}}
         bridge.Hang=false;await vault.SaveAsync(account,default);Check(vault.HasAccount,"Serialized gate recovers after cancellation");
-        foreach(var reason in new[]{(-1,"passcode"),(-2,"Set up"),(-3,"locked out"),(-4,"permission description")}) {
-            bridge.Status=reason.Item1;int starts=bridge.Starts;
-            Check(!vault.Available&&vault.UnavailableReason.Contains(reason.Item2),"Native capability failure has an actionable label");
-            await Rejected(()=>vault.UnlockAsync(default),"unavailable");
-            Check(bridge.Starts==starts,"Unavailable capability never starts biometric authentication");
+        foreach(int status in new[]{-1,-2,-3,-4}) {
+            bridge.Status=status;
+            Check(vault.Available&&(await vault.UnlockAsync(default)).Pin==account.Pin,"Saving and reading the login don't depend on Face ID being set up");
         }
         await vault.ForgetAsync(default);Check(!vault.HasAccount,"Missing Face ID usage text still allows forgetting an account");
         bridge.Status=2;await vault.SaveAsync(account,default);

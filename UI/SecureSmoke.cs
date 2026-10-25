@@ -64,52 +64,49 @@ public partial class Main
             await LoadPlaces();if(!placesPersisted)throw new Exception("Ignored places are not stored with the native bridge");
             await StorePlaces(new(){new IgnoredPlace("Home",40.111111,-74.222222)},"Saved.");
             if(!fake.Places.Contains("\"Home\""))throw new Exception("Ignored place was not saved to the Keychain item");
-            // Backgrounding parks the idle session; returning opens the saved status with no Face ID or request.
-            int tokens=http.Tokens,unlocks=fake.Unlocks,sent=http.Requests;
+            // Backgrounding parks the idle session; returning shows the saved status straight away.
+            int tokens=http.Tokens,sent=http.Requests;
+            int Prompts()=>fake.Ops.Count(op=>op=="authenticate");int prompts=Prompts();
             _Notification((int)NotificationApplicationPaused);
             if(connection!=null||enrollment!=null)throw new Exception("Background did not clear the live session");
             if(canvas.Visible)throw new Exception("Background left the old vehicle canvas visible");
             if(parked==null)throw new Exception("Background did not park the idle signed-in session");
             _Notification((int)NotificationApplicationResumed);await Settle();
             if(!canvas.Visible||!Offline||screen!="Car"||CurrentState?.Battery!=78)throw new Exception("Returning did not open the Car screen with the saved status");
-            if(fake.Unlocks!=unlocks||http.Requests!=sent)throw new Exception("Opening the app asked for Face ID or sent a request");
             if(canvas.GetNodeOrNull<Label>("LastUpdated")?.Text.StartsWith("Updated")!=true)throw new Exception("Car screen does not show when status last updated");
             await Capture("20-saved-status-test.png");
+            // Reading on open: inside the read limit it is skipped quietly, with no warning.
+            ReadOnOpen();await Settle();
+            if(http.Requests!=sent||pendingOverride!=null||noticeError)throw new Exception("Reading on open inside the read limit sent a request or warned");
+            // Past the limit it reads once, reusing the parked session: no Face ID, no new sign-in.
+            await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);
+            ReadOnOpen();await Settle();
+            if(http.Requests!=sent+1||!http.LastPath.EndsWith("/vehicleStatus")||connection==null||parked!=null||http.Tokens!=tokens||Prompts()!=prompts)
+                throw new Exception("Reading on open did not read once without Face ID or a new sign-in");
             // The status report's location was kept in its own (fake) Keychain item, by vehicle fingerprint only.
             if(!fake.Location.Contains("40.111111")||fake.Location.Contains("TESTVIN")||fake.Location.Contains("tester"))
                 throw new Exception("Last known location was not stored by vehicle fingerprint");
-            // As after a relaunch: shown from the Keychain without Face ID, marked old. Cancelling the new request's Face ID keeps it.
-            savedLocation=null;storedLocation=null;savedLoaded=false;
-            fake.CancelNext=true;await OpenVehicleLocation();
-            if(fake.Unlocks!=unlocks+1||http.Requests!=sent||canvas.GetNodeOrNull<Label>("LocationOld")==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null)
-                throw new Exception("Saved status did not show the old location without Face ID");
+            // As after a relaunch: the old location shows from the Keychain, marked old, then a new one is requested with no prompt.
+            EndLiveSession();savedLocation=null;storedLocation=null;savedLoaded=false;sent=http.Requests;
+            Navigate("Locate");await ShowOldLocation();
+            if(http.Requests!=sent||canvas.GetNodeOrNull<Label>("LocationOld")==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null)
+                throw new Exception("Saved status did not show the old location");
             await Capture("50-old-location-saved-status-test.png");
-            Navigate("Car");unlocks=fake.Unlocks;
-            // The first request asks for Face ID; cancelling sends nothing.
-            fake.CancelNext=true;await RefreshLive(false);
-            if(fake.Unlocks!=unlocks+1||http.Requests!=sent||connection!=null||!Offline)throw new Exception("Cancelled Face ID still sent a request");
-            // Face ID succeeds: the parked session is reused without a new sign-in.
-            await RefreshLive(false);
-            if(fake.Unlocks!=unlocks+2||connection==null||parked!=null||http.Tokens!=tokens)throw new Exception("Face ID did not resume the parked session without signing in");
+            await UpdateVehicleLocation();
+            if(!http.LastPath.EndsWith("/findMyCar")||Prompts()!=prompts||canvas.GetNodeOrNull<Label>("LocationOld")!=null)
+                throw new Exception("A new location was not requested without Face ID");
             if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
-            // On phones an override needs the device check; cancelling it sends nothing.
-            sent=http.Requests;await RefreshLive(false);
+            // On phones an override still needs the device check; cancelling it sends nothing.
+            Navigate("Car");sent=http.Requests;await RefreshLive(false);
             if(pendingOverride==null||http.Requests!=sent)throw new Exception("Read cooldown did not warn");
             fake.CancelNext=true;canvas.GetNode<Button>("OverrideConfirm").EmitSignal(Godot.Button.SignalName.Pressed);
             for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(pendingOverride!=null||http.Requests!=sent||!notice.Contains("not confirmed"))throw new Exception("Cancelled device check still sent an override request");
-            // Later requests in the same session need no further Face ID.
-            // Tapping the padlock on the car sends the same toggle as the door button.
-            unlocks=fake.Unlocks;Navigate("Car");canvas.GetNode<Button>("LockBadge").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Commands need no Face ID either. Tapping the padlock sends the same toggle as the door button.
+            prompts=Prompts();Navigate("Car");canvas.GetNode<Button>("LockBadge").EmitSignal(Godot.Button.SignalName.Pressed);
             for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            if(fake.Unlocks!=unlocks||http.Commands!=1)throw new Exception("A second request in the same session asked for Face ID again");
-            // After backgrounding, the next request asks again.
-            _Notification((int)NotificationApplicationPaused);_Notification((int)NotificationApplicationResumed);await Settle();
-            if(!Offline||fake.Unlocks!=unlocks)throw new Exception("Returning to the app asked for Face ID");
-            await RefreshLive(false);
-            if(fake.Unlocks!=unlocks+1)throw new Exception("The first request after backgrounding did not ask for Face ID");
-            if(pendingOverride!=null)canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
-            // Saved status still charging past Hyundai's finish time: the app asks for Face ID and reads once.
+            if(Prompts()!=prompts||http.Commands!=1)throw new Exception("A command asked for Face ID or was not sent");
+            // Saved status still charging past Hyundai's finish time: the app reads once, with no prompt.
             http.Charging=http.ChargingOverdue=true;
             await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);
             await RefreshLive(false);
@@ -118,10 +115,10 @@ public partial class Main
             _Notification((int)NotificationApplicationPaused);_Notification((int)NotificationApplicationResumed);await Settle();
             if(!Offline||canvas.GetNodeOrNull<Label>("ChargeLine")?.Text!="CHARGING")throw new Exception("Saved status does not show the out-of-date charge");
             await ToSignal(GetTree().CreateTimer(16),SceneTreeTimer.SignalName.Timeout);
-            int overdueUnlocks=fake.Unlocks,overdueSent=http.Requests;
+            int overdueSent=http.Requests;
             CheckChargeOverdue();
             for(int i=0;i<600&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
-            if(fake.Unlocks!=overdueUnlocks+1||http.Requests<=overdueSent||connection==null)throw new Exception("An overdue charge on saved status did not ask for Face ID and update");
+            if(Prompts()!=prompts||http.Requests<=overdueSent||connection==null)throw new Exception("An overdue charge on saved status did not update without a prompt");
             http.Charging=http.ChargingOverdue=false;
             Navigate("Settings");
             if(canvas.GetNodeOrNull<Button>("SignOut")==null)throw new Exception("Settings is missing Sign out & forget");
@@ -144,7 +141,7 @@ public partial class Main
             await PassDisclaimerFixture();
             for(int i=0;i<600&&(connection==null||liveBusy);i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(!liveMode||screen!="Car"||connection==null||disclaimer?.AccountKey!=testerKey)throw new Exception("Accepting did not resume the held saved-account sign-in");
-            // A late Face ID result after backgrounding never restores the session.
+            // A late Keychain result after backgrounding never restores the session.
             EndLiveSession();fake.Hold=true;
             var waiting=RefreshLive(false);_Notification((int)NotificationApplicationPaused);await waiting;
             if(connection!=null||liveBusy||!Offline)throw new Exception("Late unlock restored a session after backgrounding");
@@ -170,7 +167,7 @@ public partial class Main
             if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op!="places_load"))
                 throw new Exception("The demo touched secure storage or the disclaimer");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, Face ID on first request, session reuse, biometric cancellation, account re-acceptance, stale-result rejection, ignored places storage, old location without Face ID, overdue charge update with Face ID, forget, demo isolation. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, reading on open without Face ID, session reuse, commands and location without Face ID, override device check, account re-acceptance, stale-result rejection, ignored places storage, old location, overdue charge update, forget, demo isolation. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }

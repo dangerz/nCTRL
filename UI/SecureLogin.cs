@@ -10,7 +10,7 @@ public partial class Main
     private bool rememberDevice=true,manualAccountEntry;
     private int liveEpoch;
     private bool vaultReady;
-    // A signed-in session kept in memory while backgrounded. Face ID must succeed before it is used again.
+    // A signed-in session kept in memory while backgrounded, reused on return while its token is valid.
     private HyundaiUsClient? parked;
     private string parkedAccountKey="";
     private void InitializeVault()
@@ -24,7 +24,7 @@ public partial class Main
     private void EndLiveSession(bool render=true,bool park=false)
     {
         // Backgrounding may park an idle session (selected vehicle, valid token, saved account) so
-        // Face ID can resume it without a new sign-in. Sign-out always discards it.
+        // the app can resume it without a new sign-in. Sign-out always discards it.
         bool keep=!demo&&park&&connection is {Selected: not null,SessionValid: true}&&!liveBusy&&!monitoringCommand&&
             accountKey.Length>0&&vault.HasAccount;
         // Backgrounding again from the locked screen keeps the earlier parked session.
@@ -35,8 +35,8 @@ public partial class Main
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection=null;enrollment=null;liveMode=false;liveBusy=false;
         history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;pendingConfirm=null;pendingPlaceAt=null;
-        lookView=null;lookTexture=null;lookCapturing=false;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;shownLocation=null;shownOld=false;
-        sessionVerified=false;sessionAccount=null;
+        lookView=null;lookTexture=null;lookCapturing=false;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;mapFrame=null;shownLocation=null;shownOld=false;phoneFix=null;phoneNote="";pendingDestination=null;sentDestination=null;destinationText="";destinationTiles.Clear();destinationTilesFor=null;
+        sessionAccount=null;
         screen="Connect";notice="";noticeError=false;
         if(demo)LeaveDemo();
         // With a saved account and status, return to the Car screen showing that (stale) status.
@@ -60,30 +60,29 @@ public partial class Main
         if(!IsInsideTree())return;
         Render();
         if(!smoke)NativeVaultBridge.RestoreForeground();
-        // Back on saved status: an out-of-date charge asks for an update straight away.
-        if(!smoke){CallDeferred(nameof(CheckChargeOverdue));_ = UpdateOutsideTemperature();}
+        // Like the Hyundai app, read status on every return.
+        if(!smoke){ReadOnOpen();_ = UpdateOutsideTemperature();}
     }
     private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
     private void SavedLoginScreen()
     {
-        Title("WELCOME BACK.","Your saved Hyundai account is locked on this device.");
+        Title("WELCOME BACK.","Your Hyundai account is saved on this device.");
         Hero(208,215);
-        Label(24,454,412,72,"Unlock your saved login with "+vault.BiometricName+". Your phone verifies you before releasing the credentials.",14,Muted,false,true);
-        var unlock=LiveButton(24,558,412,52,"Unlock with "+vault.BiometricName,15,()=>_ = UnlockAccount(),true,"BiometricUnlock");
+        Label(24,454,412,72,"nCTRL signs in with your saved login and opens your car.",14,Muted,false,true);
+        var unlock=LiveButton(24,558,412,52,liveBusy?"Signing in…":"Open my car",15,()=>_ = UnlockAccount(),true,"BiometricUnlock");
         unlock.Disabled=liveBusy||!vault.Available;
         LiveButton(24,635,412,46,"Sign in manually",13,()=>{manualAccountEntry=true;Render();});
         LiveButton(24,704,412,46,"Forget saved account",13,()=>_ = ForgetAccount());
         if(!vault.Available&&notice.Length==0)Label(24,778,412,62,vault.UnavailableReason,12,Muted,false,true);
     }
-    // Saved-login screen (no saved status yet): Face ID, then sign in and open the remembered vehicle.
-    // An override retry keeps the unlocked account, so Face ID is not asked twice.
-    private async Task UnlockAccount()
+    // Saved-login screen (no saved status yet): sign in and open the remembered vehicle. Quiet when automatic.
+    private async Task UnlockAccount(bool quiet=false)
     {
         int version=liveEpoch;
         await RunLive(async()=>{
             var (active,_)=await AcquireSession(version);
             if(active!=null&&!liveMode){liveMode=true;screen="Car";}
-        },NeedsFaceId?"Waiting for "+vault.BiometricName+"…":"Signing in to Hyundai…",UnlockAccount);
+        },"Signing in to Hyundai…",quiet?null:()=>UnlockAccount(),quiet);
     }
     private async Task ForgetAccount()
     {

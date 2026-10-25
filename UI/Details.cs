@@ -11,8 +11,7 @@ public partial class Main
         var raw=connection?.RawStatus;
         Title("VEHICLE DETAILS.",raw==null?"Tires and everything Hyundai reports":Updated(connection?.State?.RetrievedAt)+" · everything Hyundai reports");
         if(raw is not JsonElement status) {
-            Label(24,206,412,96,"Tap Update to load tire pressures and every status field Hyundai reports."+
-                (NeedsFaceId?" "+vault.BiometricName+" is required for the first request.":""),14,White,false,true);
+            Label(24,206,412,96,"Tap Update to load tire pressures and every status field Hyundai reports.",14,White,false,true);
         } else {
             Label(24,188,412,22,"TIRES",11,Muted,true);
             var tires=StatusDetails.Tires(status);

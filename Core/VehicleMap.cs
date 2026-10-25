@@ -15,8 +15,50 @@ public sealed record MapTile(int X,int Y,int Zoom,double Left,double Top)
 {
     public string Url=>$"https://tile.openstreetmap.org/{Zoom}/{X}/{Y}.png";
 }
+/// <summary>What the map shows: its center, zoom and size in pixels.</summary>
+public sealed record MapFrame(double Latitude,double Longitude,int Zoom,int Width=412,int Height=320)
+{
+    /// <summary>Where a point falls in this view, in pixels from its top-left (it may be outside).</summary>
+    public (double X,double Y) Pixel(double latitude,double longitude)
+    {
+        var (cx,cy)=VehicleMap.World(Latitude,Longitude,Zoom);var (x,y)=VehicleMap.World(latitude,longitude,Zoom);
+        double world=256.0*(1<<Zoom);
+        // The shorter way around, across the date line.
+        if(x-cx>world/2)x-=world;else if(cx-x>world/2)x+=world;
+        return (x-cx+Width/2.0,y-cy+Height/2.0);
+    }
+    public bool Shows(double latitude,double longitude,double margin=0)
+    {
+        var (x,y)=Pixel(latitude,longitude);
+        return x>=margin&&x<=Width-margin&&y>=margin&&y<=Height-margin;
+    }
+    public double MetersPerPixel=>156543.03392*Math.Cos(Latitude*Math.PI/180)/(1<<Zoom);
+}
 public static class VehicleMap
 {
+    // Your phone's position is shown with the car when it is this close; farther away, an arrow points to it.
+    public const double FitMeters=8000;
+    public const int CloseZoom=15,FarthestZoom=10,FitMargin=36;
+    /// <summary>The car close up, or (when the phone is within FitMeters) zoomed out just enough to show both.</summary>
+    public static MapFrame Frame(VehicleLocation car,double? phoneLatitude=null,double? phoneLongitude=null,int width=412,int height=320)
+    {
+        Validate(car);
+        var close=new MapFrame(car.Latitude,car.Longitude,CloseZoom,width,height);
+        if(phoneLatitude is not double lat||phoneLongitude is not double lon||!double.IsFinite(lat)||!double.IsFinite(lon)||Math.Abs(lat)>90||Math.Abs(lon)>180||
+           IgnoredPlaces.Meters(car.Latitude,car.Longitude,lat,lon)>FitMeters||close.Shows(lat,lon,FitMargin))return close;
+        double midLat=(car.Latitude+lat)/2,midLon=(car.Longitude+lon)/2;
+        for(int zoom=CloseZoom;zoom>FarthestZoom;zoom--) {
+            var frame=new MapFrame(midLat,midLon,zoom,width,height);
+            if(frame.Shows(car.Latitude,car.Longitude,FitMargin)&&frame.Shows(lat,lon,FitMargin))return frame;
+        }
+        return new MapFrame(midLat,midLon,FarthestZoom,width,height);
+    }
+    internal static (double X,double Y) World(double latitude,double longitude,int zoom)
+    {
+        double count=1<<zoom,lat=Math.Clamp(latitude,-85.05112878,85.05112878)*Math.PI/180;
+        return ((longitude+180)/360*count*256,(1-Math.Log(Math.Tan(lat)+1/Math.Cos(lat))/Math.PI)/2*count*256);
+    }
+    public static IReadOnlyList<MapTile> TilesFor(MapFrame frame)=>Tiles(new VehicleLocation(frame.Latitude,frame.Longitude,""),frame.Width,frame.Height,frame.Zoom);
     public static IReadOnlyList<MapTile> Tiles(VehicleLocation location,int width=412,int height=320,int zoom=15)
     {
         Validate(location);

@@ -60,11 +60,11 @@ public partial class Main
         Label(24,378,412,23,"FOUR-DIGIT BLUELINK SERVICE PIN",11,Muted,true);
         var servicePin=AccountInput(24,406,412,"Service PIN",true);servicePin.MaxLength=4;
         servicePin.VirtualKeyboardType=LineEdit.VirtualKeyboardTypeEnum.Number;
-        var remember=new CheckBox {Position=new(24,471),Size=new(412,40),Text="Save account with "+vault.BiometricName,
+        var remember=new CheckBox {Position=new(24,471),Size=new(412,40),Text="Save account on this phone",
             ButtonPressed=rememberDevice && vault.Available,Disabled=liveBusy||!vault.Available};
         remember.AddThemeFontOverride("font",regular);remember.AddThemeFontSizeOverride("font_size",13);
         remember.Toggled+=value=>rememberDevice=value;canvas.AddChild(remember);
-        Label(24,519,412,70,vault.Available?"Saved credentials stay on this phone. The app opens to your car's last status; "+vault.BiometricName+" is required for the first update or command each time you return.":
+        Label(24,519,412,70,vault.Available?"Saved credentials stay in this phone's Keychain, never synced. The app opens to your car's last status and updates it each time you open it.":
             vault.UnavailableReason+" Nothing will be saved.",12,Muted,false,true);
         LiveButton(24,610,412,53,liveBusy?"Signing in…":"Sign in to Hyundai",15,()=>{
             string e=email.Text,p=pass.Text,s=servicePin.Text;
@@ -91,7 +91,6 @@ public partial class Main
             var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
             accountKey=VehicleLink.AccountKey(email);BindDisclaimer();
             // Typing the password verifies the owner for this foreground session.
-            sessionVerified=true;
             enrollment=vehicles;selectedIndex=0;screen="Connect";notice="Signed in. Select your vehicle.";
             try {
                 if(remember) {
@@ -149,7 +148,8 @@ public partial class Main
         EndLiveSession();notice="Session ended. Saved login, if any, remains protected.";Render();
     }
     // retry re-runs a user-initiated request after an override; automatic work passes none.
-    private async Task RunLive(Func<Task> work,string progress,Func<Task>? retry=null)
+    // quiet: automatic work. Going past a limit is never offered; a refusal just leaves things as they are.
+    private async Task RunLive(Func<Task> work,string progress,Func<Task>? retry=null,bool quiet=false)
     {
         if(liveBusy)return;
         int version=liveEpoch;
@@ -157,7 +157,7 @@ public partial class Main
         try {await work();EnsureLive(version);await RememberLocation(version);}
         catch(Exception) when(version!=liveEpoch) { }
         catch(VaultException ex){notice=ex.Message;noticeError=true;}
-        catch(RequestLimitException ex){OfferOverride(ex,retry);}
+        catch(RequestLimitException ex){if(quiet){notice="";noticeError=false;}else OfferOverride(ex,retry);}
         catch(BluelinkException ex){notice=ex.Message;noticeError=true;}
         catch(OperationCanceledException){notice="Request interrupted. For a command, the outcome may be unknown. Refresh before retrying.";noticeError=true;}
         catch(HttpRequestException){notice="Could not reach Hyundai. Check your connection. No automatic retry was sent.";noticeError=true;}
@@ -182,6 +182,7 @@ public partial class Main
         else if(screen=="Details")LiveDetails();
         else if(screen=="Alerts")LiveAlerts();
         else if(screen=="Look")LookAround();
+        else if(screen=="Send")SendScreen();
         else LiveSettings();
     }
     private void LiveHome()
@@ -235,7 +236,7 @@ public partial class Main
         CommandFeedback(RemoteButton(24,714,200,46,"Flash lights",13,()=>_ = SendLive(new(ActionKind.Lights)),false,"FlashLights"),ActionKind.Lights,false);
         CommandFeedback(RemoteButton(236,714,200,46,"Horn & lights",13,()=>_ = SendLive(new(ActionKind.HornLights)),false,"HornLights"),ActionKind.HornLights,false);
 
-        if(notice.Length==0)Label(24,778,412,65,connection?.Pending?.Message??(Offline?"Showing the last saved status. Your first update or command asks for "+vault.BiometricName+".":
+        if(notice.Length==0)Label(24,778,412,65,connection?.Pending?.Message??(Offline?"Showing the last saved status.":
             "Cached status may lag the vehicle. Missing data is shown as — or Unknown."),11,Muted,false,true);
     }
     private static string ReportedTime(string? raw)
@@ -345,7 +346,7 @@ public partial class Main
     {
         Title("YOUR CONNECTED GARAGE.","Hyundai USA · device security");
         Label(24,204,412,52,$"{VehicleName}\nVIN …{VinTail}",17,White,true,true);
-        Label(24,262,412,28,"Session: "+(demo?"Demo · nothing is sent to Hyundai":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status · "+vault.BiometricName+" on first request":
+        Label(24,262,412,28,"Session: "+(demo?"Demo · nothing is sent to Hyundai":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status":
             "Expired / denied — sign in again"),13,Muted,false,true);
         Button(24,300,412,42,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
         Button(24,350,412,42,"Range & units  /  "+(units==UnitSystem.Metric?"Metric":"Imperial")+"  ›",13,()=>Navigate("Range"),false,"SettingsRange");
@@ -356,8 +357,7 @@ public partial class Main
         Button(24,550,412,42,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
         Button(24,600,412,42,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
         Button(24,650,412,42,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
-        Label(24,698,412,64,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved securely on this device. The app opens to the last saved status; "+vault.BiometricName+
-            " is required for the first update or command after you open it. Signing out removes the saved login and status.":
+        Label(24,698,412,64,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status.":
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }
     private void LiveActivity()
@@ -394,7 +394,6 @@ public partial class Main
         if(liveBusy||monitoringCommand||!liveMode)return;
         int version=liveEpoch;var token=liveLifetime.Token;
         await RunLive(async()=>{
-            // The first command of a foreground session asks for Face ID before anything is sent.
             var (active,_)=await AcquireSession(version);
             if(active==null)return;
             var before=active.State;var previousReceipt=active.Pending;
@@ -414,7 +413,7 @@ public partial class Main
                     commandMonitor=MonitorLive(active,cmd,dc,before,version,token);
                 }
             }
-        },NeedsFaceId?"Waiting for "+vault.BiometricName+"…":"Sending command to Hyundai…",()=>SendLive(cmd,dc));
+        },"Sending command to Hyundai…",()=>SendLive(cmd,dc));
     }
     private async Task MonitorLive(HyundaiUsClient active,VehicleCommand cmd,int? dc,LiveVehicleState? before,int version,CancellationToken token)
     {
@@ -437,16 +436,15 @@ public partial class Main
             }
         }
     }
-    // Update (cached read) or wake. The first request of a foreground session asks for Face ID.
+    // Update (cached read) or wake.
     // Still reported charging after Hyundai's own finish time: that report is out of date, so read status once
-    // for that estimate, like tapping Update. From saved status that asks for Face ID; cancelling it isn't asked
-    // again for the same report. Never past a limit, and at most once every 10 minutes.
+    // for that estimate, like tapping Update. Never past a limit, and at most once every 10 minutes.
     private string chargeChecked="";
     private DateTimeOffset chargeCheckedAt;
     private void CheckChargeOverdue()
     {
         if(liveBusy||monitoringCommand||screen!="Car"||!liveMode)return;
-        bool unlocked=connection is {Selected: not null,IsAuthenticated: true}&&!NeedsFaceId;
+        bool unlocked=connection is {Selected: not null,IsAuthenticated: true};
         if(!unlocked&&!Offline)return;
         var now=DateTimeOffset.UtcNow;
         if(ChargeEstimate.FullAt(CurrentState) is not DateTimeOffset at||!ChargeEstimate.Overdue(CurrentState,now))return;
@@ -455,12 +453,20 @@ public partial class Main
         chargeChecked=estimate;chargeCheckedAt=now;
         _ = RefreshLive(false);
     }
-    private Task RefreshLive(bool wake)=>RunLive(async()=>{
+    // Like the Hyundai app: each launch and each return to the app reads Hyundai's cached status once (no
+    // wake), or signs in from the saved-login screen. Skipped quietly inside the read limit.
+    private void ReadOnOpen()
+    {
+        if(liveBusy||monitoringCommand||demo||DisclaimerRequired||!vault.HasAccount||!budget.CanAcquire(RequestKind.Read))return;
+        if(Offline)_ = RefreshLive(false,true);
+        else if(!liveMode&&screen=="Connect"&&enrollment==null&&!manualAccountEntry)_ = UnlockAccount(true);
+    }
+    private Task RefreshLive(bool wake,bool quiet=false)=>RunLive(async()=>{
         int version=liveEpoch;
         var (active,freshRead)=await AcquireSession(version);
         if(active==null)return;
         // Signing in already read status; only a wake needs another request.
         if(!freshRead||wake){await active.ReadAsync(wake,liveLifetime.Token);EnsureLive(version);}
         notice="Hyundai status received. Check the reported timestamp.";
-    },NeedsFaceId?"Waiting for "+vault.BiometricName+"…":wake?"Requesting fresh vehicle status…":"Reading Hyundai’s cached status…",()=>RefreshLive(wake));
+    },wake?"Requesting fresh vehicle status…":"Reading Hyundai’s cached status…",quiet?null:()=>RefreshLive(wake),quiet);
 }

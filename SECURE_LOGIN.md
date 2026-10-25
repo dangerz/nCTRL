@@ -1,32 +1,31 @@
-# nCTRL saved login and biometric unlock
+# nCTRL saved login
 
-This revision adds secure phone-side credential persistence, biometric unlock, background locking, and account removal. The Godot UI and app logic remain C#. Small native OS bridges access Apple Keychain/LocalAuthentication and Android Keystore/BiometricPrompt. There is no backend.
+nCTRL saves the login on the phone, in the Keychain, and (like the Hyundai app) uses it without Face ID: the app reads status when it opens, and requests, commands and Send to car need no prompt. Face ID or the passcode is still asked to accept the risk disclaimer and to go past nCTRL's request limits. The Godot UI and app logic remain C#. Small native OS bridges access Apple Keychain/LocalAuthentication and Android Keystore/BiometricPrompt. There is no backend.
 
 ## What the user does
 
-1. Open nCTRL; it starts on the sign-in or saved-account unlock screen.
-2. Enter email, password and the four-digit Bluelink service PIN. On a supported phone, **Save account with Face ID / Touch ID / biometrics** is selected by default and can be turned off.
-3. After Hyundai accepts the account, complete the OS biometric prompt to save it. If saving fails or is cancelled, the current manual sign-in can continue for that session; the UI reports that it was not saved. An existing saved login is unchanged by a failed replacement.
-4. On subsequent launches, tap **Unlock with Face ID** (or the available biometric). The native vault releases the credentials only after authentication, then the app logs into Hyundai and opens the previously selected vehicle after checking current enrollment. First use or a missing/account-mismatched vehicle shows selection.
-5. Sending the app to the background ends the foreground session, cancels pending local work and hides the live dashboard. Returning opens the Car screen with the last saved status and no prompt. The first Update, command or location request asks for Face ID, which reads the protected Keychain item; an idle session with a valid token, kept in memory while backgrounded, is then reused for the same account without a new Hyundai sign-in. Otherwise nCTRL signs in with the unlocked login. Face ID and the device check wait until iOS has fully activated the app, so a prompt started during resume is not rejected as non-interactive. A command already sent to Hyundai cannot be recalled by locking the app.
+1. Open nCTRL; it starts on the sign-in screen, or opens the car with the saved login.
+2. Enter email, password and the four-digit Bluelink service PIN. On a supported phone, **Save account on this phone** is selected by default and can be turned off.
+3. After Hyundai accepts the account, it is saved with no prompt. If saving fails, the current manual sign-in continues for that session and the UI says it was not saved.
+4. On later launches the app opens the Car screen with the last saved status, then reads Hyundai's cached status once (no car wake), signing in with the saved login. With no saved status yet, the saved-login screen signs in by itself (or tap **Open my car**). The read is skipped quietly inside the 15-second read limit; an automatic read never offers to go past a limit.
+5. Sending the app to the background ends the foreground session, cancels pending local work and hides the live dashboard. Returning shows the saved status and reads once more; an idle session with a valid token, kept in memory while backgrounded, is reused for the same account without a new Hyundai sign-in. A command already sent to Hyundai cannot be recalled by leaving the app.
 6. **Sign out & forget** clears the active session and deletes the saved account and saved status. The saved-login screen (shown when there is no saved status yet) also has **Forget saved account**.
 
-Manual sign-in remains available when biometrics are unavailable. It never decrypts the saved account as a fallback. If you manually sign in with Save account unchecked, an existing saved login is removed after successful Hyundai authentication. Disabling saved login does not write a plaintext substitute.
-
-Face ID is local authorization to access the saved credentials, not a replacement for Hyundai's authentication or MFA. The current US adapter's MFA limitation remains unchanged.
+If you manually sign in with Save account unchecked, an existing saved login is removed after successful Hyundai authentication. Disabling saved login does not write a plaintext substitute. Anyone holding your unlocked phone can use nCTRL, as with the Hyundai app. The current US adapter's MFA limitation remains unchanged.
 
 ## iPhone / iPad implementation
 
-`Native/iOS/NGarageVault.mm` uses a generic-password Keychain item with:
+`Native/iOS/NGarageVault.mm` keeps the login in a generic-password Keychain item (service `com.ngarage.nctrl.account.v2`) with:
 
-- `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`: a device passcode is required; the item is device-bound and not migratable to another device.
-- `kSecAccessControlBiometryCurrentSet`: reading the item requires the currently enrolled Face ID / Touch ID. Adding or replacing enrolled biometrics invalidates access.
+- `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`: encrypted by iOS with the device's keys, readable only while the phone is unlocked, device-bound and never in backups to another device.
 - `kSecAttrSynchronizable = false`: no iCloud Keychain synchronization.
-- A fresh `LAContext` for each operation, with biometric reuse disabled. No device-passcode or app-level success-flag fallback decrypts the item.
+- No biometric access control, so reading it never prompts.
 
-The same bridge also performs a device-owner check, the `authenticate` operation, used to record risk-disclaimer acceptance. It evaluates `LAPolicyDeviceOwnerAuthentication` (Face ID/Touch ID with the system passcode fallback) in a fresh `LAContext` and reads or writes no Keychain data. Android does not implement this operation yet, so Android builds stay locked at the disclaimer.
+Older builds kept the login behind Face ID (`kSecAccessControlBiometryCurrentSet`, service `com.ngarage.bluelink.credentials.v1`). The first unlock after updating asks for Face ID once to read that item, moves the login to the new item and deletes the old one. Cancelling leaves it in place; signing in again replaces it. Sign out & forget deletes both.
 
-The car's last known location uses another generic-password item, `location_load`/`location_save`/`location_forget`, stored the same way as ignored places (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, not synchronized, no biometric access control, cleared on a fresh install, deleted by Sign out & forget). It holds one location: coordinates, Hyundai's report time, when nCTRL received it, and the account-scoped vehicle fingerprint, never the VIN or email. The app shows it without Face ID, marked old, including from saved status. Android does not implement these operations yet.
+The same bridge also performs a device-owner check, the `authenticate` operation, used to record risk-disclaimer acceptance and to confirm going past a request limit. It evaluates `LAPolicyDeviceOwnerAuthentication` (Face ID/Touch ID with the system passcode fallback) in a fresh `LAContext` and reads or writes no Keychain data. Android does not implement this operation yet, so Android builds stay locked at the disclaimer.
+
+The car's last known location uses another generic-password item, `location_load`/`location_save`/`location_forget`, stored the same way as ignored places (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, not synchronized, no biometric access control, cleared on a fresh install, deleted by Sign out & forget). It holds one location: coordinates, Hyundai's report time, when nCTRL received it, and the account-scoped vehicle fingerprint, never the VIN or email. The app shows it marked old, including from saved status. Android does not implement these operations yet.
 
 Surround View pictures are held in app memory only and dropped when the foreground session ends. **Save to Photos** uses `PHPhotoLibrary` with `PHAccessLevelAddOnly`, so nCTRL can add a picture but never read the library; iOS asks once, and a denial is reported with where to change it. The native bridge links the Photos framework (`ng_photo_save`/`ng_photo_status`).
 

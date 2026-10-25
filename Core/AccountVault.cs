@@ -79,23 +79,19 @@ public sealed class AccountVault
     private readonly SemaphoreSlim gate=new(1,1);
     public AccountVault(IVaultBridge bridge)=>this.bridge=bridge;
     public bool Present=>bridge.Present;
-    public bool Available=>bridge.Present&&bridge.Availability()>0;
+    // The saved login needs no Face ID (like the Hyundai app), only the native Keychain bridge.
+    public bool Available=>bridge.Present;
     public bool HasAccount=>bridge.Present&&bridge.HasAccount();
     public string BiometricName=>bridge.Availability() switch {1=>"Touch ID",2=>"Face ID",_=>"biometrics"};
-    public string UnavailableReason=>bridge.Availability() switch {
-        -1=>"Set a device passcode in Settings to use secure saved login.",
-        -2=>"Set up Face ID or Touch ID in Settings to use secure saved login.",
-        -3=>"Biometrics are locked out. Unlock your device with its passcode, then reopen nCTRL.",
-        -4=>"This iOS build is missing its Face ID permission description. Re-export with nCTRL Secure Vault enabled.",
-        -6=>"This build is missing the native secure-storage bridge. Install a rebuilt mobile app.",
-        _=>Present?"Biometrics are unavailable. Check biometric enrollment and app permission in Settings.":
-            "Secure saved login is available in supported phone builds. Manual login here is session-only."
-    };
+    public string UnavailableReason=>bridge.Availability()==-6?"This build is missing the native secure-storage bridge. Install a rebuilt mobile app.":
+        "Saved login is available in supported phone builds. Manual login here is session-only.";
     public async Task SaveAsync(SavedAccount account,CancellationToken ct)
     {
         if(!Available)throw new VaultException("unavailable");
         await Request("save",account.Encode(),ct);
     }
+    // Reads the saved login without a prompt. A login saved by an older build (behind Face ID) asks for
+    // Face ID once and is moved to the new item.
     public async Task<SavedAccount> UnlockAsync(CancellationToken ct)
     {
         if(!Available)throw new VaultException("unavailable");
@@ -113,7 +109,7 @@ public sealed class AccountVault
     public Task<string> LoadPlacesAsync(CancellationToken ct)=>bridge.Present?Request("places_load","",ct):throw new VaultException("unavailable");
     public Task SavePlacesAsync(string json,CancellationToken ct)=>bridge.Present?Request("places_save",json,ct):throw new VaultException("unavailable");
     public Task ForgetPlacesAsync(CancellationToken ct)=>bridge.Present?Request("places_forget","",ct):throw new VaultException("unavailable");
-    // The car's last known location: its own device-only item, shown by the app only after Face ID. Empty text means none.
+    // The car's last known location: its own device-only item. Empty text means none.
     public Task<string> LoadLocationAsync(CancellationToken ct)=>bridge.Present?Request("location_load","",ct):throw new VaultException("unavailable");
     public Task SaveLocationAsync(string json,CancellationToken ct)=>bridge.Present?Request("location_save",json,ct):throw new VaultException("unavailable");
     public Task ForgetLocationAsync(CancellationToken ct)=>bridge.Present?Request("location_forget","",ct):throw new VaultException("unavailable");

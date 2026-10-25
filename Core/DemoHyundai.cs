@@ -21,6 +21,10 @@ public sealed class DemoHyundai : HttpMessageHandler
     public const double Latitude=40.7812,Longitude=-73.9665;
     // The demo's pretend outside temperature: cold enough to show the cold-weather range. No weather is requested.
     public const double OutsideF=28;
+    // Parked facing north-east.
+    public const double Heading=40;
+    // The last destination sent to the pretend car (its request body), for the demo's own checks.
+    public string LastDestination {get; private set;}="";
     private readonly object sync=new();
     private readonly TimeProvider clock;
     private readonly byte[] picture;
@@ -52,9 +56,10 @@ public sealed class DemoHyundai : HttpMessageHandler
                 case "/ac/v2/evc/charge/stop":charging=false;json="";tid="demo";break;
                 case "/ac/v2/evc/charge/targetsoc/set":Targets(body);json="";tid="demo";break;
                 case "/ac/v2/rmt/getRunningStatus":json=Json(w=>w.WriteString("status","SUCCESS"));break;
-                case "/ac/v2/rcs/rfc/findMyCar":json=Json(w=>{Coord(w);w.WriteString("time",Now());});break;
+                case "/ac/v2/rcs/rfc/findMyCar":json=Json(w=>{Coord(w);w.WriteNumber("head",Heading);w.WriteString("time",Now());});break;
                 case "/ac/v2/svm/findMyCarSVM":capturedAt=clock.GetUtcNow();json="";break;
                 case "/ac/v2/svm/getSVMDetails":json=Picture();break;
+                case "/ac/v2/rcs/stc/sendPoi":LastDestination=body;json="";tid="demo";break;
                 default:
                     if(path.StartsWith("/ac/v2/enrollment/details/",StringComparison.Ordinal)){json=Enrollment();break;}
                     return new HttpResponseMessage(HttpStatusCode.NotFound){Content=new StringContent("{\"errorCode\":404}",Encoding.UTF8,"application/json")};
@@ -89,7 +94,7 @@ public sealed class DemoHyundai : HttpMessageHandler
         w.WriteEndObject();
         w.WriteStartObject("tirePressureLamp");w.WriteNumber("tirePressureWarningLampAll",0);w.WriteEndObject();
         w.WriteBoolean("washerFluidStatus",false);w.WriteBoolean("breakOilStatus",false);w.WriteBoolean("smartKeyBatteryWarning",false);
-        w.WriteStartObject("vehicleLocation");Coord(w);w.WriteString("time",Now());w.WriteEndObject();
+        w.WriteStartObject("vehicleLocation");Coord(w);w.WriteNumber("head",Heading);w.WriteString("time",Now());w.WriteEndObject();
         w.WriteStartObject("evStatus");
         w.WriteNumber("batteryStatus",soc);w.WriteNumber("batteryPlugin",1);w.WriteBoolean("batteryCharge",charging);
         if(charging) {

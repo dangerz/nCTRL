@@ -33,6 +33,8 @@ public partial class Main
         public bool Moving;
         // Surround View: a picture whose capture time moves forward once a capture is requested.
         public string SvmImage="";public int SvmRequests;
+        // Destinations sent to the car.
+        public int Destinations;
         public string FailStage="";
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
@@ -51,13 +53,14 @@ public partial class Main
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(svm,Encoding.UTF8,"application/json")});
             }
             if(route=="/ac/v2/svm/findMyCarSVM")SvmRequests++;
+            if(route=="/ac/v2/rcs/stc/sendPoi")Destinations++;
             string body=route switch {
                 "/v2/ac/oauth/token"=>"{\"access_token\":\"fixture\",\"refresh_token\":\"fixture\",\"expires_in\":3600}",
                 "/ac/v2/enrollment/details/tester%40example.invalid" or "/ac/v2/enrollment/details/tester@example.invalid"=>"{\"enrolledVehicleDetails\":[{\"vehicleDetails\":{\"regid\":\"test\",\"vin\":\"TESTVIN0000000001\",\"nickName\":\"Test Ioniq 5 N\",\"modelCode\":\"IONIQ5N\",\"vehicleGeneration\":3,\"evStatus\":\"E\"}}]}",
                 "/ac/v2/rcs/rvs/vehicleStatus"=>"{\"vehicleStatus\":{\"dateTime\":\"2026-10-22T10:00:00Z\",\"doorLock\":true,\"battery\":{\"batSoc\":87},\"doorOpen\":{\"frontLeft\":0,\"frontRight\":0},\"tirePressure\":{\"tirePressureFrontLeft\":36,\"tirePressureFrontRight\":36,\"tirePressureRearLeft\":35,\"tirePressureRearRight\":29},\"tirePressureLamp\":{\"tirePressureWarningLampAll\":1,\"tirePressureWarningLampRearRight\":1},\"vehicleLocation\":{\"coord\":{\"lat\":40.111111,\"lon\":-74.222222}},\"airCtrlOn\":false,\"airTemp\":{\"value\":\"72\",\"unit\":1},\"evStatus\":{\"batteryStatus\":78,\"batteryPlugin\":2,\"batteryCharge\":false,\"drvDistance\":[{\"rangeByFuel\":{\"totalAvailableRange\":{\"value\":184,\"unit\":3}}}],\"reservChargeInfos\":{\"targetSOClist\":[{\"plugType\":0,\"targetSOClevel\":90},{\"plugType\":1,\"targetSOClevel\":80}]}}}}",
-                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl" or "/ac/v2/evc/charge/targetsoc/set" or "/ac/v2/svm/findMyCarSVM"=>"",
+                "/ac/v2/rcs/rdo/on" or "/ac/v2/evc/fatc/start" or "/ac/v2/rcs/rhl/light" or "/ac/v2/rcs/rhl/hnl" or "/ac/v2/evc/charge/targetsoc/set" or "/ac/v2/svm/findMyCarSVM" or "/ac/v2/rcs/stc/sendPoi"=>"",
                 "/ac/v2/rmt/getRunningStatus"=>"{\"status\":\"SUCCESS\"}",
-                "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"time\":\"2026-10-23T10:00:00Z\"}",
+                "/ac/v2/rcs/rfc/findMyCar"=>"{\"coord\":{\"lat\":40.25,\"lon\":-74.5},\"head\":135,\"time\":\"2026-10-23T10:00:00Z\"}",
                 _=>throw new Exception("Unexpected fixture route")
             };
             if(Unhealthy&&route.EndsWith("/vehicleStatus"))
@@ -71,7 +74,7 @@ public partial class Main
             var response=new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(body,Encoding.UTF8,"application/json")};
             if(route.EndsWith("/rdo/on")){Commands++;response.Headers.Add("tmsTid","fixture-command");}
             // Tracked, so the follow-up check confirms on its first try instead of reading status for two minutes.
-            if(route.EndsWith("/fatc/start")||route.EndsWith("/targetsoc/set"))response.Headers.Add("tmsTid","fixture-command");
+            if(route.EndsWith("/fatc/start")||route.EndsWith("/targetsoc/set")||route.EndsWith("/sendPoi"))response.Headers.Add("tmsTid","fixture-command");
             return Task.FromResult(response);
         }
     }
@@ -239,7 +242,40 @@ public partial class Main
             await OpenVehicleLocation();
             if(connection!.Location==null||canvas.GetNodeOrNull<Button>("VehicleMap")==null||fixture.Commands!=0)
                 throw new Exception("Location entry did not automatically load map without a command");
-            await Capture("19-vehicle-map-test.png");Navigate("Car");
+            if(canvas.GetNodeOrNull<CarMarker>("VehicleMap/CarMarker") is not {Heading: 135} marker||marker.Position!=new Vector2(176,130))
+                throw new Exception("The car marker is not centered and turned the way the car faces");
+            await Capture("19-vehicle-map-test.png");
+            // Your phone close by: the map zooms out to show both. Far away: the car stays close up and an arrow points to you.
+            ShowPhone(40.27,-74.52,25);for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(mapFrame is not {Zoom: <15} near||!near.Shows(40.27,-74.52,VehicleMap.FitMargin)||canvas.GetNodeOrNull<MapMarks>("VehicleMap/MapMarks")?.Phone==null)
+                throw new Exception("A nearby phone position did not fit the map to show both");
+            await Capture("19-vehicle-map-phone-near-test.png");
+            ShowPhone(40.6,-74.9,25);for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(mapFrame is not {Zoom: 15} far||far.Shows(40.6,-74.9))throw new Exception("A distant phone position moved the map off the car");
+            await Capture("19-vehicle-map-phone-far-test.png");
+            phoneFix=null;
+            // Send to car: an address that isn't found, one that is (confirmed, then cancelled: nothing sent), then coordinates sent once.
+            lookupFixture=query=>query.Contains("Main")?new Destination("Corner Cafe","1 Main St, Springfield, DC 20500",40.26,-74.51,"20500"):null;
+            canvas.GetNode<Button>("SendToCar").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(screen!="Send"||canvas.GetNodeOrNull<LineEdit>("DestinationInput")==null)throw new Exception("Send to car does not open from the map");
+            await FindDestination("Nowhere at all");
+            if(pendingDestination!=null||!noticeError)throw new Exception("An address that wasn't found was not reported");
+            await FindDestination("1 Main St");
+            if(pendingDestination?.Name!="Corner Cafe"||canvas.GetNodeOrNull<Label>("DestinationName")?.Text!="Corner Cafe"||canvas.GetNodeOrNull<PlacePin>("DestinationMap/DestinationPin")==null)
+                throw new Exception("A found address is not shown for confirming");
+            await Capture("71-send-confirm-test.png");
+            int sends=fixture.Destinations;
+            canvas.GetNode<Button>("DestinationCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingDestination!=null||fixture.Destinations!=sends)throw new Exception("Cancel sent the destination");
+            await FindDestination("40.26, -74.51");
+            canvas.GetNode<Button>("DestinationSend").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(fixture.Destinations!=sends+1||canvas.GetNodeOrNull<Label>("SentTitle")?.Text!="SENT TO CAR"||!fixture.LastBody.Contains("\"actionType\":\"SAVE\"")||
+                !fixture.LastBody.Contains("\"lat\":\"40.260000\""))throw new Exception("Send to car did not send once and show Sent To Car");
+            await Capture("72-sent-to-car-test.png");
+            canvas.GetNode<Button>("SentOk").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(sentDestination!=null||screen!="Locate")throw new Exception("OK did not close the Sent To Car dialog");
+            Navigate("Car");
             // Within the hourly limit, reopening shows the last known location marked old, without a request.
             int located=fixture.Requests;await OpenVehicleLocation();
             if(fixture.Requests!=located||pendingOverride!=null||canvas.GetNodeOrNull<Label>("LocationOld")?.Text.StartsWith("OLD LOCATION")!=true||
@@ -483,7 +519,7 @@ public partial class Main
             await Capture("66-app-color-purple-test.png");
             foreach(var (hex,name) in new[]{("bb8efa","purple"),("ff8800","custom"),("d0d0d0","graphite")}) {
                 PickAppColor(hex);
-                foreach(string route in new[]{"Car","Climate","Energy","Details","Activity","Settings","Appearance","Range","Limits","Places","Locate","Alerts","Paint","Model","AppColor","Disclaimer"})
+                foreach(string route in new[]{"Car","Climate","Energy","Details","Activity","Settings","Appearance","Range","Limits","Places","Locate","Send","Alerts","Paint","Model","AppColor","Disclaimer"})
                 {Navigate(route);AssertThemed(route+" in "+name);}
                 Navigate("Car");await Capture($"67-car-{name}-test.png");
             }
@@ -514,7 +550,7 @@ public partial class Main
                 throw new Exception("Ending the demo did not put everything back");
             if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
             Skin.Use(AppTheme.DefaultHex);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}

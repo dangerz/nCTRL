@@ -17,12 +17,18 @@ public partial class Main
     private string savedFor="";private bool savedLoaded;
     // What the map shows, and whether it is an old location rather than one just requested.
     private VehicleLocation? shownLocation;private bool shownOld;
+    // The view the tiles were loaded for, and your phone's position (memory only, never sent or saved).
+    private MapFrame? mapFrame;
+    private (double Latitude,double Longitude,double Accuracy)? phoneFix;
+    private bool phoneWatching;private string phoneNote="";
+    private readonly Dictionary<string,Texture2D?> carTops=new();
     private string VehicleKey=>connection?.Selected is {} v&&accountKey.Length>0?VehicleLink.Fingerprint(accountKey,v.Vin):Offline?snapshot?.VehicleFingerprint??"":"";
 
     private async Task OpenVehicleLocation()
     {
         if(liveBusy||!liveMode)return;
         Navigate("Locate");
+        _ = WatchPhone();
         await ShowOldLocation();
         // Request a new location when the limits allow it, or when there is nothing to show.
         if(budget.CanAcquire(RequestKind.Location)||shownLocation==null)await UpdateVehicleLocation();
@@ -60,7 +66,6 @@ public partial class Main
     }
     private Task UpdateVehicleLocation()=>RunLive(async()=>{
         int version=liveEpoch;var token=liveLifetime.Token;
-        // A new location request is a request like any other: the first one of a session asks for Face ID.
         var active=(await AcquireSession(version)).Client;
         if(active==null)return;
         try {await active.LocateAsync(token);}
@@ -72,18 +77,19 @@ public partial class Main
         }
         EnsureLive(version);
         await ShowMap(active.Location!,false,version,token);
-    },NeedsFaceId?"Waiting for "+vault.BiometricName+"…":"Requesting vehicle location…",UpdateVehicleLocation);
+    },"Requesting vehicle location…",UpdateVehicleLocation);
     private async Task ShowMap(VehicleLocation location,bool old,int version,CancellationToken token)
     {
         shownLocation=location;shownOld=old;
-        if(mapLocation!=location){mapTiles.Clear();mapLocation=location;}
+        var frame=VehicleMap.Frame(location,phoneFix?.Latitude,phoneFix?.Longitude);
+        if(mapLocation!=location||mapFrame!=frame){mapTiles.Clear();mapLocation=location;mapFrame=frame;}
         mapStatus="Loading map…";notice=old?"Showing the last known location. Loading map…":"Location received. Loading map…";Render();
         // Smoke tests never contact the map service.
         if(smoke){mapStatus="Map network disabled in offline tests.";notice=old?"Old location fixture loaded.":"Location fixture loaded.";return;}
         try {
             using var cache=new MapTileCache(ProjectSettings.GlobalizePath("user://map-cache"));
             var loaded=new List<(MapTile Tile,Texture2D Texture)>();
-            foreach(var tile in VehicleMap.Tiles(location)) {
+            foreach(var tile in VehicleMap.TilesFor(frame)) {
                 token.ThrowIfCancellationRequested();
                 if(screen!="Locate")break; // No prefetch after leaving the map.
                 var bytes=await cache.LoadAsync(tile,token);EnsureLive(version);
@@ -111,17 +117,53 @@ public partial class Main
             map.ClipContents=true;
             if(mapLocation==loc)foreach(var (tile,texture) in mapTiles)
                 map.AddChild(new TextureRect{Position=new((float)tile.Left,(float)tile.Top),Size=new(256,256),Texture=texture,MouseFilter=MouseFilterEnum.Ignore});
-            var marker=new Label{Position=new(184,138),Size=new(44,44),Text="N",HorizontalAlignment=HorizontalAlignment.Center,
-                VerticalAlignment=VerticalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
-            marker.AddThemeStyleboxOverride("normal",Style(Red,White));
-            marker.AddThemeColorOverride("font_color",White);marker.AddThemeFontOverride("font",bold);map.AddChild(marker);
+            var frame=mapLocation==loc&&mapFrame!=null?mapFrame:VehicleMap.Frame(loc,phoneFix?.Latitude,phoneFix?.Longitude);
+            map.AddChild(new MapMarks {Name="MapMarks",Size=new(412,320),Frame=frame,Car=loc,Phone=phoneFix,Units=units,LabelFont=bold});
+            var (x,y)=frame.Pixel(loc.Latitude,loc.Longitude);
+            var car=new CarMarker {Name="CarMarker",Position=new((float)x-30,(float)y-30),Size=new(60,60),Paint=new(paintHex),Heading=loc.Heading,Picture=CarTop(carModel)};
+            if(car.Picture!=null){var paint=new ShaderMaterial {Shader=paintShader};paint.SetShaderParameter("paint",new Color(paintHex));car.Material=paint;}
+            map.AddChild(car);
             Button(24,538,412,28,"© OpenStreetMap contributors",11,()=>OS.ShellOpen("https://www.openstreetmap.org/copyright"));
-            Label(24,578,412,44,mapStatus,12,White,false,true);
+            Label(24,578,412,44,mapStatus+phoneNote,12,White,false,true).Name="MapStatus";
             Label(24,624,412,35,"Reported: "+ReportedTime(loc.ReportedAt),11,Muted,false,true);
         }
-        LiveButton(24,677,198,47,"Update Location",14,()=>_ = UpdateVehicleLocation(),true,"UpdateLocation");
-        Button(238,677,198,47,"Look around  ›",13,()=>Navigate("Look"),false,"LookAround");
-        Label(24,731,412,40,"Hyundai location requests: once per hour. Map tiles share the viewed area with OpenStreetMap.",10,Muted,false,true);
+        LiveButton(24,677,132,47,"Update location",12,()=>_ = UpdateVehicleLocation(),true,"UpdateLocation");
+        Button(164,677,132,47,"Look around  ›",12,()=>Navigate("Look"),false,"LookAround");
+        Button(304,677,132,47,"Send to car  ›",12,()=>Navigate("Send"),false,"SendToCar");
+        Label(24,731,412,40,"Hyundai location requests: once per hour. Map tiles share the viewed area with OpenStreetMap. Your own position stays on this phone.",10,Muted,false,true);
+    }
+    // Asks iOS for the phone's position while the map is open (the first time, iOS asks you), then fits the map.
+    private async Task WatchPhone()
+    {
+        if(phoneWatching||smoke)return;
+        phoneWatching=true;
+        try {
+            NativeVaultBridge.PhoneLocate();
+            for(int i=0;i<60&&screen=="Locate";i++) {
+                await ToSignal(GetTree().CreateTimer(0.5),SceneTreeTimer.SignalName.Timeout);
+                var (state,lat,lon,accuracy)=NativeVaultBridge.PhoneLocation();
+                phoneNote=state switch {3=>" Location access is off, so only the car is shown.",5=>" This build can't ask for your location.",_=>""};
+                if(state==2){ShowPhone(lat,lon,accuracy);break;}
+                if(state is 0 or >=3){if(screen=="Locate"&&!liveBusy)Render();break;}
+            }
+        } finally {phoneWatching=false;}
+    }
+    private void ShowPhone(double latitude,double longitude,double accuracy)
+    {
+        phoneFix=(latitude,longitude,accuracy);
+        if(screen!="Locate"||liveBusy)return;
+        // Close enough to show together: reload the tiles for the wider view.
+        if(shownLocation is {} car&&VehicleMap.Frame(car,latitude,longitude)!=mapFrame)
+            _ = RunLive(()=>ShowMap(car,shownOld,liveEpoch,liveLifetime.Token),"Loading map…",null,true);
+        else Render();
+    }
+    private Texture2D? CarTop(CarModel model)
+    {
+        if(!carTops.TryGetValue(model.Id,out var picture)) {
+            string path="res://Assets/"+model.TopPicture;
+            carTops[model.Id]=picture=ResourceLoader.Exists(path)?GD.Load<Texture2D>(path):null;
+        }
+        return picture;
     }
     private void OpenMaps(VehicleLocation location)
     {

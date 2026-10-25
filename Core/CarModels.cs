@@ -8,7 +8,11 @@ namespace NGarage.Core;
 // What nCTRL can do with a model. Electric models get every control; gas models connect through the same
 // Hyundai USA service, but nCTRL's climate and charging controls are built for electric models.
 public enum CarSupport { Electric, Gas, PictureOnly }
-public sealed record CarModel(string Id,string Name,string Picture,CarSupport Support);
+public sealed record CarModel(string Id,string Name,string Picture,CarSupport Support)
+{
+    /// <summary>The top-down picture for the map marker (front up, transparent, 128 × 256), when it exists.</summary>
+    public string TopPicture=>Id=="ioniq5n"?"hyundai_ioniq_5_n_top.png":Picture.Replace("_pixel.png","_top.png");
+}
 
 /// <summary>The car pictures nCTRL can show. The picture only changes how the car looks; status and
 /// controls always come from the enrolled vehicle.</summary>

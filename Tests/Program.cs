@@ -22,6 +22,8 @@ static class Program
         await RequestBudgetTests.Run();
         await SurroundViewTests.Run();
         await DemoTests.Run();
+        await DestinationTests.Run();
         await MapTests.Run();
+        MapViewTests.Run();
     }
 }

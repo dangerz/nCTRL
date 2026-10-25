@@ -29,7 +29,8 @@ public sealed record LiveVehicleState(bool? Locked, bool? ClimateOn, int? Temper
 // RetrievedAt is when nCTRL received it, for deciding whether a location is fresh enough to trust.
 // One composite Surround View picture (Hyundai's encoded bytes), its capture time and the car's position then.
 public sealed record SurroundView(byte[] Image,string CapturedAt,VehicleLocation? Location,int? Heading,bool? TrunkOpen,DateTimeOffset RetrievedAt);
-public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt, DateTimeOffset RetrievedAt=default);
+// Heading: the way the car faces, in degrees clockwise from north, when Hyundai reports it.
+public sealed record VehicleLocation(double Latitude, double Longitude, string ReportedAt, DateTimeOffset RetrievedAt=default, double? Heading=null);
 // Openings and warnings as reported; null means Hyundai did not report that item.
 public sealed record VehicleHealth(int? Battery12V,
     bool? FrontLeftDoor, bool? FrontRightDoor, bool? RearLeftDoor, bool? RearRightDoor, bool? Tailgate, bool? Hood,
@@ -222,6 +223,24 @@ public sealed class HyundaiUsClient : IDisposable
         }
         finally { gate.Release(); }
     }
+    /// <summary>Sends a destination to the car's navigation (rcs/stc/sendPoi, as Hyundai's own app does). Counts as
+    /// a command and is never retried. Returns Hyundai's tracking ID when it gives one.</summary>
+    public async Task<string?> SendDestinationAsync(Destination place,CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            NeedVehicle();
+            if(!Destinations.Valid(place))throw new BluelinkException("That place has no valid location. Nothing was sent.");
+            await EnsureToken(ct);
+            budget.Acquire(RequestKind.Command);
+            // The map service ("GIS") handles destinations; other commands go to the car service.
+            var reply=await RequestAsync(RequestKind.Command,HttpMethod.Post,"/ac/v2/rcs/stc/sendPoi",RequestJson.Destination(username,Selected!.Vin,place),true,true,ct,
+                new Dictionary<string,string>{{"to","GIS"},{"APPCLOUD-VIN",Selected!.Vin}},stage:"Send to car");
+            return reply.TransactionId;
+        }
+        finally { gate.Release(); }
+    }
     public async Task<RemoteReceipt> CheckCommandAsync(CancellationToken ct)
     {
         await gate.WaitAsync(ct);
@@ -394,7 +413,7 @@ public sealed class HyundaiUsClient : IDisposable
             var lat=Number(r.Body,"coord.lat");var lon=Number(r.Body,"coord.lon");
             if(lat is null||lon is null||Math.Abs(lat.Value)>90||Math.Abs(lon.Value)>180)
                 throw new BluelinkException("Hyundai did not return a valid location.");
-            Location=new(lat.Value,lon.Value,Text(r.Body,"time"),clock.GetUtcNow());return Location;
+            Location=new(lat.Value,lon.Value,Text(r.Body,"time"),clock.GetUtcNow(),Heading(r.Body,"head"));return Location;
         }
         finally { gate.Release(); }
     }
@@ -514,7 +533,7 @@ public sealed class HyundaiUsClient : IDisposable
             Boolean(v,"windowOpen.frontLeft"),Boolean(v,"windowOpen.frontRight"),Boolean(v,"windowOpen.backLeft"),Boolean(v,"windowOpen.backRight"),
             tires,Boolean(v,"washerFluidStatus"),Boolean(v,"breakOilStatus"),Boolean(v,"smartKeyBatteryWarning"));
         var lat=Number(v,"vehicleLocation.coord.lat");var lon=Number(v,"vehicleLocation.coord.lon");
-        var located=lat is double y&&lon is double x&&Math.Abs(y)<=90&&Math.Abs(x)<=180&&!(y==0&&x==0)?new VehicleLocation(y,x,Text(v,"vehicleLocation.time"),DateTimeOffset.UtcNow):null;
+        var located=lat is double y&&lon is double x&&Math.Abs(y)<=90&&Math.Abs(x)<=180&&!(y==0&&x==0)?new VehicleLocation(y,x,Text(v,"vehicleLocation.time"),DateTimeOffset.UtcNow,Heading(v,"vehicleLocation.head")):null;
         return new(Boolean(v,"doorLock"),Boolean(v,"airCtrlOn"),temp,Percent(Integer(v,"evStatus.batteryStatus")),
             plugin is null?Boolean(v,"evStatus.batteryPlugin"):plugin>0,Boolean(v,"evStatus.batteryCharge"),range,ac,dc,
             Text(v,"dateTime"),DateTimeOffset.UtcNow,Seat(Integer(v,"seatHeaterVentState.flSeatHeatState")),
@@ -537,6 +556,7 @@ public sealed class HyundaiUsClient : IDisposable
     }
     internal static string Text(JsonElement e,string p){var v=At(e,p);return v.ValueKind is JsonValueKind.String? v.GetString()??"":v.ValueKind==JsonValueKind.Number?v.GetRawText():"";}
     private static double? Number(JsonElement e,string p)=>double.TryParse(Text(e,p),NumberStyles.Float,CultureInfo.InvariantCulture,out var n)&&double.IsFinite(n)?n:null;
+    private static double? Heading(JsonElement e,string p)=>Number(e,p) is double h&&h>=0&&h<=360?h%360:null;
     private static int? Integer(JsonElement e,string p){var n=Number(e,p);return n is >=int.MinValue and <=int.MaxValue?(int)n.Value:null;}
     private static bool? Boolean(JsonElement e,string p)=>At(e,p).ValueKind switch {
         JsonValueKind.True=>true,JsonValueKind.False=>false,_=>Text(e,p).ToLowerInvariant() switch {"1" or "true"=>true,"0" or "false"=>false,_=>null}};

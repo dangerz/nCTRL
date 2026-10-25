@@ -6,7 +6,8 @@ deinitialization="ng_vault_deinit"
 [dependencies]
 linked=[]
 embedded=[]
-system=["Foundation.framework", "Security.framework", "LocalAuthentication.framework", "UIKit.framework"]
+system=["Foundation.framework", "Security.framework", "LocalAuthentication.framework", "UIKit.framework", "CoreLocation.framework"]
 linker_flags=["-ObjC", "-Wl,-u,_ng_vault_availability", "-Wl,-u,_ng_vault_has_account", "-Wl,-u,_ng_vault_start", "-Wl,-u,_ng_vault_take_result", "-Wl,-u,_ng_vault_free", "-Wl,-u,_ng_vault_cancel", "-Wl,-u,_ng_vault_resume"]
 [plist]
-NSFaceIDUsageDescription:string="Use Face ID to unlock your saved Hyundai account in nCTRL on this device."
+NSFaceIDUsageDescription:string="Use Face ID to confirm the risk disclaimer and limit overrides in nCTRL."
+NSLocationWhenInUseUsageDescription:string="Show where you are on nCTRL's car map. Your location stays on this iPhone."

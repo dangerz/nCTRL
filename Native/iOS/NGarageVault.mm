@@ -3,6 +3,7 @@
 #import <LocalAuthentication/LocalAuthentication.h>
 #import <UIKit/UIKit.h>
 #import <Photos/Photos.h>
+#import <CoreLocation/CoreLocation.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -40,6 +41,84 @@ NG_EXPORT void ng_photo_save(const unsigned char *bytes, int length) {
     }];
 }
 NG_EXPORT int ng_photo_status(void) {return photoStatus;}
+// The phone's own position, for the map only: asked for while the map is open, never stored or sent.
+// State: 0 none, 1 locating, 2 located, 3 not allowed, 4 failed, 5 usage text missing.
+@interface NGPhoneLocation : NSObject <CLLocationManagerDelegate>
+@end
+static CLLocationManager *phoneManager;
+static NGPhoneLocation *phoneDelegate;
+static volatile int phoneState;
+static double phoneLatitude,phoneLongitude,phoneAccuracy;
+@implementation NGPhoneLocation
+- (void)locationManagerDidChangeAuthorization:(CLLocationManager *)manager {
+    CLAuthorizationStatus status=manager.authorizationStatus;
+    if(status==kCLAuthorizationStatusAuthorizedWhenInUse || status==kCLAuthorizationStatusAuthorizedAlways){if(phoneState==1)[manager requestLocation];}
+    else if(status!=kCLAuthorizationStatusNotDetermined)phoneState=3;
+}
+- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
+    CLLocation *last=locations.lastObject;if(!last)return;
+    phoneLatitude=last.coordinate.latitude;phoneLongitude=last.coordinate.longitude;phoneAccuracy=last.horizontalAccuracy;phoneState=2;
+}
+- (void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error {
+    phoneState=error.code==kCLErrorDenied?3:phoneState==2?2:4;
+}
+@end
+NG_EXPORT void ng_phone_locate(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSLocationWhenInUseUsageDescription"];
+        if(![usage isKindOfClass:NSString.class] || [(NSString *)usage length]==0){phoneState=5;return;}
+        if(!phoneManager){phoneManager=[CLLocationManager new];phoneDelegate=[NGPhoneLocation new];
+            phoneManager.delegate=phoneDelegate;phoneManager.desiredAccuracy=kCLLocationAccuracyNearestTenMeters;}
+        CLAuthorizationStatus status=phoneManager.authorizationStatus;
+        if(status==kCLAuthorizationStatusDenied || status==kCLAuthorizationStatusRestricted){phoneState=3;return;}
+        if(phoneState!=2)phoneState=1;
+        if(status==kCLAuthorizationStatusNotDetermined)[phoneManager requestWhenInUseAuthorization];
+        else [phoneManager requestLocation];
+    });
+}
+NG_EXPORT int ng_phone_location(double *latitude, double *longitude, double *accuracy) {
+    if(phoneState==2 && latitude && longitude && accuracy){*latitude=phoneLatitude;*longitude=phoneLongitude;*accuracy=phoneAccuracy;}
+    return phoneState;
+}
+// Address lookup for Send to car, with Apple's geocoder. State: 0 none, 1 looking, 2 found, 3 not found, 4 failed.
+// The result is JSON (name, address, zip, lat, lon), taken once with ng_geocode_result and freed with ng_vault_free.
+static CLGeocoder *geocoder;
+static volatile int geoState;
+static NSData *geoResult;
+NG_EXPORT void ng_geocode(const char *query) {
+    NSString *text=query?[NSString stringWithUTF8String:query]:nil;
+    if(text.length==0 || text.length>300){geoState=3;return;}
+    geoState=1;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(!geocoder)geocoder=[CLGeocoder new];
+        [geocoder cancelGeocode];
+        [geocoder geocodeAddressString:text completionHandler:^(NSArray<CLPlacemark *> *marks, NSError *error) {
+            CLPlacemark *m=marks.firstObject;
+            if(!m || !m.location){geoState=(!error || error.code==kCLErrorGeocodeFoundNoResult)?3:4;return;}
+            NSString *street=m.thoroughfare?(m.subThoroughfare?[NSString stringWithFormat:@"%@ %@",m.subThoroughfare,m.thoroughfare]:m.thoroughfare):nil;
+            NSMutableArray *parts=[NSMutableArray new];
+            if(street)[parts addObject:street];
+            if(m.locality)[parts addObject:m.locality];
+            NSString *region=[[NSString stringWithFormat:@"%@ %@",m.administrativeArea?:@"",m.postalCode?:@""]
+                stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+            if(region.length)[parts addObject:region];
+            NSDictionary *place=@{@"name":m.name?:street?:text,@"address":[parts componentsJoinedByString:@", "],@"zip":m.postalCode?:@"",
+                @"lat":@(m.location.coordinate.latitude),@"lon":@(m.location.coordinate.longitude)};
+            @synchronized(NSNull.null){geoResult=[NSJSONSerialization dataWithJSONObject:place options:0 error:nil];}
+            geoState=geoResult?2:4;
+        }];
+    });
+}
+NG_EXPORT char *ng_geocode_result(int *state) {
+    if(state)*state=geoState;
+    if(geoState!=2)return NULL;
+    @synchronized(NSNull.null){
+        if(!geoResult)return NULL;
+        char *copy=(char *)calloc(geoResult.length+1,1);
+        if(copy)memcpy(copy,geoResult.bytes,geoResult.length);
+        geoResult=nil;geoState=0;return copy;
+    }
+}
 static NSObject *guard;
 static NSData *resultData;
 static LAContext *activeContext;
@@ -48,10 +127,17 @@ static BOOL busy;
 static NSMutableArray<UIView *> *privacyViews;
 static NSMutableArray *observers;
 static void installPrivacyCover(void);
-static NSString *const service=@"com.ngarage.bluelink.credentials.v1";
+// The saved login: device-bound, never synced, readable while the device is unlocked, no Face ID gate
+// (like the Hyundai app). Older builds kept it behind Face ID in the legacy item; the first unlock moves
+// it here with one Face ID, then deletes the legacy item.
 static NSMutableDictionary *query(void) {
     return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
-              (__bridge id)kSecAttrService:service,(__bridge id)kSecAttrAccount:@"account",
+              (__bridge id)kSecAttrService:@"com.ngarage.nctrl.account.v2",(__bridge id)kSecAttrAccount:@"account",
+              (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
+}
+static NSMutableDictionary *legacyQuery(void) {
+    return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+              (__bridge id)kSecAttrService:@"com.ngarage.bluelink.credentials.v1",(__bridge id)kSecAttrAccount:@"account",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
 }
 // Ignored places (car locations where an unlocked-doors alert is hidden). Sensitive, so Keychain only:
@@ -61,7 +147,7 @@ static NSMutableDictionary *placesQuery(void) {
               (__bridge id)kSecAttrService:@"com.ngarage.nctrl.places.v1",(__bridge id)kSecAttrAccount:@"places",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
 }
-// The car's last known location, stored the same way. The app shows it only after Face ID.
+// The car's last known location, stored the same way.
 static NSMutableDictionary *locationQuery(void) {
     return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
               (__bridge id)kSecAttrService:@"com.ngarage.nctrl.location.v1",(__bridge id)kSecAttrAccount:@"location",
@@ -76,6 +162,7 @@ static void initialize(void) {
         NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
         if(![defaults boolForKey:@"NGVaultInstalledV1"]) {
             SecItemDelete((__bridge CFDictionaryRef)query());
+            SecItemDelete((__bridge CFDictionaryRef)legacyQuery());
             SecItemDelete((__bridge CFDictionaryRef)placesQuery());
             SecItemDelete((__bridge CFDictionaryRef)locationQuery());
             [defaults setBool:YES forKey:@"NGVaultInstalledV1"];
@@ -124,13 +211,25 @@ NG_EXPORT int ng_vault_availability(void) {
     }
     return ctx.biometryType==LABiometryTypeFaceID?2:ctx.biometryType==LABiometryTypeTouchID?1:0;
 }
-NG_EXPORT int ng_vault_has_account(void) {
-    initialize();NSMutableDictionary *q=query();
+static BOOL itemExists(NSMutableDictionary *q) {
     q[(__bridge id)kSecReturnAttributes]=@YES;
     q[(__bridge id)kSecUseAuthenticationUI]=(__bridge id)kSecUseAuthenticationUIFail;
     CFTypeRef found=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&found);
     if(found)CFRelease(found);
     return status==errSecSuccess || status==errSecInteractionNotAllowed;
+}
+NG_EXPORT int ng_vault_has_account(void) {
+    initialize();return itemExists(query()) || itemExists(legacyQuery());
+}
+// Writes the saved login to its item (replacing any) and removes the legacy Face ID item.
+static OSStatus storeAccount(NSData *data) {
+    SecItemDelete((__bridge CFDictionaryRef)query());
+    NSMutableDictionary *item=query();
+    item[(__bridge id)kSecValueData]=data;
+    item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+    OSStatus status=SecItemAdd((__bridge CFDictionaryRef)item,NULL);
+    if(status==errSecSuccess)SecItemDelete((__bridge CFDictionaryRef)legacyQuery());
+    return status;
 }
 NG_EXPORT void ng_vault_cancel(void) {
     initialize();LAContext *ctx;
@@ -157,7 +256,9 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
             @synchronized(guard){if(ticket!=generation)return;
                 OSStatus status=SecItemDelete((__bridge CFDictionaryRef)query());
-                finish(ticket,status==errSecSuccess||status==errSecItemNotFound,errorCode(status),nil);
+                OSStatus legacy=SecItemDelete((__bridge CFDictionaryRef)legacyQuery());
+                BOOL ok=(status==errSecSuccess||status==errSecItemNotFound)&&(legacy==errSecSuccess||legacy==errSecItemNotFound);
+                finish(ticket,ok,errorCode(status==errSecSuccess||status==errSecItemNotFound?legacy:status),nil);
             }
         });return;
     }
@@ -207,53 +308,42 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
         });
         return;
     }
-    if(ng_vault_availability()<=0){finish(ticket,NO,@"unavailable",nil);return;}
     if(![op isEqualToString:@"save"] && ![op isEqualToString:@"unlock"]){finish(ticket,NO,@"invalid_data",nil);return;}
     if(text.length>65536){finish(ticket,NO,@"invalid_data",nil);return;}
+    if([op isEqualToString:@"save"]) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+            @synchronized(guard){if(ticket!=generation)return;
+                OSStatus status=storeAccount([text dataUsingEncoding:NSUTF8StringEncoding]);
+                finish(ticket,status==errSecSuccess,errorCode(status),nil);
+            }
+        });return;
+    }
+    // Unlock: read the saved login without any prompt.
+    {
+        NSMutableDictionary *q=query();q[(__bridge id)kSecReturnData]=@YES;
+        CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
+        NSData *data=value?CFBridgingRelease(value):nil;
+        if(status!=errSecItemNotFound) {
+            NSString *account=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
+            finish(ticket,account!=nil,account?@"":errorCode(status),account);return;
+        }
+    }
+    // Only a login saved by an older build: Face ID once (its item requires it), then move it.
+    if(!itemExists(legacyQuery())){finish(ticket,NO,@"missing",nil);return;}
+    if(ng_vault_availability()<=0){finish(ticket,NO,@"unavailable",nil);return;}
     LAContext *ctx=[LAContext new];ctx.localizedFallbackTitle=@"";ctx.touchIDAuthenticationAllowableReuseDuration=0;
     @synchronized(guard){if(ticket!=generation)return;activeContext=ctx;}
-    if([op isEqualToString:@"unlock"]) {
-        // The ACL on the item itself requires biometry; there is no separate boolean gate.
-        whenActive(^{dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
-            @synchronized(guard){if(ticket!=generation)return;}
-            NSMutableDictionary *q=query();q[(__bridge id)kSecReturnData]=@YES;
-            q[(__bridge id)kSecUseAuthenticationContext]=ctx;
-            q[(__bridge id)kSecUseOperationPrompt]=@"Unlock your saved Hyundai account in nCTRL";
-            CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
-            NSData *data=value?CFBridgingRelease(value):nil;
-            NSString *account=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
-            finish(ticket,status==errSecSuccess && account!=nil,status==errSecSuccess?@"":errorCode(status),account);
-        });});return;
-    }
-    // Verify the owner before enabling persistence, then bind access to the current biometrics.
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [ctx evaluatePolicy:LAPolicyDeviceOwnerAuthenticationWithBiometrics
-            localizedReason:@"Save your Hyundai account securely in nCTRL on this iPhone"
-            reply:^(BOOL success,NSError *error){
-                if(!success){finish(ticket,NO,error.code==LAErrorUserCancel||error.code==LAErrorAppCancel||error.code==LAErrorSystemCancel?@"cancelled":@"auth_failed",nil);return;}
-                dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
-                    CFErrorRef aclError=NULL;
-                    SecAccessControlRef acl=SecAccessControlCreateWithFlags(kCFAllocatorDefault,
-                        kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,kSecAccessControlBiometryCurrentSet,&aclError);
-                    if(!acl){if(aclError)CFRelease(aclError);finish(ticket,NO,@"storage_failed",nil);return;}
-                    NSDictionary *attributes=@{(__bridge id)kSecValueData:[text dataUsingEncoding:NSUTF8StringEncoding],
-                        (__bridge id)kSecAttrAccessControl:(__bridge id)acl};
-                    @synchronized(guard){
-                        if(ticket==generation && busy) {
-                            NSMutableDictionary *q=query();q[(__bridge id)kSecUseAuthenticationContext]=ctx;
-                            OSStatus status=SecItemUpdate((__bridge CFDictionaryRef)q,(__bridge CFDictionaryRef)attributes);
-                            if(status==errSecItemNotFound){
-                                NSMutableDictionary *item=query();[item addEntriesFromDictionary:attributes];
-                                item[(__bridge id)kSecUseAuthenticationContext]=ctx;
-                                status=SecItemAdd((__bridge CFDictionaryRef)item,NULL);
-                            }
-                            finish(ticket,status==errSecSuccess,errorCode(status),nil);
-                        }
-                    }
-                    CFRelease(acl);
-                });
-            }];
-    });
+    whenActive(^{dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+        @synchronized(guard){if(ticket!=generation)return;}
+        NSMutableDictionary *q=legacyQuery();q[(__bridge id)kSecReturnData]=@YES;
+        q[(__bridge id)kSecUseAuthenticationContext]=ctx;
+        q[(__bridge id)kSecUseOperationPrompt]=@"Move your saved Hyundai login so nCTRL no longer needs Face ID";
+        CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
+        NSData *data=value?CFBridgingRelease(value):nil;
+        NSString *account=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
+        if(account)storeAccount(data);
+        finish(ticket,account!=nil,account?@"":errorCode(status),account);
+    });});
 }
 // All cover bookkeeping runs on the main queue. Scene and app events can overlap.
 static void hidePrivacyCover(UIScene *scene) {
