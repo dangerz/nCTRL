@@ -165,6 +165,7 @@ public partial class Main : Control
         Label(24,19,310,20,garageName,13,Muted);
         Label(24,44,340,41,liveMode?CarTitle:"nCTRL",liveMode&&CarTitle.Length>14?23:29,White,true).Name="CarTitle";
         Button(365,20,70,28,demo?"DEMO":smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
+        int content=canvas.GetChildCount();
         // Nothing else is reachable until the current account has accepted the risk disclaimer.
         if(DisclaimerRequired) DisclaimerScreen();
         else if(screen=="Connect") ConnectionScreen();
@@ -177,6 +178,7 @@ public partial class Main : Control
         else if(screen=="Range") RangeScreen();
         else if(screen=="AppColor") AppColorScreen();
         else LiveScreen();
+        PullLayer(content);
         if(liveMode)Nav();
         if(notice.Length>0)
         {

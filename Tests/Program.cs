@@ -28,5 +28,6 @@ static class Program
         await ShareSenderTests.Run();
         await MapTests.Run();
         MapViewTests.Run();
+        PullTests.Run();
     }
 }

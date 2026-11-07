@@ -201,6 +201,7 @@ public partial class Main
             foreach(var child in canvas.GetChildren())
                 if(child is Button b&&b.Text.Contains("paint",StringComparison.OrdinalIgnoreCase))
                     throw new Exception("Car screen still offers paint customization");
+            await PullChecks(fixture);
             // Paint is reached only through Settings → Appearance, and returns there.
             Navigate("Settings");
             if(canvas.GetNodeOrNull("StatusOverlay")!=null)throw new Exception("Car-art animation keeps running off the Car screen");
@@ -671,7 +672,7 @@ public partial class Main
             if(Skin.Hex!="bb8efa")throw new Exception("Ending the demo did not put back the app color");
             if(Encoding.UTF8.GetString(sharedFixture["status.json"])!=widgetBefore)throw new Exception("The demo changed your widget");
             Skin.Use(AppTheme.DefaultHex);
-            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car with the climate offer (start, disable, Settings), Climate page following the car, widget files, shared places and short links, Share-sheet sends and refusals, Activity shared tab, demo. No real API calls.");
+            GD.Print("LIVE SMOKE PASS: offline sign-in/recovery, selection, screens, swipe down to update, direct door control, tracking, remembered vehicle, climate seats and steering wheel, car health alerts, ignored places, climate and charge presets, charging ETA, charging line and outline, moving line, overdue charge check, Surround View, old location, range and units, cold-weather range, app color, car marker and phone position, send to car with the climate offer (start, disable, Settings), Climate page following the car, widget files, shared places and short links, Share-sheet sends and refusals, Activity shared tab, demo. No real API calls.");
             GetTree().Quit();
         }
         catch(Exception ex){GD.PushError("LIVE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
@@ -702,6 +703,58 @@ public partial class Main
     {
         for(int i=0;i<200&&(liveBusy||monitoringCommand);i++)await ToSignal(GetTree().CreateTimer(0.25),SceneTreeTimer.SignalName.Timeout);
         if(monitoringCommand)throw new Exception("Command checks did not finish");
+    }
+    // Swipe down to update, with touches the way the phone sends them (each also arrives as the mouse events made from it).
+    private async Task Swipe(Vector2 from,Vector2 to,int steps=10)
+    {
+        // Touches arrive in window points; the app's 460×920 layout is stretched to the window.
+        var window=GetTree().Root.GetFinalTransform();from=window*from;to=window*to;
+        Input.ParseInputEvent(new InputEventScreenTouch {Index=0,Pressed=true,Position=from});
+        await WaitFrames(2);
+        for(int i=1;i<=steps;i++) {
+            Input.ParseInputEvent(new InputEventScreenDrag {Index=0,Position=from.Lerp(to,(float)i/steps),Relative=(to-from)/steps});
+            await WaitFrames(1);
+        }
+        Input.ParseInputEvent(new InputEventScreenTouch {Index=0,Pressed=false,Position=to});
+        await WaitFrames(2);
+        await ToSignal(GetTree().CreateTimer(1.2),SceneTreeTimer.SignalName.Timeout);
+    }
+    private async Task PullChecks(ScreenFixture fixture)
+    {
+        // The read cooldown is still on from the checks above, so an update shows its warning instead of sending:
+        // that warning appearing is the Update button's request being made, and nothing reaches Hyundai.
+        int requests=fixture.Requests,commands=fixture.Commands;
+        void Settled(string what){if(pullState!=PullState.Idle||pullOffset!=0||fixture.Requests!=requests||fixture.Commands!=commands)throw new Exception(what);}
+        await Swipe(new(230,400),new(230,450));
+        if(pendingOverride!=null)throw new Exception("A short pull updated");
+        Settled("A short pull didn't spring back cleanly");
+        await Swipe(new(100,400),new(320,430));
+        if(pendingOverride!=null)throw new Exception("A sideways drag updated");
+        Settled("A sideways drag moved the screen");
+        await Swipe(new(230,400),new(230,560));
+        if(pendingOverride==null)throw new Exception("A full pull didn't do what Update does");
+        Settled("A full pull didn't settle and slide away");
+        // With a dialog open, pulling does nothing.
+        await Swipe(new(230,400),new(230,560));
+        if(pendingOverride==null)throw new Exception("Pulling under a dialog changed it");
+        Settled("Pulling under a dialog moved the screen");
+        canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+        // A pull that starts on the door button updates without pressing it.
+        var door=canvas.GetNode<Button>("DoorControl");var center=door.Position+door.Size/2;
+        await Swipe(center,center+new Vector2(0,160));
+        if(pendingOverride==null||pendingConfirm!=null)throw new Exception("A pull that started on the door button pressed it");
+        Settled("A pull from the door button sent something");
+        canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+        // Buttons still work normally afterwards.
+        await Tap(new(283,587));
+        if(screen!="Climate")throw new Exception("A tap after a pull didn't reach its button");
+        Navigate("Car");
+        // Each step, for checking by eye.
+        foreach(var (state,offset,file) in new[]{(PullState.Pulling,30f,"80-pull-start-test.png"),(PullState.Pulling,64f,"81-pull-ready-test.png"),
+            (PullState.Updating,PullToUpdate.Ready,"82-pull-updating-test.png")}) {
+            pullState=state;SetPull(offset);await WaitFrames(8);await Capture(file);
+        }
+        pullState=PullState.Idle;SetPull(0);
     }
     private async Task Tap(Vector2 at)
     {
