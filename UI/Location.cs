@@ -101,12 +101,12 @@ public partial class Main
             mapStatus=loaded.Count>0?"Tap the map to open your maps app.":"Tap to open your maps app.";
         } catch(OperationCanceledException){throw;}
         catch(Exception) {EnsureLive(version);mapStatus="Map unavailable. Tap to open your maps app.";}
-        notice=old?"Showing the last known location. The car may have moved since.":"Showing Hyundai’s reported location; it may lag the vehicle.";
+        notice=old?"Showing the last known location. The car may have moved since.":$"Showing {Brand.Maker}’s reported location; it may lag the vehicle.";
     }
 
     private void LiveLocation()
     {
-        Title("FIND YOUR HYUNDAI.","Last reported position · tap the map to open Maps");
+        Title($"FIND YOUR {Brand.Maker.ToUpperInvariant()}.","Last reported position · tap the map to open Maps");
         var loc=shownLocation;
         if(shownOld&&loc!=null)
             Label(24,186,412,24,"OLD LOCATION · received "+LastLocation.Age(loc.RetrievedAt,DateTimeOffset.UtcNow),11,Amber,true).Name="LocationOld";
@@ -127,10 +127,11 @@ public partial class Main
             Label(24,578,412,44,mapStatus+phoneNote,12,White,false,true).Name="MapStatus";
             Label(24,624,412,35,"Reported: "+ReportedTime(loc.ReportedAt),11,Muted,false,true);
         }
-        LiveButton(24,677,132,47,"Update location",12,()=>_ = UpdateVehicleLocation(),true,"UpdateLocation");
-        Button(164,677,132,47,"Look around  ›",12,()=>Navigate("Look"),false,"LookAround");
-        Button(304,677,132,47,"Send to car  ›",12,()=>Navigate("Send"),false,"SendToCar");
-        Label(24,731,412,40,"Hyundai location requests: once per hour. Map tiles share the viewed area with OpenStreetMap. Your own position stays on this phone.",10,Muted,false,true);
+        bool extras=AppService.SurroundView||AppService.SendToCar;
+        LiveButton(24,677,extras?132:412,47,"Update location",12,()=>_ = UpdateVehicleLocation(),true,"UpdateLocation");
+        if(AppService.SurroundView)Button(164,677,132,47,"Look around  ›",12,()=>Navigate("Look"),false,"LookAround");
+        if(AppService.SendToCar)Button(304,677,132,47,"Send to car  ›",12,()=>Navigate("Send"),false,"SendToCar");
+        Label(24,731,412,40,$"{Brand.Maker} location requests: once per hour. Map tiles share the viewed area with OpenStreetMap. Your own position stays on this phone.",10,Muted,false,true);
     }
     // Asks iOS for the phone's position while the map is open (the first time, iOS asks you), then fits the map.
     private async Task WatchPhone()

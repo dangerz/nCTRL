@@ -13,16 +13,35 @@ public enum ThemeRole
     Stripe, Selected, Button, ButtonEdge, ButtonHover, ButtonPressed, Notice, BarOff, Clear
 }
 
-/// <summary>App color themes from one picked color. The default look is a family of blues within a few
-/// degrees of the accent's hue; a theme keeps each color's hue offset from the accent, its brightness and
-/// (scaled by how vivid the pick is) its saturation, and turns the whole family to the picked hue.</summary>
+/// <summary>App color themes from one picked color. The base look (Performance Blue, nCTRL's default) is a family
+/// of blues within a few degrees of the accent's hue; a theme keeps each color's hue offset from the accent, its
+/// brightness and (scaled by how vivid the pick is) its saturation, and turns the whole family to the picked hue.
+/// GT Neon (gtCTRL's default) is its own look: graphite panels with the EV6 GT's neon-lime accent.</summary>
 public static class AppTheme
 {
-    public const string DefaultHex="8ecbfa";
-    public static readonly IReadOnlyList<(string Name,string Hex)> Presets=new[]{
-        ("Performance Blue",DefaultHex),("Teal","8efaec"),("Green","8efaa9"),("Purple","bb8efa"),
-        ("Magenta","fa8edf"),("Orange","fac18e"),("Red","fa8e97"),("Graphite","d0d0d0")};
-    public static readonly IReadOnlyDictionary<ThemeRole,string> Default=new Dictionary<ThemeRole,string>{
+    // The base family's accent (Performance Blue); other picks are measured from it.
+    public const string BaseHex="8ecbfa";
+    // GT Neon.
+    public const string NeonHex="d4f53c";
+    /// <summary>The flavor's first-run pick.</summary>
+    public static string DefaultHex=>Brand.Flavor.DefaultTheme;
+    public static IReadOnlyList<(string Name,string Hex)> Presets=>DefaultHex==NeonHex?
+        new[]{("GT Neon",NeonHex),("Ice Blue",BaseHex),("Teal","8efaec"),("Green","8efaa9"),("Purple","bb8efa"),
+            ("Magenta","fa8edf"),("Orange","fac18e"),("Red","fa8e97"),("Graphite","d0d0d0")}:
+        new[]{("Performance Blue",BaseHex),("Teal","8efaec"),("Green","8efaa9"),("Purple","bb8efa"),
+            ("Magenta","fa8edf"),("Orange","fac18e"),("Red","fa8e97"),("Graphite","d0d0d0"),("GT Neon",NeonHex)};
+    /// <summary>The flavor's default look.</summary>
+    public static IReadOnlyDictionary<ThemeRole,string> Default=>DefaultHex==NeonHex?Neon:Base;
+    // Graphite and neon, after the EV6 GT's dark trim and lime calipers and stitching.
+    public static readonly IReadOnlyDictionary<ThemeRole,string> Neon=new Dictionary<ThemeRole,string>{
+        [ThemeRole.Accent]=NeonHex,[ThemeRole.AccentHover]="e4fa80",[ThemeRole.AccentPressed]="bcdc2a",
+        [ThemeRole.Text]="f0f2f1",[ThemeRole.Muted]="a4aaa8",[ThemeRole.Back]="0d0f10",[ThemeRole.Header]="131617",
+        [ThemeRole.Nav]="111314",[ThemeRole.NavLine]="353a3c",[ThemeRole.Hero]="15181a",[ThemeRole.Card]="191c1e",
+        [ThemeRole.PanelFill]="171a1c",[ThemeRole.PanelEdge]="3a4043",[ThemeRole.Stripe]="24282b",[ThemeRole.Selected]="22272a",
+        [ThemeRole.Button]="15181a",[ThemeRole.ButtonEdge]="41484b",[ThemeRole.ButtonHover]="242a2c",[ThemeRole.ButtonPressed]="2b3134",
+        [ThemeRole.Notice]="22282a",[ThemeRole.BarOff]="2d3234",[ThemeRole.Clear]="090a0b"};
+    // The base family: Performance Blue.
+    public static readonly IReadOnlyDictionary<ThemeRole,string> Base=new Dictionary<ThemeRole,string>{
         [ThemeRole.Accent]="8ecbfa",[ThemeRole.AccentHover]="b0ddff",[ThemeRole.AccentPressed]="72b6e8",
         [ThemeRole.Text]="eef5fb",[ThemeRole.Muted]="9ab0c6",[ThemeRole.Back]="08121d",[ThemeRole.Header]="0c1825",
         [ThemeRole.Nav]="0b1520",[ThemeRole.NavLine]="294053",[ThemeRole.Hero]="101820",[ThemeRole.Card]="0e2031",
@@ -38,19 +57,21 @@ public static class AppTheme
         hex=hex?.Trim().TrimStart('#').ToLowerInvariant();
         return hex is {Length: 6}&&hex.All(Uri.IsHexDigit)?hex:null;
     }
-    /// <summary>Every role's color for a picked color. The default (or anything that isn't a color)
-    /// gives exactly the original look.</summary>
+    /// <summary>Every role's color for a picked color. Anything that isn't a color gives the flavor's default;
+    /// the base accent gives exactly the base look and GT Neon its own.</summary>
     public static IReadOnlyDictionary<ThemeRole,string> Derive(string? picked)
     {
-        if(Clean(picked) is not {} hex||hex==DefaultHex)return Default;
+        if(Clean(picked) is not {} hex)return Default;
+        if(hex==BaseHex)return Base;
+        if(hex==NeonHex)return Neon;
         var (shift,vivid)=Shift(hex);
         (double H,double S,double V) Turn(string original,double most)
         {
             var (rh,rs,rv)=Hsv(original);
             return ((rh+shift+360)%360,Math.Min(rs*Math.Min(vivid,most),1),rv);
         }
-        var b=Turn(Default[ThemeRole.Back],MaxVivid);string back=Hex(b.H,b.S,b.V);
-        return Default.ToDictionary(r=>r.Key,r=>{
+        var b=Turn(Base[ThemeRole.Back],MaxVivid);string back=Hex(b.H,b.S,b.V);
+        return Base.ToDictionary(r=>r.Key,r=>{
             if(Hsv(r.Value).V<0.7){var dark=Turn(r.Value,MaxVivid);return Hex(dark.H,dark.S,dark.V);}
             // Light colors (text and the accent) are never more vivid than the default, and lose some color
             // where a hue is too dark (deep blue, purple) to keep 7:1 against the background.
@@ -60,11 +81,13 @@ public static class AppTheme
     }
     public const double MinLightContrast=7;
     /// <summary>How far a pick turns the default hue (degrees) and how vivid it makes the dark colors compared
-    /// with the default. The car pictures' backdrops are turned the same way (Assets/Paint.gdshader).</summary>
+    /// with the base. The car pictures' backdrops are turned the same way (Assets/Paint.gdshader);
+    /// GT Neon's graphite takes the color out of the (navy) backdrops.</summary>
     public static (double HueShift,double Vivid) Shift(string? picked)
     {
-        if(Clean(picked) is not {} hex||hex==DefaultHex)return (0,1);
-        var (h,s,_)=Hsv(hex);var (baseHue,baseSat,_)=Hsv(DefaultHex);
+        if((Clean(picked)??DefaultHex) is var hex&&hex==NeonHex)return (0,0);
+        if(hex==BaseHex)return (0,1);
+        var (h,s,_)=Hsv(hex);var (baseHue,baseSat,_)=Hsv(BaseHex);
         return ((h-baseHue+360)%360,Math.Min(s/baseSat,MaxVivid));
     }
     /// <summary>The preset's name, or "Custom color".</summary>

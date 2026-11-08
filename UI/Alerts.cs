@@ -50,7 +50,7 @@ public partial class Main
             }
             y+=h+8;
         }
-        Label(24,666,412,40,"Alerts come from Hyundai's last report and may lag the car. Unknown items never raise an alert.",11,Muted,false,true);
+        Label(24,666,412,40,$"Alerts come from {Brand.Maker}'s last report and may lag the car. Unknown items never raise an alert.",11,Muted,false,true);
         Button(24,714,412,46,"Back to car",13,()=>Navigate("Car"),false,"AlertsBack");
     }
     // A weak 12-volt battery can leave the car unable to start, and waking the car uses it.

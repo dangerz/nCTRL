@@ -9,9 +9,9 @@ public partial class Main
     private void LiveDetails()
     {
         var raw=connection?.RawStatus;
-        Title("VEHICLE DETAILS.",raw==null?"Tires and everything Hyundai reports":Updated(connection?.State?.RetrievedAt)+" · everything Hyundai reports");
+        Title("VEHICLE DETAILS.",raw==null?$"Tires and everything {Brand.Maker} reports":Updated(connection?.State?.RetrievedAt)+$" · everything {Brand.Maker} reports");
         if(raw is not JsonElement status) {
-            Label(24,206,412,96,"Tap Update to load tire pressures and every status field Hyundai reports.",14,White,false,true);
+            Label(24,206,412,96,$"Tap Update to load tire pressures and every status field {Brand.Maker} reports.",14,White,false,true);
         } else {
             Label(24,188,412,22,"TIRES",11,Muted,true);
             var tires=StatusDetails.Tires(status);
@@ -23,7 +23,7 @@ public partial class Main
                     .Name="Tire"+i;
             }
             if(tires.All(t=>t.Psi==null&&t.Warning==null))
-                Label(24,214,412,116,"Hyundai did not report tire data for this vehicle.",13,Muted,false,true);
+                Label(24,214,412,116,$"{Brand.Maker} did not report tire data for this vehicle.",13,Muted,false,true);
             Label(24,342,412,22,"FULL DETAIL",11,Muted,true);
             Panel(24,366,412,346,Skin.Card,false);
             var scroll=new ScrollContainer {Name="DetailScroll",Position=new(32,372),Size=new(398,334),HorizontalScrollMode=ScrollContainer.ScrollMode.Disabled};

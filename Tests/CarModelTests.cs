@@ -14,7 +14,7 @@ static class CarModelTests
         Check(root!=null&&CarModels.All.All(m=>File.Exists(Path.Combine(root,"Assets",m.Picture))),"Every model's picture is in Assets");
         Check(CarModels.All.Select(m=>m.Id).Distinct().Count()==CarModels.All.Count&&CarModels.All.Select(m=>m.Name).Distinct().Count()==CarModels.All.Count,"Ids and names are unique");
         Check(CarModels.Default.Id=="ioniq5n"&&CarModels.ById("nope")==CarModels.Default&&CarModels.ById("ev9").Name=="Kia EV9","Unknown ids fall back to the IONIQ 5 N");
-        Check(CarModels.All.Where(m=>m.Id.StartsWith("ev")||m.Id.StartsWith("i2")||m.Id.StartsWith("i3")).All(m=>m.Support==CarSupport.PictureOnly),"Kia and Europe-only models are pictures only");
+        Check(CarModels.All.Where(m=>m.Id.StartsWith("ev")||m.Id.StartsWith("i2")||m.Id.StartsWith("i3")).All(m=>CarModels.SupportFor(m)==CarSupport.PictureOnly),"With a Hyundai account, Kia and Europe-only models are pictures only");
 
         string? Id(string code)=>CarModels.Detect(code)?.Id;
         Check(Id("IONIQ 5 N")=="ioniq5n"&&Id("IONIQ5N")=="ioniq5n"&&Id("Ioniq 5")=="ioniq5"&&Id("IONIQ 5 N LINE")=="ioniq5","IONIQ 5 and 5 N codes, N Line is not N");

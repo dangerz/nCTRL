@@ -37,4 +37,8 @@ public static class Skin
     public static Color ButtonPressed=>colors[ThemeRole.ButtonPressed];
     public static Color Notice=>colors[ThemeRole.Notice];
     public static Color BarOff=>colors[ThemeRole.BarOff];
+    // The motorsport details (header stripe, panel corners, selected tab): the flavor's own color (nCTRL's N red),
+    // or the app color when the flavor has none (gtCTRL).
+    public static Color Detail=>Brand.Flavor.Detail is {} hex?new Color(hex):Accent;
+    public static Color DetailDark=>Brand.Flavor.DetailDark is {} hex?new Color(hex):AccentPressed;
 }

@@ -9,27 +9,51 @@ public sealed record DisclaimerAcceptance(int Version,string AccountKey,DateTime
 
 public static class Disclaimer
 {
-    // Bump when the text changes materially: every account must accept again.
-    public const int Version=1;
+    // Each service has its own text and version. Bump a version when its text changes materially: every account
+    // using that service must accept again. Hyundai Bluelink is version 1 (nCTRL's original text); Kia Connect is 2.
+    public const int HyundaiVersion=1,KiaVersion=2;
+    public static int Version=>Brand.ServiceId==Brand.Kia?KiaVersion:HyundaiVersion;
     public const string Phrase="I Agree";
-    public const string Text=
-        "nCTRL is an independent, third-party app. It is not made, endorsed, supported or approved by Hyundai Motor Company, " +
+    /// <summary>The text for the service in use, with this build's name.</summary>
+    public static string Text=>(Brand.ServiceId==Brand.Kia?KiaText:HyundaiText).Replace("gtCTRL",Brand.App);
+    public const string HyundaiText=
+        "gtCTRL is an independent, third-party app. It is not made, endorsed, supported or approved by Hyundai Motor Company, " +
         "Hyundai Motor America or any of their affiliates. It is completely unsupported: no one provides help, fixes or guarantees.\n\n" +
-        "By using nCTRL you understand and accept that:\n\n" +
+        "By using gtCTRL you understand and accept that:\n\n" +
         "• It controls your real vehicle through Hyundai's servers using an unofficial, community-documented protocol. " +
         "Commands can fail, arrive late, or behave in ways you did not intend. This could unlock your vehicle, drain its 12-volt " +
         "or high-voltage battery, change charging or climate settings, or otherwise damage or disable your vehicle.\n\n" +
         "• Hyundai may detect unofficial use and limit, suspend or permanently ban your Bluelink account or its access to Hyundai's API.\n\n" +
-        "• Hyundai can change or shut down its API at any time without notice. That may break some or all of nCTRL, " +
+        "• Hyundai can change or shut down its API at any time without notice. That may break some or all of gtCTRL, " +
         "possibly in unexpected ways.\n\n" +
         "• Vehicle status, location and command results may be delayed, incomplete or wrong.\n\n" +
-        "• You alone are responsible for following Hyundai's terms and all applicable laws, and for using nCTRL safely. " +
+        "• You alone are responsible for following Hyundai's terms and all applicable laws, and for using gtCTRL safely. " +
         "Never use it while driving.\n\n" +
-        "nCTRL is provided \"as is\", without warranty of any kind. You use it entirely at your own risk and you accept every risk " +
+        "gtCTRL is provided \"as is\", without warranty of any kind. You use it entirely at your own risk and you accept every risk " +
         "of using it. To the fullest extent permitted by law, you agree that its developers, contributors and distributors are not " +
         "liable for any damage, loss, cost, account action or injury of any kind, and you hold them harmless.\n\n" +
-        "If you do not agree, do not use nCTRL.\n\n" +
+        "If you do not agree, do not use gtCTRL.\n\n" +
         "Your acceptance applies to the Hyundai account you sign in with. Signing out, or signing in with a different account, " +
+        "requires accepting again.";
+    // Legal text names the companies explicitly rather than through Brand.
+    public const string KiaText=
+        "gtCTRL is an independent, third-party app. It is not made, endorsed, supported or approved by Kia Corporation, " +
+        "Kia America, Hyundai Motor Group or any of their affiliates. It is completely unsupported: no one provides help, fixes or guarantees.\n\n" +
+        "By using gtCTRL you understand and accept that:\n\n" +
+        "• It controls your real vehicle through Kia's servers using an unofficial, community-documented protocol. " +
+        "Commands can fail, arrive late, or behave in ways you did not intend. This could unlock your vehicle, drain its 12-volt " +
+        "or high-voltage battery, change charging or climate settings, or otherwise damage or disable your vehicle.\n\n" +
+        "• Kia may detect unofficial use and limit, suspend or permanently ban your Kia Connect account or its access to Kia's API.\n\n" +
+        "• Kia can change or shut down its API at any time without notice. That may break some or all of gtCTRL, " +
+        "possibly in unexpected ways.\n\n" +
+        "• Vehicle status, location and command results may be delayed, incomplete or wrong.\n\n" +
+        "• You alone are responsible for following Kia's terms and all applicable laws, and for using gtCTRL safely. " +
+        "Never use it while driving.\n\n" +
+        "gtCTRL is provided \"as is\", without warranty of any kind. You use it entirely at your own risk and you accept every risk " +
+        "of using it. To the fullest extent permitted by law, you agree that its developers, contributors and distributors are not " +
+        "liable for any damage, loss, cost, account action or injury of any kind, and you hold them harmless.\n\n" +
+        "If you do not agree, do not use gtCTRL.\n\n" +
+        "Your acceptance applies to the Kia Connect account you sign in with. Signing out, or signing in with a different account, " +
         "requires accepting again.";
 
     // Case and surrounding/repeated spaces are ignored; the words must match exactly.

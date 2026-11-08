@@ -20,7 +20,8 @@ static class AppThemeTests
         var (accentHue,_,_)=AppTheme.Hsv(AppTheme.Default[ThemeRole.Accent]);
         Check(AppTheme.Default.Values.All(h=>HueGap(AppTheme.Hsv(h).H,accentHue)<10),"The default colors sit within 10° of the accent's hue");
 
-        foreach(var (name,hex) in AppTheme.Presets.Skip(1)) {
+        // GT Neon is its own look, not derived from the blue family (FlavorTests checks it).
+        foreach(var (name,hex) in AppTheme.Presets.Skip(1).Where(p=>p.Hex!=AppTheme.NeonHex)) {
             var theme=AppTheme.Derive(hex);var (pickHue,pickSat,_)=AppTheme.Hsv(hex);
             Check(theme.Count==AppTheme.Default.Count&&theme.Values.Distinct().Count()>1,name+" gives every role");
             foreach(var role in roles) {

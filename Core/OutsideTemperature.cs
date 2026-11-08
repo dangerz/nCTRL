@@ -20,7 +20,7 @@ public sealed class OutsideTemperature : IDisposable
     public OutsideTemperature(HttpMessageHandler? handler=null)
     {
         http=new HttpClient(handler??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(15),MaxResponseContentBufferSize=64*1024};
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("nCTRL/1.0 (outside-temperature)");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(Brand.App+"/1.0 (outside-temperature)");
     }
     /// <summary>The rounded area that is sent, e.g. "40.8,-74.0".</summary>
     public static string Area(VehicleLocation at)

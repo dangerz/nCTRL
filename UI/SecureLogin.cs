@@ -11,7 +11,7 @@ public partial class Main
     private int liveEpoch;
     private bool vaultReady;
     // A signed-in session kept in memory while backgrounded, reused on return while its token is valid.
-    private HyundaiUsClient? parked;
+    private IVehicleConnection? parked;
     private string parkedAccountKey="";
     private void InitializeVault()
     {
@@ -34,7 +34,7 @@ public partial class Main
         liveEpoch++;vault.Cancel();
         liveLifetime.Cancel();liveLifetime.Dispose();liveLifetime=new CancellationTokenSource();
         connection=null;enrollment=null;liveMode=false;liveBusy=false;
-        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingOverride=null;pendingConfirm=null;pendingPlaceAt=null;
+        history.Clear();manualAccountEntry=false;accountKey="";pendingSignIn=null;pendingCode=null;codeSentTo="";pendingOverride=null;pendingConfirm=null;pendingPlaceAt=null;
         lookView=null;lookTexture=null;lookCapturing=false;monitoringCommand=false;feedbackKind=null;mapTiles.Clear();mapLocation=null;mapFrame=null;shownLocation=null;shownOld=false;phoneFix=null;phoneNote="";pendingDestination=null;sentDestination=null;destinationText="";destinationTiles.Clear();destinationTilesFor=null;
         sessionAccount=null;
         screen="Connect";notice="";noticeError=false;
@@ -68,9 +68,9 @@ public partial class Main
     private void DiscardParked(){parked?.Dispose();parked=null;parkedAccountKey="";}
     private void SavedLoginScreen()
     {
-        Title("WELCOME BACK.","Your Hyundai account is saved on this device.");
+        Title("WELCOME BACK.",$"Your {Brand.Maker} account is saved on this device.");
         Hero(208,215);
-        Label(24,454,412,72,"nCTRL signs in with your saved login and opens your car.",14,Muted,false,true);
+        Label(24,454,412,72,$"{Brand.App} signs in with your saved login and opens your car.",14,Muted,false,true);
         var unlock=LiveButton(24,558,412,52,liveBusy?"Signing in…":"Open my car",15,()=>_ = UnlockAccount(),true,"BiometricUnlock");
         unlock.Disabled=liveBusy||!vault.Available;
         LiveButton(24,635,412,46,"Sign in manually",13,()=>{manualAccountEntry=true;Render();});
@@ -84,7 +84,7 @@ public partial class Main
         await RunLive(async()=>{
             var (active,_)=await AcquireSession(version);
             if(active!=null&&!liveMode){liveMode=true;screen="Car";}
-        },"Signing in to Hyundai…",quiet?null:()=>UnlockAccount(),quiet);
+        },$"Signing in to {Brand.Maker}…",quiet?null:()=>UnlockAccount(),quiet);
     }
     private async Task ForgetAccount()
     {

@@ -102,7 +102,7 @@ public sealed class MapTileCache : IDisposable
         this.directory=directory;
         http=new HttpClient(handler??new HttpClientHandler{AllowAutoRedirect=false})
             {Timeout=TimeSpan.FromSeconds(15),MaxResponseContentBufferSize=1024*1024};
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("nCTRL/1.0 (vehicle-location-map)");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(Brand.App+"/1.0 (vehicle-location-map)");
     }
     public async Task<byte[]> LoadAsync(MapTile tile,CancellationToken ct)
     {
