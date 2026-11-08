@@ -10,6 +10,15 @@ The Hyundai USA wire protocol, endpoint paths, header constants, payload shapes 
 - Retrieved October 22, 2026 (US Eastern).
 - MIT License, Copyright (c) 2021, Fuat Akgun. Full notice: `Licenses/HyundaiKiaConnect-MIT.txt`.
 
+The Kia Connect (US) wire protocol, endpoint paths, header constants, payload shapes and field mappings in `Core/KiaUsClient.cs` (and the read-only probe in `Tools/KiaProbe`) were adapted into C# from the same project:
+
+- `hyundai_kia_connect_api/KiaUvoApiUSA.py` and `const.py`
+- Reference revision: `bd93ccd38e8f582cbca03a786bb73a02159502ab`
+- Source: https://github.com/Hyundai-Kia-Connect/hyundai_kia_connect_api/blob/bd93ccd38e8f582cbca03a786bb73a02159502ab/hyundai_kia_connect_api/KiaUvoApiUSA.py
+- Retrieved November 8, 2026 (US Eastern). Same MIT license as above.
+
+Unlike that source, the Kia adapter keeps .NET's default TLS settings (Kia accepted them on November 8, 2026), refuses redirects, and never resends a command after a session expires.
+
 This application does not import, bundle or execute Python. The static client ID and client header constant are public interoperability values from that source, not an owner's credentials. Hyundai may change or revoke them.
 
 The adapter is unofficial. It uses the normal HTTPS certificate verification provided by .NET and refuses redirects. Unlike the reference Python transport, it does not lower TLS security settings. Some platform/server TLS combinations may consequently fail and require investigation.
