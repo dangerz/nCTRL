@@ -24,11 +24,20 @@ public partial class Main
     private string sessionShared="";
     private async Task ShareSession()
     {
-        if(demo||!AppService.SendToCar||!vault.Present||!vault.HasAccount||connection?.ExportSession() is not {} session)return;
-        string json=session.Encode();
+        if(demo||!AppService.SendToCar||!vault.Present||!vault.HasAccount||accountKey.Length==0||connection?.ExportSession() is not {} session)return;
+        // Tagged with the login it belongs to, so the extension never uses it for another account or service.
+        string json=(session with {Owner=SharedSession.OwnerOf(Brand.ServiceId,accountKey)}).Encode();
         if(json==sessionShared)return;
         try {await vault.SaveSessionAsync(json,liveLifetime.Token);sessionShared=json;}
         catch(Exception ex) when(ex is VaultException or OperationCanceledException) { } // The extension signs in instead.
+    }
+    /// <summary>Deletes the session shared with the Share extension, when the saved login changes or goes.</summary>
+    private async Task ForgetSharedSession()
+    {
+        sessionShared="";
+        if(!vault.Present||demo)return;
+        try {await vault.ForgetSessionAsync(liveLifetime.Token);}
+        catch(Exception ex) when(ex is VaultException or OperationCanceledException) { } // Its owner tag still keeps it from being misused.
     }
     private async Task LoadShared()
     {

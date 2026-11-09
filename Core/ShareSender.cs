@@ -61,13 +61,20 @@ public static class ShareSender
             place=r.TryGetProperty("place",out var p)?ReadPlace(p):null;
             limits=r.TryGetProperty("limits",out var l)&&l.ValueKind==JsonValueKind.String?l.GetString()??"":"";
         } catch(Exception){return Failed("nCTRL couldn't read your saved login. Open nCTRL to send it.");}
+        // Only Hyundai USA can take a destination. Any other login stops here, before anything is sent.
+        var service=Brand.ServiceFor(account.Service);
+        if(!service.SendToCar||account.Service!=Brand.Hyundai)
+            return Failed($"Send to car isn't available for {service.ServiceName}. Nothing was sent.");
         if(place==null||!Destinations.Valid(place))return Failed("That place has no valid location.");
+        // A session is used only for the login it came from; one left over from another account or service is ignored.
+        string owner=SharedSession.OwnerOf(account.Service,VehicleLink.AccountKey(account.Email));
+        if(session!=null&&!session.BelongsTo(account.Service,VehicleLink.AccountKey(account.Email)))session=null;
         var budget=new RequestBudget(limits.Length>0?new PathBudgetStore(limits):new MemoryBudgetStore());
         using var client=handler==null?new HyundaiUsClient(budget):new HyundaiUsClient(handler,null,budget);
         try {
             if(session!=null)client.ResumeSession(account.Email,account.Password,account.Pin,session);
             else {
-                // The app hasn't shared its session yet: sign in, which works only when there's one car to choose.
+                // No session for this login yet: sign in, which works only when there's one car to choose.
                 var cars=await client.LoginAsync(account.Email,account.Password,account.Pin,ct,implicitSignIn:true);
                 if(cars.Count!=1)return Failed("Open nCTRL once so it knows which car to send to.");
                 client.UseVehicle(cars[0]);
@@ -75,7 +82,7 @@ public static class ShareSender
             string? tracking=await client.SendDestinationAsync(place,ct);
             return Json(w=>{
                 w.WriteBoolean("ok",true);w.WriteString("tracking",tracking??"");
-                if(client.ExportSession() is {} now)w.WriteString("session",now.Encode());
+                if(client.ExportSession() is {} now)w.WriteString("session",(now with {Owner=owner}).Encode());
             });
         }
         catch(RequestLimitException ex){return Failed(ex.Message);}

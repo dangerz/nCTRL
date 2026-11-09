@@ -23,15 +23,25 @@ static class FlavorTests
             Check(Disclaimer.Version==2&&Disclaimer.Text.Contains("Kia America")&&Disclaimer.Text.Contains("nCTRL")&&!Disclaimer.Text.Contains("gtCTRL"),"Kia has its own disclaimer, named for the build");
             Check(CarModels.Offered.All(m=>m.Maker=="Kia")&&CarModels.SupportFor(CarModels.ById("ev6"))==CarSupport.Electric,"Kia accounts see only Kia pictures, which connect");
             Check(Brand.Connect(new RequestBudget(new MemoryBudgetStore())) is KiaUsClient,"Kia connects with the Kia client");
+            // Canada: the same makers through Bluelink Canada and Kia Connect Canada, sharing each maker's disclaimer.
+            Brand.ServiceId=Brand.HyundaiCanada;
+            Check(Brand.Maker=="Hyundai"&&Brand.Service.ServiceName=="Bluelink Canada"&&Brand.Service.NeedsPin&&Brand.Service.OneTimeCode&&!Brand.Service.SendToCar&&
+                Disclaimer.Version==1&&Brand.Connect(new RequestBudget(new MemoryBudgetStore())) is CanadaClient {CarBrand: CanadaBrand.Hyundai},"Hyundai Canada: Hyundai's disclaimer, the Canada client");
+            Brand.ServiceId=Brand.KiaCanada;
+            Check(Brand.Maker=="Kia"&&Brand.Service.ServiceName=="Kia Connect Canada"&&Disclaimer.Version==2&&CarModels.Offered.All(m=>m.Maker=="Kia")&&
+                Brand.Connect(new RequestBudget(new MemoryBudgetStore())) is CanadaClient {CarBrand: CanadaBrand.Kia},"Kia Canada: Kia's disclaimer and pictures, the Canada client");
+            Check(Brand.InCanada(Brand.KiaCanada)&&!Brand.InCanada(Brand.Kia)&&Brand.Known(Brand.HyundaiCanada)&&!Brand.Known("toyota"),"Canada services are known and marked");
             Brand.ServiceId="nope";
             Check(Brand.ServiceId==Brand.Hyundai,"An unknown service falls back to the flavor's first");
             Check(Brand.Connect(new RequestBudget(new MemoryBudgetStore())) is HyundaiUsClient,"Hyundai connects with the Hyundai client");
 
             // gtCTRL: Kia only, GT Neon, EV6 GT.
             Brand.Use(Brand.GtCtrl);
-            Check(Brand.App=="gtCTRL"&&Brand.ServiceId==Brand.Kia&&!Brand.ChoosesService,"gtCTRL is Kia only");
+            Check(Brand.App=="gtCTRL"&&Brand.ServiceId==Brand.Kia&&Brand.Flavor.Services.SequenceEqual(new[]{Brand.Kia,Brand.KiaCanada}),"gtCTRL is Kia only: Kia US first, Kia Canada as a choice");
             Brand.ServiceId=Brand.Hyundai;
             Check(Brand.ServiceId==Brand.Kia,"gtCTRL can't switch to Hyundai");
+            Brand.ServiceId=Brand.HyundaiCanada;
+            Check(Brand.ServiceId==Brand.Kia,"gtCTRL can't switch to Hyundai Canada either");
             Check(AppTheme.DefaultHex==AppTheme.NeonHex&&AppTheme.Name(null)=="GT Neon"&&AppTheme.Name(AppTheme.BaseHex)=="Ice Blue"&&
                 ReferenceEquals(AppTheme.Derive(null),AppTheme.Neon)&&ReferenceEquals(AppTheme.Derive(AppTheme.BaseHex),AppTheme.Base),"GT Neon is the default; the blue is Ice Blue");
             Check(AppTheme.Shift(null)==(0,0)&&AppTheme.Shift(AppTheme.BaseHex)==(0,1),"GT Neon takes the color out of picture backdrops");
@@ -54,6 +64,8 @@ static class FlavorTests
             Check(kia.Service==Brand.Kia&&old.Service==Brand.Hyundai&&kia.WithRemember("r2","d2").Service==Brand.Kia,"Saved logins keep their service");
             bool refused=false;try{_=new SavedAccount("a@example.invalid","pw","","","","toyota");}catch(VaultException){refused=true;}
             Check(refused,"An unknown service is refused");
+            var canada=SavedAccount.Decode(new SavedAccount("a@example.invalid","pw","1234","r","d",Brand.HyundaiCanada).Encode());
+            Check(canada.Service==Brand.HyundaiCanada&&canada.Pin=="1234","A Canada login keeps its service and PIN");
         }
         finally { Brand.Use(Brand.NCtrl); }
         Console.WriteLine($"PASS: {count} flavor and service checks.");

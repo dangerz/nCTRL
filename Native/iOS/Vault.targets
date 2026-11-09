@@ -9,7 +9,7 @@
     <NativeLibrary Include="$(NctrlVaultOutput)/NGarageVault.a" />
     <!-- Swift runtime and WidgetKit for the widget refresh call (paths written by build-aot.sh). -->
     <LinkerArg Include="@$(NctrlVaultOutput)/link.rsp" />
-    <LinkerArg Include="-framework Foundation;-framework Security;-framework LocalAuthentication;-framework UIKit;-framework Photos;-framework CoreLocation" />
+    <LinkerArg Include="-framework Foundation;-framework Security;-framework LocalAuthentication;-framework UIKit;-framework Photos;-framework CoreLocation;-framework BackgroundTasks;-framework UserNotifications" />
   </ItemGroup>
   <Target Name="BuildNctrlIosVault" BeforeTargets="IlcCompile"
           Condition="'$(GodotTargetPlatform)' == 'ios'">

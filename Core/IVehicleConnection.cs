@@ -54,7 +54,7 @@ public sealed record CodeDestinations(string? Email,string? Phone)
 }
 /// <summary>Sign-in stopped because the service wants a one-time code. Nothing else was sent.</summary>
 public sealed class OneTimeCodeRequiredException(CodeDestinations destinations)
-    : BluelinkException("Kia wants to confirm it's you: enter the one-time code it sends.")
+    : BluelinkException($"{Brand.Maker} wants to confirm it's you: enter the one-time code it sends.")
 {
     public CodeDestinations Destinations { get; }=destinations;
 }

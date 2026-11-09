@@ -73,9 +73,10 @@ public partial class Main
             if(Brand.Flavor==Brand.GtCtrl&&(!Disclaimer.Text.Contains("Kia America")||Disclaimer.Text.Contains("nCTRL")))throw new Exception("Disclaimer is not the gtCTRL / Kia text");
             await PassDisclaimerFixture();
             Navigate("Connect");
-            // nCTRL: the sign-in screen offers Hyundai (the default) and Kia. gtCTRL is Kia only.
-            if(Brand.ChoosesService) {
-                if(Brand.ServiceId!=Brand.Hyundai||canvas.GetNodeOrNull<Button>("Service_kia")==null||canvas.GetNodeOrNull<Button>("DemoStart")==null)
+            // nCTRL: the sign-in screen offers Hyundai (the default), Kia and both in Canada. gtCTRL is Kia only: US and Canada.
+            if(Brand.Flavor==Brand.NCtrl) {
+                if(Brand.ServiceId!=Brand.Hyundai||canvas.GetNodeOrNull<Button>("Service_kia")==null||canvas.GetNodeOrNull<Button>("Service_hyundai-ca")==null||
+                   canvas.GetNodeOrNull<Button>("Service_kia-ca")==null||canvas.GetNodeOrNull<Button>("DemoStart")==null)
                     throw new Exception("nCTRL doesn't start on Hyundai with a Kia choice and the demo");
                 await Capture("n01-signin-hyundai.png");
                 canvas.GetNode<Button>("Service_kia").EmitSignal(Godot.Button.SignalName.Pressed);
@@ -83,7 +84,9 @@ public partial class Main
                 await Capture("n02-disclaimer-kia.png");
                 await PassDisclaimerFixture();Navigate("Connect");
             }
-            else if(canvas.GetNodeOrNull<Button>("Service_hyundai")!=null)throw new Exception("gtCTRL offers Hyundai");
+            else if(canvas.GetNodeOrNull<Button>("Service_hyundai")!=null||canvas.GetNodeOrNull<Button>("Service_hyundai-ca")!=null||
+                    canvas.GetNodeOrNull<Button>("Service_kia-ca")==null||Brand.ServiceId!=Brand.Kia)
+                throw new Exception("gtCTRL should start on Kia US with only a Kia Canada choice");
             if(canvas.GetNodeOrNull<LineEdit>("SignIn")!=null||canvas.GetNode<Button>("SignIn").Text!="Sign in to Kia Connect")throw new Exception("Sign-in button is not Kia Connect");
             if(canvas.GetNodeOrNull<Button>("DemoStart")!=null&&!Brand.Flavor.Demo)throw new Exception("Demo mode is offered in a flavor without it");
             await Capture(Brand.Flavor.Id+"-k02-signin.png");

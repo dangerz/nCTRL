@@ -12,10 +12,11 @@ public static class Disclaimer
     // Each service has its own text and version. Bump a version when its text changes materially: every account
     // using that service must accept again. Hyundai Bluelink is version 1 (nCTRL's original text); Kia Connect is 2.
     public const int HyundaiVersion=1,KiaVersion=2;
-    public static int Version=>Brand.ServiceId==Brand.Kia?KiaVersion:HyundaiVersion;
+    // By maker: Bluelink Canada shares Hyundai's text and version, Kia Connect Canada shares Kia's.
+    public static int Version=>Brand.Maker=="Kia"?KiaVersion:HyundaiVersion;
     public const string Phrase="I Agree";
     /// <summary>The text for the service in use, with this build's name.</summary>
-    public static string Text=>(Brand.ServiceId==Brand.Kia?KiaText:HyundaiText).Replace("gtCTRL",Brand.App);
+    public static string Text=>(Brand.Maker=="Kia"?KiaText:HyundaiText).Replace("gtCTRL",Brand.App);
     public const string HyundaiText=
         "gtCTRL is an independent, third-party app. It is not made, endorsed, supported or approved by Hyundai Motor Company, " +
         "Hyundai Motor America or any of their affiliates. It is completely unsupported: no one provides help, fixes or guarantees.\n\n" +

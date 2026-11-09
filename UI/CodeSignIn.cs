@@ -2,6 +2,7 @@ using Godot;
 using NGarage.Core;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 // Kia Connect asks new devices for a one-time code (text or email). After the code, Kia gives a remember token
@@ -10,7 +11,10 @@ public partial class Main
 {
     // The service gtCTRL connects to. The UI reads names and capabilities from here, never hard-codes them.
     private static ServiceInfo AppService=>Brand.Service;
-    private static readonly (string Id,string Label)[] ServiceChoices={(Brand.Hyundai,"Hyundai · Bluelink"),(Brand.Kia,"Kia · Kia Connect")};
+    private static readonly (string Id,string Label)[] AllServiceChoices={(Brand.Hyundai,"Hyundai · US"),(Brand.Kia,"Kia · US"),
+        (Brand.HyundaiCanada,"Hyundai · Canada"),(Brand.KiaCanada,"Kia · Canada")};
+    // The flavor's services, in the flavor's order (gtCTRL: Kia US and Kia Canada).
+    private static (string Id,string Label)[] ServiceChoices=>Brand.Flavor.Services.Select(id=>AllServiceChoices.First(c=>c.Id==id)).ToArray();
     // Kia sees this as the phone's id. Not secret; kept in preferences so it survives sign-outs.
     private string kiaDeviceId="";
     private sealed record PendingCode(IVehicleConnection Client,string Email,string Password,bool Remember,bool FromVault,CodeDestinations Where);
@@ -30,6 +34,8 @@ public partial class Main
     private void ChooseService(string id)
     {
         if(liveBusy||id==Brand.ServiceId)return;
+        // Canadian accounts most likely want kilometres and Celsius; Range & units can switch back.
+        if(Brand.InCanada(id)&&!Brand.InCanada(Brand.ServiceId))units=UnitSystem.Metric;
         Brand.ServiceId=id;SelectCar();carTexture=null;SavePrefs();notice="";noticeError=false;Render();
     }
     /// <summary>Gives a new client the saved remember token (and the device id it was issued to), so no code is asked.</summary>
@@ -46,20 +52,20 @@ public partial class Main
     {
         pendingCode=new(client,email,password,remember,fromVault,where);codeSentTo="";
         liveMode=false;screen="Code";noticeError=false;
-        notice=fromVault?"Kia wants to confirm this phone again. Choose where to get a code.":"Kia wants to confirm this phone. Choose where to get a code.";
+        notice=fromVault?$"{Brand.Maker} wants to confirm this phone again. Choose where to get a code.":$"{Brand.Maker} wants to confirm this phone. Choose where to get a code.";
     }
 
     private void CodeScreen()
     {
         if(pendingCode is not {} p){ConnectionScreen();return;}
         Title("CONFIRM IT'S YOU.",AppService.ServiceName+" · one-time code");
-        Label(24,204,412,60,codeSentTo.Length==0?"Kia sends a code to confirm this phone. After that, it remembers the phone and won't ask each time.":
+        Label(24,204,412,60,codeSentTo.Length==0?$"{Brand.Maker} sends a code to confirm this phone. After that, it remembers the phone and won't ask each time.":
             "Code sent to "+codeSentTo+". Enter it below. It can take a minute to arrive.",14,Muted,false,true);
         float y=280;
         if(p.Where.HasPhone){LiveButton(24,y,412,48,(codeSentTo.Length>0?"Text it again to ":"Text me at ")+p.Where.Phone,14,()=>_ = SendCode(CodeChannel.Text),codeSentTo.Length==0,"CodeText");y+=60;}
         if(p.Where.HasEmail){LiveButton(24,y,412,48,(codeSentTo.Length>0?"Email it again to ":"Email me at ")+p.Where.Email,14,()=>_ = SendCode(CodeChannel.Email),codeSentTo.Length==0&&!p.Where.HasPhone,"CodeEmail");y+=60;}
         if(!p.Where.HasPhone&&!p.Where.HasEmail)
-            Label(24,y,412,48,"Kia didn't say where it can send a code. Check your Kia Connect account in Kia's app.",13,Muted,false,true);
+            Label(24,y,412,48,$"{Brand.Maker} didn't say where it can send a code. Check your {AppService.ServiceName} account in {Brand.Maker}'s app.",13,Muted,false,true);
         y+=16;
         Label(24,y,412,23,"ONE-TIME CODE",11,Muted,true);
         var code=AccountInput(24,(int)y+28,412,"Code",false);code.Name="CodeInput";code.MaxLength=10;
@@ -76,7 +82,7 @@ public partial class Main
             await codes.SendCodeAsync(channel,liveLifetime.Token);EnsureLive(version);
             codeSentTo=(channel==CodeChannel.Text?p.Where.Phone:p.Where.Email)??"";
             notice="Code sent. Enter it when it arrives.";
-        },"Asking Kia to send a code…");
+        },$"Asking {Brand.Maker} to send a code…");
     }
     private async Task VerifyCode(string code)
     {
@@ -108,6 +114,8 @@ public partial class Main
         // Typing the password (or the code) verifies the owner for this foreground session.
         enrollment=vehicles;selectedIndex=0;screen="Connect";notice="Signed in. Select your vehicle.";
         try {
+            // The saved login may be changing: the old shared session goes, and the next request shares the new one.
+            await ForgetSharedSession();EnsureLive(version);
             if(remember) {
                 var (token,device)=Remembered(active);
                 var saved=new SavedAccount(email,password,pin,token,device,Brand.ServiceId);

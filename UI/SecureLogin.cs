@@ -91,7 +91,7 @@ public partial class Main
         if(liveBusy)return;
         if(demo){EndLiveSession();return;}
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();heldShare=null;sharedHistory=Array.Empty<SharedEntry>();EndLiveSession();
+        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();ForgetAlerts();ForgetLookHistory();heldShare=null;sharedHistory=Array.Empty<SharedEntry>();EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
         // Car names and pictures go with the account too.
         linkedVehicle="";disclaimer=null;cars.Clear();SelectCar();SavePrefs();

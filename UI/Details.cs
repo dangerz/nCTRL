@@ -39,6 +39,18 @@ public partial class Main
             }
             scroll.AddChild(list);canvas.AddChild(scroll);
         }
-        LiveButton(24,722,412,46,"Update",13,()=>_ = RefreshLive(false),false,"DetailsUpdate");
+        if(raw is JsonElement report) {
+            Button(24,722,198,46,"Copy for a bug report",12,()=>CopyStatusReport(report),false,"DetailsCopy");
+            LiveButton(238,722,198,46,"Update",13,()=>_ = RefreshLive(false),false,"DetailsUpdate");
+        } else LiveButton(24,722,412,46,"Update",13,()=>_ = RefreshLive(false),false,"DetailsUpdate");
+    }
+    // The last report copied, for the smoke test (the headless clipboard may not exist).
+    private string copiedReport="";
+    private void CopyStatusReport(JsonElement status)
+    {
+        string version=ProjectSettings.GetSetting("application/config/version").AsString();
+        copiedReport=StatusReport.Build(status,Brand.App,version.Length>0?version:"(unknown version)",AppService.ServiceName);
+        DisplayServer.ClipboardSet(copiedReport);
+        notice="Copied, with your name, contact details, location, IDs and the VIN's serial number removed. Paste it into the bug report.";noticeError=false;Render();
     }
 }
