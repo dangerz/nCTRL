@@ -20,7 +20,7 @@ public partial class StatusOverlay : Control
     // Reported openings on the visible (driver's) side; passenger-side doors and the tailgate are not in view.
     public bool FrontDoorOpen,RearDoorOpen,FrontWindowOpen,RearWindowOpen,HoodOpen;
     public Vector2 TextureSize=new(1774,887);
-    public CarArt Art=CarArt.For("ioniq5n");
+    public CarArt Art=CarArt.For(CarModels.Default.Id);
     private float time;
     private static readonly Color LockRed=new("#f24a4d"),HeatTint=new("#ff3b30"),CoolTint=new("#3aa0ff");
     private static readonly Color Beam=new(1f,0.96f,0.78f),OpenAmber=new("#e0a43a");

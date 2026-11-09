@@ -14,15 +14,18 @@ public partial class Main
     private ConfigFile? demoReturnPrefs;
     private VehicleSnapshot? demoReturnSnapshot;
     private RequestBudget? demoReturnBudget;
-    private Func<HyundaiUsClient>? demoReturnFactory;
+    private Func<IVehicleConnection>? demoReturnFactory;
+    private string demoReturnService=Brand.Hyundai;
     // Short cooldowns so the demo can be explored freely; real limits are untouched.
     private static readonly IReadOnlyDictionary<RequestKind,RequestLimit> DemoLimits=RequestBudget.Defaults.ToDictionary(
         k=>k.Key,k=>new RequestLimit(TimeSpan.FromSeconds(k.Key is RequestKind.Location or RequestKind.Camera?30:3),1000));
 
     private async Task StartDemo()
     {
-        if(liveBusy||demo)return;
+        if(liveBusy||demo||!Brand.Flavor.Demo)return;
         EndLiveSession(false);
+        // The demo is a Hyundai car; the chosen service comes back when it ends.
+        demoReturnService=Brand.ServiceId;Brand.ServiceId=Brand.Hyundai;SelectCar();carTexture=null;
         demoReturnPrefs=PrefsConfig();demoReturnSnapshot=snapshot;demoReturnBudget=budget;demoReturnFactory=connectionFactory;
         demo=true;snapshot=null;persistedState=null;ignoredPlaces.Clear();ForgetOutside();sharedHistory=Array.Empty<SharedEntry>();
         budget=new RequestBudget(new MemoryBudgetStore(),null,DemoLimits);
@@ -42,6 +45,8 @@ public partial class Main
     {
         demo=false;
         if(demoReturnPrefs!=null)ApplyPrefs(demoReturnPrefs);
+        // After the preferences: they were captured once the demo had switched to Hyundai.
+        Brand.ServiceId=demoReturnService;SelectCar();carTexture=null;
         snapshot=demoReturnSnapshot;persistedState=null;
         if(demoReturnBudget!=null)budget=demoReturnBudget;
         if(demoReturnFactory!=null)connectionFactory=demoReturnFactory;

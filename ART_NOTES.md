@@ -5,3 +5,5 @@ Original AI-generated pixel-style Ioniq 5 N illustration, created for this compa
 The artwork is illustrative and may differ from exact production bodywork. Hyundai, Ioniq and N names identify the vehicle; this is not an official Hyundai product. Maker badges (the Hyundai, N, Genesis and Kia logos on grilles, hoods and wheel centers) have been painted out of every car picture and the app icon, so the art shows no trademarks. UI icons are drawn in code. DejaVu Sans Regular and Bold are bundled with their license.
 
 Direction: selected concept 02 / N Performance. Palette: #08121d background, #8ecbfa primary accent, #f24a4d red detail, #eef5fb primary text, #9ab0c6 secondary text. Angular panels, horizontal pixel charge bars and a large vehicle preview carry the styling. Paint choice affects the car, not the UI accent palette.
+
+gtCTRL icon (`Assets/gtctrl_icon.png`): the EV6 GT picture repainted gray by `Tools/Icon/make_icon.py` with the same body selection as `Paint.gdshader`, on the GT Neon graphite with a pixel "GT" mark drawn in code. Kia and EV6 GT names identify the vehicle; this is not an official Kia product, and no Kia logo is used.

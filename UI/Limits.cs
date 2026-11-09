@@ -48,7 +48,7 @@ public partial class Main
         Panel(24,236,412,400,Skin.Card);
         Label(44,256,372,30,"LIMIT REACHED",18,Red,true);
         Label(44,294,372,128,p.Message,13,White,false,true);
-        Label(44,428,372,112,"Going past nCTRL's limits raises the chance that Hyundai rate-limits or bans your account. "+
+        Label(44,428,372,112,$"Going past {Brand.App}'s limits raises the chance that {Brand.Maker} rate-limits or bans your account. "+
             "Sending anyway covers only this one request and is recorded in Activity.",12,Muted,false,true);
         LiveButton(44,560,174,52,"Cancel",13,()=>{pendingOverride=null;notice="Nothing was sent.";noticeError=false;Render();},false,"OverrideCancel");
         LiveButton(242,560,174,52,deviceCheckRequired?"Send with "+vault.BiometricName:"Send anyway",13,()=>_ = ConfirmOverride(),true,"OverrideConfirm");
@@ -60,7 +60,7 @@ public partial class Main
         int version=liveEpoch;bool confirmed=false;
         await RunLive(async()=>{
             if(deviceCheckRequired) {
-                try {await vault.AuthenticateAsync("Confirm sending one request beyond nCTRL's limit",liveLifetime.Token);}
+                try {await vault.AuthenticateAsync($"Confirm sending one request beyond {Brand.App}'s limit",liveLifetime.Token);}
                 catch(VaultException) {
                     EnsureLive(version);pendingOverride=null;
                     notice="Override not confirmed. Nothing was sent.";noticeError=true;return;
@@ -74,7 +74,7 @@ public partial class Main
     }
     private void LimitsScreen()
     {
-        Title("REQUEST LIMITS.","nCTRL's own limits · Hyundai publishes no US quotas");
+        Title("REQUEST LIMITS.",$"{Brand.App}'s own limits · {Brand.Maker} publishes no US quotas");
         int y=196;
         foreach(var kind in Enum.GetValues<RequestKind>())
         {
@@ -89,8 +89,8 @@ public partial class Main
         }
         var blocked=budget.HyundaiBlockedUntil;
         if(blocked>DateTimeOffset.UtcNow)
-            Label(24,612,412,32,"Hyundai is rate limiting. Requests are paused until "+blocked.ToLocalTime().ToString("t",CultureInfo.CurrentCulture)+".",12,Red,true,true);
-        Label(24,648,412,68,"Shared by every account on this device; daily counts reset at midnight. Hyundai rate limiting doubles that request's limits "+
+            Label(24,612,412,32,$"{Brand.Maker} is rate limiting. Requests are paused until "+blocked.ToLocalTime().ToString("t",CultureInfo.CurrentCulture)+".",12,Red,true,true);
+        Label(24,648,412,68,$"Shared by every account on this device; daily counts reset at midnight. {Brand.Maker} rate limiting doubles that request's limits "+
             "for 24 hours, up to ×8. Overrides cover one request"+(deviceCheckRequired?" and need "+vault.BiometricName:"")+".",11,Muted,false,true);
         Button(24,722,412,46,"Back to settings",13,()=>Navigate("Settings"),false,"LimitsBack");
     }

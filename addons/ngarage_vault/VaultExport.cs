@@ -18,11 +18,14 @@ public partial class VaultAndroidExport : EditorExportPlugin
         // repeating a template key here dropped this plugin's whole fragment from the exported Info.plist.
         if(GetExportPlatform() is EditorExportPlatformIos)
         {
-            AddAppleEmbeddedPlatformPlistContent("<key>NSFaceIDUsageDescription</key><string>Use Face ID to confirm the risk disclaimer and limit overrides in nCTRL.</string>");
-            // nctrl:// opens the app: from the widget (Car screen) and from the Share extension (Send to car).
-            AddAppleEmbeddedPlatformPlistContent("<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>nctrl</string><key>CFBundleURLSchemes</key><array><string>nctrl</string></array></dict></array>");
+            // gtCTRL exports carry the "gtctrl" feature tag (see Core/Brand.cs).
+            var flavor=System.Array.IndexOf(features,"gtctrl")>=0?NGarage.Core.Brand.GtCtrl:NGarage.Core.Brand.NCtrl;
+            string app=flavor.App,scheme=flavor.Id;
+            AddAppleEmbeddedPlatformPlistContent($"<key>NSFaceIDUsageDescription</key><string>Use Face ID to confirm the risk disclaimer and limit overrides in {app}.</string>");
+            // nctrl:// (gtctrl:// for gtCTRL) opens the app: from the widget (Car screen) and from the Share extension (Send to car).
+            AddAppleEmbeddedPlatformPlistContent($"<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>{scheme}</string><key>CFBundleURLSchemes</key><array><string>{scheme}</string></array></dict></array>");
             // While the map is open, to show where you are next to the car. Used on the phone only.
-            AddAppleEmbeddedPlatformPlistContent("<key>NSLocationWhenInUseUsageDescription</key><string>Show where you are on nCTRL's car map. Your location stays on this iPhone.</string>");
+            AddAppleEmbeddedPlatformPlistContent($"<key>NSLocationWhenInUseUsageDescription</key><string>Show where you are on {app}'s car map. Your location stays on this iPhone.</string>");
             // Add-only photo access, for saving Surround View pictures you choose to keep.
             AddAppleEmbeddedPlatformPlistContent("<key>NSPhotoLibraryAddUsageDescription</key><string>Save the Surround View pictures you choose to your photo library.</string>");
         }

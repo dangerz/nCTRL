@@ -115,11 +115,11 @@ public sealed class RequestBudget
         if(now<blockedUntil)return new(BlockedMessage(),kind,false);
         if(overriding)return null;
         var e=entries[kind];var (cooldown,cap,factor)=Effective(kind);
-        string tightened=factor>1?$" Limits are tightened ×{factor} until {Time(e.TightenedUntil)} after Hyundai rate limiting.":"";
+        string tightened=factor>1?$" Limits are tightened ×{factor} until {Time(e.TightenedUntil)} after {Brand.Maker} rate limiting.":"";
         if(e.Count>=cap)
             return new($"Daily limit reached: {e.Count} of {cap} {Label(kind)} used today. It resets at midnight.{tightened}",kind,true);
         if(enforceCooldown&&now<e.Last+cooldown)
-            return new($"nCTRL allows one {Singular(kind)} every {Duration(cooldown)}. Next allowed in {Duration(e.Last+cooldown-now)}.{tightened}",kind,true);
+            return new($"{Brand.App} allows one {Singular(kind)} every {Duration(cooldown)}. Next allowed in {Duration(e.Last+cooldown-now)}.{tightened}",kind,true);
         return null;
     }
     private (TimeSpan Cooldown,int Cap,int Factor) Effective(RequestKind kind)
@@ -128,7 +128,7 @@ public sealed class RequestBudget
         int factor=clock.GetUtcNow()<e.TightenedUntil?Math.Clamp(e.Factor,1,MaxFactor):1;
         return (limit.Cooldown*factor,Math.Max(1,limit.DailyCap/factor),factor);
     }
-    private string BlockedMessage()=>$"Hyundai is rate limiting requests. Wait until {Time(blockedUntil)} before trying again. This cannot be overridden.";
+    private string BlockedMessage()=>$"{Brand.Maker} is rate limiting requests. Wait until {Time(blockedUntil)} before trying again. This cannot be overridden.";
     // Daily caps reset at local midnight.
     private void Roll()
     {

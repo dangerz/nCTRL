@@ -16,17 +16,24 @@ public partial class Main : Control
     private Control canvas = null!;
     private Font regular = null!, bold = null!;
     private Shader paintShader = null!, chargeOutline = null!;
-    private string screen = "Connect", paintName = "Performance Blue", paintHex = "89b7f0";
+    private string screen = "Connect", paintName = Brand.Flavor.DefaultPaintName, paintHex = Brand.Flavor.DefaultPaintHex;
     private string garageName = "My garage", notice = "";
     private bool noticeError;
     private string linkedVehicle="",accountKey="";
     private const string Prefs = "user://preferences.cfg";
     private bool smoke=false;
-    private readonly (string Name,string Hex)[] paints = {
+    // Paint presets for the picture's maker. Illustrative, picked by eye; not factory color matching.
+    private static readonly (string Name,string Hex)[] HyundaiPaints = {
         ("Performance Blue","89b7f0"),("Atlas White","e4e8ed"),
         ("Ecotonic Gray","747c79"),("Phantom Black","202630"),
         ("Soultronic Orange","ee632f"),("Gravity Gold","b6ab8a")
     };
+    private static readonly (string Name,string Hex)[] KiaPaints = {
+        ("Interstellar Gray","525252"),("Yacht Blue","2b4f86"),
+        ("Runway Red","a3222b"),("Moonscape","7a7f78"),
+        ("Aurora Black Pearl","1c1f24"),("Snow White Pearl","e9ecee")
+    };
+    private (string Name,string Hex)[] paints=>carModel.Maker=="Kia"?KiaPaints:HyundaiPaints;
 
     public override void _Ready()
     {
@@ -37,16 +44,20 @@ public partial class Main : Control
 #if DEBUG
         liveSmoke = Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--live-smoke-test");
         vaultSmoke = Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--secure-smoke-test");
-        liveSmoke |= vaultSmoke;
+        kiaSmoke = Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--kia-smoke-test");
+        liveSmoke |= vaultSmoke || kiaSmoke;
         smoke = liveSmoke;
 #endif
+        // The build's flavor: gtCTRL exports carry the "gtctrl" feature tag; desktop runs can pass --flavor=gtctrl.
+        Brand.Use(OS.HasFeature("gtctrl")||Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--flavor=gtctrl")?Brand.GtCtrl:Brand.NCtrl);
+        paintName=Brand.Flavor.DefaultPaintName;paintHex=Brand.Flavor.DefaultPaintHex;Skin.Use(AppTheme.DefaultHex);SelectCar();
         if (!smoke) { LoadPrefs(); LoadSnapshot(); }
 #if DEBUG
         budget = new RequestBudget(smoke ? new MemoryBudgetStore() : LimitsStore(), null, smoke ? SmokeLimits : null);
 #else
         budget = new RequestBudget(LimitsStore());
 #endif
-        connectionFactory = () => new HyundaiUsClient(budget);
+        connectionFactory = () => NewConnection();
 #if DEBUG
         weather = smoke ? new OutsideTemperature(weatherFixture = new WeatherFixture()) : new OutsideTemperature();
 #else
@@ -61,7 +72,8 @@ public partial class Main : Control
         if(!smoke){var chargeTimer=new Timer {WaitTime=30,Autostart=true};chargeTimer.Timeout+=CheckChargeOverdue;AddChild(chargeTimer);CallDeferred(nameof(ReadOnOpen));CallDeferred(nameof(CheckShared));CallDeferred(nameof(UpdateWidget));_ = UpdateOutsideTemperature();}
         Render();
 #if DEBUG
-        if (vaultSmoke) _ = SecureSmokeTest();
+        if (kiaSmoke) _ = KiaSmokeTest();
+        else if (vaultSmoke) _ = SecureSmokeTest();
         else if (liveSmoke) _ = LiveSmokeTest();
 #endif
 
@@ -75,14 +87,17 @@ public partial class Main : Control
     }
     private void ApplyPrefs(ConfigFile cfg)
     {
-        string hex = cfg.GetValue("appearance","paint","89b7f0").AsString();
+        // The service first: the disclaimer acceptance below is checked against it.
+        Brand.ServiceId=cfg.GetValue("connection","service",Brand.ServiceId).AsString();
+        string hex = cfg.GetValue("appearance","paint",Brand.Flavor.DefaultPaintHex).AsString();
         if (Color.HtmlIsValid(hex)) paintHex = hex;
-        paintName = cfg.GetValue("appearance","name","Performance Blue").AsString();
+        paintName = cfg.GetValue("appearance","name",Brand.Flavor.DefaultPaintName).AsString();
         if (paintName == "Cyber Gray") { paintName="Ecotonic Gray"; paintHex="747c79"; }
         garageName = cfg.GetValue("appearance","garage","My garage").AsString();
         Skin.Use(cfg.GetValue("appearance","theme",AppTheme.DefaultHex).AsString());
         widgetEnabled=cfg.GetValue("appearance","widget",true).AsBool();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
+        kiaDeviceId=cfg.GetValue("connection","kia_device","").AsString();
         cars.Clear();
         if(cfg.HasSection("cars"))foreach(string key in cfg.GetSectionKeys("cars")) {
             var car=cfg.GetValue("cars",key).AsStringArray();
@@ -118,6 +133,8 @@ public partial class Main : Control
         cfg.SetValue("appearance","theme",Skin.Hex);
         cfg.SetValue("appearance","widget",widgetEnabled);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
+        cfg.SetValue("connection","service",Brand.ServiceId);
+        if(kiaDeviceId.Length>0)cfg.SetValue("connection","kia_device",kiaDeviceId);
         foreach(var (key,car) in cars)cfg.SetValue("cars",key,new[]{car.Model,car.Name});
         // Your own climate choices, not the car's settings the Climate page may be showing.
         var (_,driver,passenger,wheel,front)=climateBeforeSync??(liveTemperature,driverSeat,passengerSeat,wheelHeat,climateDefrost);
@@ -154,21 +171,22 @@ public partial class Main : Control
 
     private void Render()
     {
-        // Until a real enrollment is selected, every route stays on the account flow.
-        if(!liveMode)screen="Connect";
+        // Until a real enrollment is selected, every route stays on the account flow (the one-time code is part of it).
+        if(!liveMode)screen=screen=="Code"&&pendingCode!=null?"Code":"Connect";
         if(canvas != null) { RemoveChild(canvas); canvas.QueueFree(); }
         canvas = new Control { Name="Canvas", Size=new Vector2(460,920) };
         AddChild(canvas);
         Rect(0,0,460,920,Back);
-        // N-inspired asymmetric motorsport detail; original artwork and layout.
+        // Asymmetric motorsport detail; original artwork and layout.
         var header=Panel(0,0,460,96,Skin.Header,false,true);header.BottomEdgeOnly=true;
         Label(24,19,310,20,garageName,13,Muted);
-        Label(24,44,340,41,liveMode?CarTitle:"nCTRL",liveMode&&CarTitle.Length>14?23:29,White,true).Name="CarTitle";
+        Label(24,44,340,41,liveMode?CarTitle:$"{Brand.App}",liveMode&&CarTitle.Length>14?23:29,White,true).Name="CarTitle";
         Button(365,20,70,28,demo?"DEMO":smoke?"TEST":liveMode?"LIVE":"LOCKED",11,()=>Navigate(liveMode?"Settings":"Connect"),false,"ConnectionBadge");
         int content=canvas.GetChildCount();
         // Nothing else is reachable until the current account has accepted the risk disclaimer.
         if(DisclaimerRequired) DisclaimerScreen();
         else if(screen=="Connect") ConnectionScreen();
+        else if(screen=="Code") CodeScreen();
         else if(screen=="Paint") Paint();
         else if(screen=="Appearance") Appearance();
         else if(screen=="Model") ModelPicker();
@@ -224,7 +242,7 @@ public partial class Main : Control
         Label(24,148,410,24,"Choose the paint for your pixel "+carModel.Name+".",12,Muted);
         Hero(185,215);
         Label(24,419,410,30,paintName.ToUpperInvariant(),20,Blue,true);
-        Label(24,455,410,30,"Wheels, glass and signature red trim stay intact.",11,Muted);
+        Label(24,455,410,30,"Wheels, glass, lights and neon calipers stay as they are.",11,Muted);
         for(int i=0;i<paints.Length;i++)
         {
             var selected=paints[i];
@@ -264,7 +282,7 @@ public partial class Main : Control
             var g=new Glyph {Kind=name,Ink=name==selected?Blue:Muted,Position=new(33,5),Size=new(26,26)};b.AddChild(g);
             var l=new Label {Position=new(0,35),Size=new(92,22),Text=name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
             l.AddThemeFontOverride("font",regular);l.AddThemeFontSizeOverride("font_size",11);l.AddThemeColorOverride("font_color",name==selected?Blue:Muted);b.AddChild(l);
-            if(name==selected) Rect(x+20,917,52,3,Red);
+            if(name==selected) Rect(x+20,917,52,3,Skin.Detail);
         }
     }
     private void Rect(float x,float y,float w,float h,Color color)

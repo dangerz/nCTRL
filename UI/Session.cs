@@ -1,6 +1,7 @@
 using Godot;
 using NGarage.Core;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 // Opening the app shows the Car screen from the last saved status straight away, then reads a new one
@@ -16,7 +17,8 @@ public partial class Main
     private bool Offline=>liveMode&&connection==null;
     private LiveVehicleState? CurrentState=>connection?.State??(Offline?snapshot?.State:null);
     private string VehicleName=>connection?.Selected is {} v?(v.Name.Length>0?v.Name:v.Model):snapshot?.Name??"";
-    private string VinTail=>connection?.Selected is {} v?v.Vin[^6..]:snapshot?.VinTail??"";
+    private string VinTail=>connection?.Selected is {} v?VinEnd(v.Vin):snapshot?.VinTail??"";
+    private static string VinEnd(string vin)=>vin.Length==17?vin[^6..]:"";
     private int? VehicleGeneration=>connection?.Selected?.Generation??(Offline?snapshot?.Generation:null);
 
     private bool EnterOffline()
@@ -35,7 +37,7 @@ public partial class Main
         if(connection is not {State: {} state,Selected: {} vehicle}||accountKey.Length==0||ReferenceEquals(state,persistedState))return;
         persistedState=state;
         string name=vehicle.Name.Length>0?vehicle.Name:vehicle.Model;
-        snapshot=new(accountKey,VehicleLink.Fingerprint(accountKey,vehicle.Vin),name.Length>64?name[..64]:name,vehicle.Vin[^6..],vehicle.Generation,state,IgnoredHere!=null);
+        snapshot=new(accountKey,VehicleLink.Fingerprint(accountKey,vehicle.Vin),name.Length>64?name[..64]:name,VinEnd(vehicle.Vin),vehicle.Generation,state,IgnoredHere!=null);
         if(smoke||demo)return;
         using var file=FileAccess.Open(SnapshotFile,FileAccess.ModeFlags.Write);
         file?.StoreString(snapshot.Encode());
@@ -49,13 +51,13 @@ public partial class Main
     /// <summary>Returns a signed-in client for the selected vehicle, signing in with the saved login when
     /// needed. FreshRead is true when signing in already read status.
     /// Returns no client when the user must choose a vehicle or accept the disclaimer first.</summary>
-    private async Task<(HyundaiUsClient? Client,bool FreshRead)> AcquireSession(int version)
+    private async Task<(IVehicleConnection? Client,bool FreshRead)> AcquireSession(int version)
     {
         if(connection is {Selected: not null,IsAuthenticated: true} ready)return (ready,false);
         if(!vault.HasAccount) {
             // Session-only login that Hyundai ended: the typed credentials are gone, so sign in again.
             liveMode=false;screen="Connect";
-            throw new BluelinkException("Sign in to Bluelink again.");
+            throw new BluelinkException($"Sign in to {Brand.Service.ServiceName} again.");
         }
         sessionAccount??=await vault.UnlockAsync(liveLifetime.Token);EnsureLive(version);
         var account=sessionAccount;
@@ -65,8 +67,15 @@ public partial class Main
             if(!liveMode){liveMode=true;screen="Car";}
             return (connection,false);
         }
+        if(account.Service!=Brand.ServiceId){Brand.ServiceId=account.Service;SelectCar();carTexture=null;}
         connection?.Dispose();var active=connectionFactory();connection=active;
-        var vehicles=await active.LoginAsync(account.Email,account.Password,account.Pin,liveLifetime.Token,implicitSignIn:true);EnsureLive(version);
+        UseRemembered(active,account);
+        IReadOnlyList<EnrolledVehicle> vehicles;
+        try {vehicles=await active.LoginAsync(account.Email,account.Password,account.Pin,liveLifetime.Token,implicitSignIn:true);EnsureLive(version);}
+        catch(OneTimeCodeRequiredException code) {
+            EnsureLive(version);AskForCode(active,account.Email,account.Password,true,true,code.Destinations);
+            return (null,false);
+        }
         accountKey=VehicleLink.AccountKey(account.Email);BindDisclaimer();
         int index=VehicleLink.Find(linkedVehicle,accountKey,vehicles);
         if(index<0) {

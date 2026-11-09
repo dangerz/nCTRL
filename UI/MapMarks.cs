@@ -45,7 +45,7 @@ public partial class MapMarks : Control
 public partial class CarMarker : Control
 {
     public Texture2D? Picture;
-    public Color Paint=new("#89b7f0");
+    public Color Paint=new("#525252");
     public double? Heading;
     public const float Width=22,Length=44;
     private static readonly Color Glass=new("#14202c"),Tire=new("#0b0f14"),Lamp=new("#f4f1e4"),NRed=new("#f24a4d");

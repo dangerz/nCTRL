@@ -49,7 +49,7 @@ public partial class Main
 
     private void RangeScreen()
     {
-        Title("RANGE & UNITS.","Saved on this device. Hyundai always gets miles, °F and psi.");
+        Title("RANGE & UNITS.",$"Saved on this device. {Brand.Maker} always gets miles, °F and psi.");
         Label(24,192,412,22,"UNITS",11,Muted,true);
         foreach(var (system,x,text) in new[]{(UnitSystem.Imperial,24,"Imperial  ·  mi, °F, psi"),(UnitSystem.Metric,238,"Metric  ·  km, °C, kPa")}) {
             var b=Button(x,216,198,46,text,13,()=>{units=system;SavePrefs();Render();},false,"Units"+system);

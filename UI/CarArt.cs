@@ -1,3 +1,4 @@
+using NGarage.Core;
 using Godot;
 using System.Collections.Generic;
 
@@ -78,6 +79,6 @@ public sealed record CarArt(Vector2[] Windshield,Rect2[] Headlights,Vector2 Horn
             P(1040,335,1300,330,1305,630,1050,640,1040,500),P(1035,325,1110,170,1250,162,1275,320),
             P(1300,330,1530,330,1540,420,1510,520,1500,610,1310,630),P(1282,165,1440,170,1475,318,1295,322))
     };
-    public static CarArt For(string id)=>Pictures.TryGetValue(id,out var art)?art:Pictures["ioniq5n"];
+    public static CarArt For(string id)=>Pictures.TryGetValue(id,out var art)?art:Pictures[CarModels.Default.Id];
     public static bool Has(string id)=>Pictures.ContainsKey(id);
 }

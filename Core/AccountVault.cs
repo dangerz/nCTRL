@@ -12,21 +12,30 @@ public sealed class SavedAccount
 {
     public string Email { get; }
     public string Password { get; }
+    // Hyundai's four-digit service PIN; empty for services without one (Kia Connect).
     public string Pin { get; }
-    public SavedAccount(string email,string password,string pin)
+    // Kia Connect's remember token (lets sign-in skip the one-time code) and the device id it belongs to.
+    public string RememberToken { get; }
+    public string DeviceId { get; }
+    // The car service this login belongs to ("hyundai" or "kia"). Logins saved before Kia support are Hyundai's.
+    public string Service { get; }
+    public SavedAccount(string email,string password,string pin,string rememberToken="",string deviceId="",string service=Brand.Hyundai)
     {
-        if(string.IsNullOrWhiteSpace(email)||email.Length>320||password.Length is <1 or >4096||pin.Length!=4)
+        if(string.IsNullOrWhiteSpace(email)||email.Length>320||password.Length is <1 or >4096||pin.Length is not (0 or 4)||
+           rememberToken.Length>8192||deviceId.Length>128||service is not (Brand.Hyundai or Brand.Kia))
             throw new VaultException("invalid_data");
         foreach(char c in pin)if(!char.IsAsciiDigit(c))throw new VaultException("invalid_data");
-        Email=email;Password=password;Pin=pin;
+        Email=email;Password=password;Pin=pin;RememberToken=rememberToken;DeviceId=deviceId;Service=service;
     }
+    public SavedAccount WithRemember(string rememberToken,string deviceId)=>new(Email,Password,Pin,rememberToken,deviceId,Service);
     public override string ToString()=>"SavedAccount [redacted]";
     public string Encode()
     {
         using var stream=new MemoryStream();
         using(var writer=new Utf8JsonWriter(stream)){
-            writer.WriteStartObject();writer.WriteNumber("version",1);writer.WriteString("email",Email);
-            writer.WriteString("password",Password);writer.WriteString("pin",Pin);writer.WriteEndObject();
+            writer.WriteStartObject();writer.WriteNumber("version",2);writer.WriteString("email",Email);
+            writer.WriteString("password",Password);writer.WriteString("pin",Pin);
+            writer.WriteString("remember",RememberToken);writer.WriteString("device",DeviceId);writer.WriteString("service",Service);writer.WriteEndObject();
         }
         return Encoding.UTF8.GetString(stream.ToArray());
     }
@@ -35,8 +44,11 @@ public sealed class SavedAccount
         try {
             if(json.Length>65536)throw new VaultException("invalid_data");
             using var doc=JsonDocument.Parse(json);var r=doc.RootElement;
-            if(r.GetProperty("version").GetInt32()!=1)throw new VaultException("invalid_data");
-            return new(r.GetProperty("email").GetString()!,r.GetProperty("password").GetString()!,r.GetProperty("pin").GetString()!);
+            int version=r.GetProperty("version").GetInt32();
+            if(version is not (1 or 2))throw new VaultException("invalid_data");
+            string Optional(string key)=>version==2&&r.TryGetProperty(key,out var v)?v.GetString()??"":"";
+            return new(r.GetProperty("email").GetString()!,r.GetProperty("password").GetString()!,r.GetProperty("pin").GetString()!,
+                Optional("remember"),Optional("device"),Optional("service") is {Length:>0} service?service:Brand.Hyundai);
         } catch(VaultException){throw;}catch{throw new VaultException("invalid_data");}
     }
 }

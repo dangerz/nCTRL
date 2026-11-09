@@ -24,7 +24,7 @@ public partial class Main
     private string sessionShared="";
     private async Task ShareSession()
     {
-        if(demo||!vault.Present||!vault.HasAccount||connection?.ExportSession() is not {} session)return;
+        if(demo||!AppService.SendToCar||!vault.Present||!vault.HasAccount||connection?.ExportSession() is not {} session)return;
         string json=session.Encode();
         if(json==sessionShared)return;
         try {await vault.SaveSessionAsync(json,liveLifetime.Token);sessionShared=json;}

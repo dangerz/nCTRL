@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 public partial class Main
 {
-    private HyundaiUsClient? connection;
+    private IVehicleConnection? connection;
     private CancellationTokenSource liveLifetime=new();
     private IReadOnlyList<EnrolledVehicle>? enrollment;
     private bool liveMode,liveBusy;
@@ -20,7 +20,7 @@ public partial class Main
     // One-tap climate starts, editable with Save as; kept in preferences.
     private ClimatePreset warmPreset=ClimatePreset.WarmUp,coolPreset=ClimatePreset.CoolDown;
     // Set in _Ready so every client shares the persisted request budget.
-    private Func<HyundaiUsClient> connectionFactory = null!;
+    private Func<IVehicleConnection> connectionFactory = null!;
     private bool monitoringCommand;
     // Flash lights / horn & lights effect on the car art, shown when Hyundai accepts the request.
     private ulong flashEffectUntil;
@@ -38,41 +38,56 @@ public partial class Main
     private void ConnectionScreen()
     {
         if(enrollment==null && vault.HasAccount && !manualAccountEntry){SavedLoginScreen();return;}
-        Title("CONNECT YOUR HYUNDAI.","US Bluelink accounts · direct connection from this app");
+        // nCTRL shows the Hyundai/Kia choice where the subtitle would be.
+        bool choose=Brand.ChoosesService&&enrollment==null;
+        Title($"CONNECT YOUR {AppService.Maker.ToUpperInvariant()}.",choose?"":$"US {AppService.ServiceName} accounts · direct connection from this app");
         if(enrollment!=null && connection?.IsAuthenticated==true)
         {
             Label(24,214,412,40,"Choose the vehicle to connect.",16,White,true);
             var vehicles=new OptionButton {Name="VehicleChoice",Position=new(24,277),Size=new(412,48)};
             vehicles.AddThemeFontOverride("font",regular);vehicles.AddThemeFontSizeOverride("font_size",13);
-            foreach(var v in enrollment)vehicles.AddItem($"{(v.Name.Length>0?v.Name:v.Model)} · VIN …{v.Vin[^6..]}");
+            foreach(var v in enrollment)vehicles.AddItem((v.Name.Length>0?v.Name:v.Model)+(VinEnd(v.Vin) is {Length:>0} end?$" · VIN …{end}":$" · {v.Model}"));
             vehicles.Select(selectedIndex);vehicles.ItemSelected+=i=>selectedIndex=(int)i;
             vehicles.Disabled=liveBusy;canvas.AddChild(vehicles);
-            Label(24,359,412,100,"Choose your vehicle once. After you unlock or sign in again, nCTRL opens the same vehicle automatically.",14,Muted,false,true);
+            Label(24,359,412,100,$"Choose your vehicle once. After you unlock or sign in again, {Brand.App} opens the same vehicle automatically.",14,Muted,false,true);
             LiveButton(24,510,412,52,liveBusy?"Reading vehicle…":"Connect selected vehicle",14,()=>_ = ChooseVehicle(),true,"ChooseVehicle");
             LiveButton(24,581,412,44,"Cancel",13,()=>EndLiveSession());
             return;
         }
-        Label(24,204,412,23,"BLUELINK EMAIL",11,Muted,true);
+        if(choose) {
+            for(int i=0;i<ServiceChoices.Length;i++) {
+                var (id,label)=ServiceChoices[i];
+                var b=LiveButton(24+i*210,152,202,34,label,12,()=>ChooseService(id),false,"Service_"+id);
+                if(id==Brand.ServiceId)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
+            }
+        }
+        Label(24,204,412,23,AppService.ServiceName.ToUpperInvariant()+" EMAIL",11,Muted,true);
         var email=AccountInput(24,232,412,"Email",false);
         email.VirtualKeyboardType=LineEdit.VirtualKeyboardTypeEnum.EmailAddress;
         Label(24,291,412,23,"PASSWORD",11,Muted,true);
         var pass=AccountInput(24,319,412,"Password",true);
-        Label(24,378,412,23,"FOUR-DIGIT BLUELINK SERVICE PIN",11,Muted,true);
-        var servicePin=AccountInput(24,406,412,"Service PIN",true);servicePin.MaxLength=4;
-        servicePin.VirtualKeyboardType=LineEdit.VirtualKeyboardTypeEnum.Number;
-        var remember=new CheckBox {Position=new(24,471),Size=new(412,40),Text="Save account on this phone",
+        // Without a service PIN the rest of the form moves up into its place.
+        int dy=AppService.NeedsPin?0:-87;
+        LineEdit? servicePin=null;
+        if(AppService.NeedsPin) {
+            Label(24,378,412,23,$"FOUR-DIGIT {AppService.ServiceName.ToUpperInvariant()} SERVICE PIN",11,Muted,true);
+            servicePin=AccountInput(24,406,412,"Service PIN",true);servicePin.MaxLength=4;
+            servicePin.VirtualKeyboardType=LineEdit.VirtualKeyboardTypeEnum.Number;
+        }
+        var remember=new CheckBox {Position=new(24,471+dy),Size=new(412,40),Text="Save account on this phone",
             ButtonPressed=rememberDevice && vault.Available,Disabled=liveBusy||!vault.Available};
         remember.AddThemeFontOverride("font",regular);remember.AddThemeFontSizeOverride("font_size",13);
         remember.Toggled+=value=>rememberDevice=value;canvas.AddChild(remember);
-        Label(24,519,412,70,vault.Available?"Saved credentials stay in this phone's Keychain, never synced. The app opens to your car's last status and updates it each time you open it.":
+        Label(24,519+dy,412,70,vault.Available?"Saved credentials stay in this phone's Keychain, never synced. The app opens to your car's last status and updates it each time you open it.":
             vault.UnavailableReason+" Nothing will be saved.",12,Muted,false,true);
-        LiveButton(24,610,412,53,liveBusy?"Signing in…":"Sign in to Hyundai",15,()=>{
-            string e=email.Text,p=pass.Text,s=servicePin.Text;
-            pass.Text="";servicePin.Text="";
+        if(Brand.Flavor.Demo)LiveButton(24,680+dy,412,44,"Try the demo  ·  no account, nothing sent",13,()=>_ = StartDemo(),false,"DemoStart");
+        LiveButton(24,610+dy,412,53,liveBusy?"Signing in…":"Sign in to "+AppService.ServiceName,15,()=>{
+            string e=email.Text,p=pass.Text,s=servicePin?.Text??"";
+            pass.Text="";if(servicePin!=null)servicePin.Text="";
             _ = SignIn(e,p,s,rememberDevice && vault.Available);
         },true,"SignIn");
-        LiveButton(24,680,412,44,"Try the demo  ·  no account, nothing sent",13,()=>_ = StartDemo(),false,"DemoStart");
-        Label(24,732,412,40,"Unofficial integration. MFA or account challenges may block sign-in. The app never bypasses those checks.",11,Muted,false,true);
+        Label(24,732+dy,412,40,AppService.OneTimeCode?"Unofficial integration. Kia may ask for a one-time code by text or email; the app never bypasses its checks.":
+            "Unofficial integration. MFA or account challenges may block sign-in. The app never bypasses those checks.",11,Muted,false,true);
     }
     private LineEdit AccountInput(int x,int y,int width,string placeholder,bool secret)
     {
@@ -88,33 +103,19 @@ public partial class Main
             DiscardParked();
             connection?.Dispose();connection=null;enrollment=null;
             var active=connectionFactory();connection=active;
-            var vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);
-            accountKey=VehicleLink.AccountKey(email);BindDisclaimer();
-            // Typing the password verifies the owner for this foreground session.
-            enrollment=vehicles;selectedIndex=0;screen="Connect";notice="Signed in. Select your vehicle.";
-            try {
-                if(remember) {
-                    var saved=new SavedAccount(email,password,pin);
-                    await vault.SaveAsync(saved,liveLifetime.Token);EnsureLive(version);
-                    sessionAccount=saved;
-                    notice="Account saved securely. Select your vehicle.";
-                } else if(vault.HasAccount) {
-                    await vault.ForgetAsync(liveLifetime.Token);EnsureLive(version);
-                    notice="Signed in for this session. Saved login removed.";
-                }
-            } catch(VaultException ex) {
-                EnsureLive(version);notice="Signed in for this session. "+ex.Message;noticeError=true;
-            }
-            await RestoreLinkedVehicle(active,version);
-        },"Signing in to Hyundai…",()=>SignIn(email,password,pin,remember));
+            IReadOnlyList<EnrolledVehicle> vehicles;
+            try {vehicles=await active.LoginAsync(email,password,pin,liveLifetime.Token);EnsureLive(version);}
+            catch(OneTimeCodeRequiredException code) {EnsureLive(version);AskForCode(active,email,password,remember,false,code.Destinations);return;}
+            await FinishSignIn(active,vehicles,email,password,pin,remember,version);
+        },$"Signing in to {AppService.ServiceName}…",()=>SignIn(email,password,pin,remember));
     }
     private async Task ChooseVehicle()
     {
         if(enrollment==null||connection==null)return;
         int version=liveEpoch;var active=connection;var selected=enrollment[selectedIndex];
-        await RunLive(()=>ConnectVehicle(active,selected,version),"Reading Hyundai vehicle status…",ChooseVehicle);
+        await RunLive(()=>ConnectVehicle(active,selected,version),$"Reading {Brand.Maker} vehicle status…",ChooseVehicle);
     }
-    private async Task RestoreLinkedVehicle(HyundaiUsClient active,int version)
+    private async Task RestoreLinkedVehicle(IVehicleConnection active,int version)
     {
         if(enrollment==null)return;
         int index=VehicleLink.Find(linkedVehicle,accountKey,enrollment);
@@ -123,10 +124,10 @@ public partial class Main
         // Signed in already: an override reconnects this vehicle rather than repeating the sign-in.
         try {await ConnectVehicle(active,selected,version);}
         catch(RequestLimitException ex) when(ex.Overridable) {
-            OfferOverride(ex,()=>{int v=liveEpoch;return RunLive(()=>ConnectVehicle(active,selected,v),"Reading Hyundai vehicle status…");});
+            OfferOverride(ex,()=>{int v=liveEpoch;return RunLive(()=>ConnectVehicle(active,selected,v),$"Reading {Brand.Maker} vehicle status…");});
         }
     }
-    private async Task ConnectVehicle(HyundaiUsClient active,EnrolledVehicle selected,int version)
+    private async Task ConnectVehicle(IVehicleConnection active,EnrolledVehicle selected,int version)
     {
         await active.SelectAsync(selected,liveLifetime.Token);EnsureLive(version);
         // From saved status the user stays on the screen they acted from.
@@ -135,8 +136,8 @@ public partial class Main
         if(active.State?.AcLimit is int ac)liveAc=ac;
         if(active.State?.DcLimit is int dc)liveDc=dc;
         if(active.State?.TemperatureF is int t&&t>=62&&t<=82)liveTemperature=t;
-        history.Add(("Connected to Hyundai","Read-only status loaded. No remote command sent.",true));
-        if(!noticeError)notice="Connected. Showing Hyundai’s last reported state.";
+        history.Add(($"Connected to {Brand.Maker}","Read-only status loaded. No remote command sent.",true));
+        if(!noticeError)notice=$"Connected. Showing {Brand.Maker}’s last reported state.";
         linkedVehicle=VehicleLink.Fingerprint(accountKey,selected.Vin);
         // First time with this car: pick the closest picture from Hyundai's model code.
         if(!cars.ContainsKey(linkedVehicle))cars[linkedVehicle]=((CarModels.Detect(selected.Model)??CarModels.Default).Id,"");
@@ -160,7 +161,7 @@ public partial class Main
         catch(RequestLimitException ex){if(quiet){notice="";noticeError=false;}else OfferOverride(ex,retry);}
         catch(BluelinkException ex){notice=ex.Message;noticeError=true;}
         catch(OperationCanceledException){notice="Request interrupted. For a command, the outcome may be unknown. Refresh before retrying.";noticeError=true;}
-        catch(HttpRequestException){notice="Could not reach Hyundai. Check your connection. No automatic retry was sent.";noticeError=true;}
+        catch(HttpRequestException){notice=$"Could not reach {Brand.Maker}. Check your connection. No automatic retry was sent.";noticeError=true;}
         catch(Exception ex){notice=progress.TrimEnd('…','.')+": "+SafeFailure.Describe(ex);noticeError=true;}
         finally {
             if(version==liveEpoch) {
@@ -184,8 +185,8 @@ public partial class Main
         else if(screen=="Locate")LiveLocation();
         else if(screen=="Details")LiveDetails();
         else if(screen=="Alerts")LiveAlerts();
-        else if(screen=="Look")LookAround();
-        else if(screen=="Send")SendScreen();
+        else if(screen=="Look"&&AppService.SurroundView)LookAround();
+        else if(screen=="Send"&&AppService.SendToCar)SendScreen();
         else LiveSettings();
     }
     private void LiveHome()
@@ -193,7 +194,7 @@ public partial class Main
         var s=CurrentState;
         // Charging state from the last report, with Hyundai's finish time while it is still ahead.
         var charge=ChargeEstimate.Headline(s,DateTimeOffset.UtcNow,TimeZoneInfo.Local);
-        Label(24,106,412,24,charge?.Text??"YOUR HYUNDAI · LAST REPORTED",10,charge?.Charging==true?Yellow:Muted,true).Name="ChargeLine";
+        Label(24,106,412,24,charge?.Text??$"YOUR {Brand.Maker.ToUpperInvariant()} · LAST REPORTED",10,charge?.Charging==true?Yellow:Muted,true).Name="ChargeLine";
         Hero(139,215);
         if(charge?.Charging==true) {
             var outline=new TextureRect {Name="ChargeOutline",Position=new(24,143),Size=new(412,207),Texture=CarMask(carModel),
@@ -236,16 +237,22 @@ public partial class Main
         LiveButton(24,636,200,46,"Update",13,()=>_ = RefreshLive(false),false,"Update");
         Label(24,686,200,20,Updated(s?.RetrievedAt),11,Muted).Name="LastUpdated";
         Button(236,636,200,46,"Vehicle location  ›",12,()=>_ = OpenVehicleLocation());
-        CommandFeedback(RemoteButton(24,714,200,46,"Flash lights",13,()=>_ = SendLive(new(ActionKind.Lights)),false,"FlashLights"),ActionKind.Lights,false);
-        CommandFeedback(RemoteButton(236,714,200,46,"Horn & lights",13,()=>_ = SendLive(new(ActionKind.HornLights)),false,"HornLights"),ActionKind.HornLights,false);
+        if(AppService.LightsAndHorn) {
+            CommandFeedback(RemoteButton(24,714,200,46,"Flash lights",13,()=>_ = SendLive(new(ActionKind.Lights)),false,"FlashLights"),ActionKind.Lights,false);
+            CommandFeedback(RemoteButton(236,714,200,46,"Horn & lights",13,()=>_ = SendLive(new(ActionKind.HornLights)),false,"HornLights"),ActionKind.HornLights,false);
+        }
 
         if(notice.Length==0)Label(24,778,412,65,connection?.Pending?.Message??(Offline?"Showing the last saved status.":
             "Cached status may lag the vehicle. Missing data is shown as — or Unknown."),11,Muted,false,true);
     }
     private static string ReportedTime(string? raw)
     {
-        if(string.IsNullOrWhiteSpace(raw))return "Not supplied by Hyundai";
-        // Preserve server text rather than guessing the timezone of compact timestamps.
+        if(string.IsNullOrWhiteSpace(raw))return $"Not supplied by {Brand.Maker}";
+        // A time with its zone (ISO 8601 with Z or an offset) is shown in local time. Anything else is shown as
+        // supplied rather than guessing the timezone of compact timestamps.
+        if(raw.Contains('T')&&(raw.EndsWith('Z')||raw.LastIndexOfAny(new[]{'+','-'})>raw.IndexOf('T'))&&
+           DateTimeOffset.TryParse(raw,CultureInfo.InvariantCulture,DateTimeStyles.None,out var at))
+            return Updated(at)["Updated ".Length..];
         return raw.Length>48?"Timestamp format unsupported":raw;
     }
     private bool SeatsSupported=>VehicleGeneration==3;
@@ -274,7 +281,7 @@ public partial class Main
     {
         var s=CurrentState;
         SyncClimateControls(s);
-        Title("CABIN, YOUR WAY.","Hyundai remote climate · electric vehicles");
+        Title("CABIN, YOUR WAY.",$"{Brand.Maker} remote climate · electric vehicles");
         Label(24,190,412,30,s?.ClimateOn switch {
             true=>"CLIMATE ON"+(s.TemperatureF is int set?"  ·  "+Units.Setpoint(set,units):""),false=>"CLIMATE OFF",_=>"CLIMATE STATUS UNKNOWN"},
             18,s?.ClimateOn==true?Red:s?.ClimateOn==false?White:Muted,true).Name="ClimateStatus";
@@ -298,7 +305,7 @@ public partial class Main
             CommandFeedback(RemoteButton(x,498,198,44,$"{preset.Name}  ·  {Units.Setpoint(preset.TemperatureF,units)}",13,()=>StartClimatePreset(preset),false,name),ActionKind.Climate,false,true,preset.TemperatureF);
         Label(24,546,412,52,(SeatsSupported?"Seats, steering wheel and defrost are sent with each climate start; rear seats and rear-window heat stay off. ":
             "Seat control needs a generation 3 vehicle; the steering wheel and defrost still apply. ")+
-            "Generation 3 requests a five-minute duration.",10,Muted,false,true);
+            "Climate runs for five minutes after each start.",10,Muted,false,true);
         CommandFeedback(RemoteButton(24,604,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true,CurrentClimateOptions())),true,"ClimateStart"),
             ActionKind.Climate,s?.ClimateOn==true,true);
         CommandFeedback(RemoteButton(24,672,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false))),ActionKind.Climate,false,false);
@@ -328,7 +335,7 @@ public partial class Main
     private void LiveEnergy()
     {
         var s=CurrentState;
-        Title("POWER YOUR NEXT DRIVE.","Hyundai charging controls · last reported status");
+        Title("POWER YOUR NEXT DRIVE.",$"{Brand.Maker} charging controls · last reported status");
         Label(24,204,412,42,Value(s?.Battery,"%")+"  ·  "+OnOff(s?.Charging,"Charging","Not charging"),25,Blue,true);
         Label(24,248,412,22,"Cable: "+OnOff(s?.PluggedIn,"Connected","Disconnected"),13,Muted);
         // Hyundai's estimate while charging: power and when the current charge should finish.
@@ -369,32 +376,35 @@ public partial class Main
     }
     private void LiveSettings()
     {
-        Title("YOUR CONNECTED GARAGE.","Hyundai USA · device security");
-        Label(24,204,412,52,$"{VehicleName}\nVIN …{VinTail}",17,White,true,true);
-        Label(24,262,412,28,"Session: "+(demo?"Demo · nothing is sent to Hyundai":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status":
+        Title("YOUR CONNECTED GARAGE.",$"{Brand.Service.ServiceName} · device security");
+        Label(24,204,412,52,VinTail.Length>0?$"{VehicleName}\nVIN …{VinTail}":VehicleName,17,White,true,true);
+        Label(24,262,412,28,"Session: "+(demo?$"Demo · nothing is sent to {Brand.Maker}":connection?.IsAuthenticated==true?"Signed in":Offline?"Showing saved status":
             "Expired / denied — sign in again"),13,Muted,false,true);
         Button(24,300,412,40,"Appearance  /  "+paintName+"  ›",13,()=>Navigate("Appearance"),false,"SettingsAppearance");
         Button(24,346,412,40,"Range & units  /  "+(units==UnitSystem.Metric?"Metric":"Imperial")+"  ›",13,()=>Navigate("Range"),false,"SettingsRange");
-        Button(24,392,412,40,"Offer climate after Send to car  /  "+(climateOffer?"On":"Off"),13,()=>{climateOffer=!climateOffer;SavePrefs();Render();},false,"SettingsClimateOffer");
-        LiveButton(24,438,412,40,"Update",13,()=>_ = RefreshLive(false));
-        LiveButton(24,484,412,40,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");
-        if(demo)LiveButton(24,530,412,40,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
-        else LiveButton(24,530,412,40,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
-        Button(24,576,412,40,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");
-        Button(24,622,412,40,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");
-        Button(24,668,412,40,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
-        Label(24,712,412,60,demo?"This is a pretend car. Nothing here is sent to Hyundai or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status.":
+        int y=392;
+        if(AppService.SendToCar){Button(24,y,412,40,"Offer climate after Send to car  /  "+(climateOffer?"On":"Off"),13,()=>{climateOffer=!climateOffer;SavePrefs();Render();},false,"SettingsClimateOffer");y+=46;}
+        LiveButton(24,y,412,40,"Update",13,()=>_ = RefreshLive(false));y+=46;
+        LiveButton(24,y,412,40,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");y+=46;
+        if(demo)LiveButton(24,y,412,40,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
+        else LiveButton(24,y,412,40,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
+        y+=46;
+        Button(24,y,412,40,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");y+=46;
+        Button(24,y,412,40,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");y+=46;
+        Button(24,y,412,40,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
+        Label(24,712,412,60,demo?$"This is a pretend car. Nothing here is sent to {Brand.Maker} or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status.":
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }
     private void LiveActivity()
     {
-        Title("YOUR RECENT ACTIVITY.",activityTab=="Shared"?"Places shared to nCTRL · the last 20, on this device":"Hyundai requests · session-only history");
-        foreach(var (tab,x) in new[]{("Requests",24),("Shared",238)}) {
+        Title("YOUR RECENT ACTIVITY.",activityTab=="Shared"?$"Places shared to {Brand.App} · the last 20, on this device":$"{Brand.Maker} requests · session-only history");
+        if(!AppService.SendToCar)activityTab="Requests";
+        else foreach(var (tab,x) in new[]{("Requests",24),("Shared",238)}) {
             var b=Button(x,194,198,40,tab,13,()=>{activityTab=tab;Render();},false,"Activity"+tab);
             if(activityTab==tab)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
         if(activityTab=="Shared"){SharedTab();return;}
-        int y=246;
+        int y=AppService.SendToCar?246:194;
         for(int i=history.Count-1;i>=Math.Max(0,history.Count-4);i--){var item=history[i];
             Panel(24,y,412,99,Skin.Card,false);Rect(24,y,3,99,item.Ok?Blue:Red);
             Label(42,y+7,375,53,item.Title,12,White,true,true);Label(42,y+64,375,24,item.Detail,10,Muted);y+=111;}
@@ -444,9 +454,9 @@ public partial class Main
                     commandMonitor=MonitorLive(active,cmd,dc,before,version,token);
                 }
             }
-        },"Sending command to Hyundai…",()=>SendLive(cmd,dc));
+        },$"Sending command to {Brand.Maker}…",()=>SendLive(cmd,dc));
     }
-    private async Task MonitorLive(HyundaiUsClient active,VehicleCommand cmd,int? dc,LiveVehicleState? before,int version,CancellationToken token)
+    private async Task MonitorLive(IVehicleConnection active,VehicleCommand cmd,int? dc,LiveVehicleState? before,int version,CancellationToken token)
     {
         try {
             await active.MonitorCommandAsync(cmd,dc,before,()=>{
@@ -498,6 +508,6 @@ public partial class Main
         if(active==null)return;
         // Signing in already read status; only a wake needs another request.
         if(!freshRead||wake){await active.ReadAsync(wake,liveLifetime.Token);EnsureLive(version);}
-        notice="Hyundai status received. Check the reported timestamp.";
-    },wake?"Requesting fresh vehicle status…":"Reading Hyundai’s cached status…",quiet?null:()=>RefreshLive(wake),quiet);
+        notice=$"{Brand.Maker} status received. Check the reported timestamp.";
+    },wake?"Requesting fresh vehicle status…":$"Reading {Brand.Maker}’s cached status…",quiet?null:()=>RefreshLive(wake),quiet);
 }

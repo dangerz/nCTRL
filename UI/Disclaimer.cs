@@ -28,7 +28,7 @@ public partial class Main
     {
         if(string.IsNullOrWhiteSpace(email)||Disclaimer.Allows(disclaimer,VehicleLink.AccountKey(email)))return false;
         pendingSignIn=new(email,password,pin,remember,fromVault);
-        notice="This Hyundai account has not accepted the disclaimer. Read and accept it to continue.";noticeError=false;
+        notice=$"This {Brand.Maker} account has not accepted the disclaimer. Read and accept it to continue.";noticeError=false;
         return true;
     }
     private void BindDisclaimer()
@@ -38,7 +38,7 @@ public partial class Main
     }
     private void DisclaimerScreen()
     {
-        Title("BEFORE YOU CONTINUE.",pendingSignIn!=null?"This Hyundai account needs its own acceptance.":"Third-party app · completely unsupported · your risk");
+        Title("BEFORE YOU CONTINUE.",pendingSignIn!=null?$"This {Brand.Maker} account needs its own acceptance.":"Third-party app · completely unsupported · your risk");
         DisclaimerText(196,270);
         Label(24,478,412,22,"TYPE \""+Disclaimer.Phrase.ToUpperInvariant()+"\" TO CONFIRM",11,Muted,true);
         var phrase=AccountInput(24,504,412,Disclaimer.Phrase,false);
@@ -55,7 +55,7 @@ public partial class Main
         Label(24,684,412,36,deviceCheckRequired?"Submitting asks for "+vault.BiometricName+" or your passcode to record your acceptance.":
             "Desktop development build: no device check is available.",12,Muted,false,true);
         if(pendingSignIn!=null)LiveButton(24,726,412,44,"Cancel and use another account",13,()=>{pendingSignIn=null;notice="";Render();},false,"DisclaimerCancel");
-        else LiveButton(24,726,412,44,"Try the demo  ·  no account, nothing sent",13,()=>_ = StartDemo(),false,"DemoStart");
+        else if(Brand.Flavor.Demo)LiveButton(24,726,412,44,"Try the demo  ·  no account, nothing sent",13,()=>_ = StartDemo(),false,"DemoStart");
     }
     private void DisclaimerText(int y,int height)
     {
@@ -72,12 +72,12 @@ public partial class Main
         var pending=pendingSignIn;bool accepted=false;int version=liveEpoch;
         await RunLive(async()=>{
             if(deviceCheckRequired) {
-                try {await vault.AuthenticateAsync("Confirm that you accept every risk of using nCTRL",liveLifetime.Token);}
+                try {await vault.AuthenticateAsync($"Confirm that you accept every risk of using {Brand.App}",liveLifetime.Token);}
                 catch(VaultException ex) {
                     EnsureLive(version);noticeError=true;
                     notice=ex.Code switch {
                         "cancelled"=>"Confirmation cancelled. The disclaimer was not accepted.",
-                        "unavailable"=>"This device cannot confirm with "+vault.BiometricName+" or a passcode, so nCTRL stays locked. Set a device passcode, then try again.",
+                        "unavailable"=>"This device cannot confirm with "+vault.BiometricName+$" or a passcode, so {Brand.App} stays locked. Set a device passcode, then try again.",
                         _=>"Face ID or passcode was not confirmed. The disclaimer was not accepted."
                     };
                     return;

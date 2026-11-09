@@ -51,8 +51,11 @@ public class BluelinkException : Exception
 }
 
 /// <summary>Unofficial Hyundai USA adapter. Secrets are memory-only. No command retries.</summary>
-public sealed class HyundaiUsClient : IDisposable
+public sealed class HyundaiUsClient : IVehicleConnection
 {
+    public static readonly ServiceInfo Info=new("Bluelink","Hyundai",NeedsPin:true,OneTimeCode:false,
+        LightsAndHorn:true,SurroundView:true,SendToCar:true,FrontSeats:true,RequestLocation:true,Heading:true);
+    public ServiceInfo Service=>Info;
     private const string Origin = "https://api.telematics.hyundaiusa.com";
     private readonly HttpClient http;
     private readonly TimeProvider clock;

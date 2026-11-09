@@ -5,6 +5,8 @@ static class Program
     static async Task Main()
     {
         await ProtocolTests.Run();
+        await KiaProtocolTests.Run();
+        FlavorTests.Run();
         await VaultTests.Run();
         VehicleLinkTests.Run();
         DisclaimerTests.Run();
