@@ -20,6 +20,11 @@ static class Program
         PresetTests.Run();
         ChargeLineTests.Run();
         await ColdRangeTests.Run();
+        SeatWeatherTests.Run();
+        StatusReportTests.Run();
+        await AlertTests.Run();
+        LookHistoryTests.Run();
+        await CanadaProtocolTests.Run();
         AppThemeTests.Run();
         await RequestBudgetTests.Run();
         await SurroundViewTests.Run();

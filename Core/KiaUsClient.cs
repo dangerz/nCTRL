@@ -267,7 +267,7 @@ public sealed class KiaUsClient : IVehicleConnection, IOneTimeCodeSignIn
                         throw new BluelinkException("Choose both AC and DC targets: 50–100% in 10% steps.");
                     method=HttpMethod.Post;route="evc/sts";body=RequestJsonKia.ChargeLimits(command.Value,dcLimit.Value);break;
                 case ActionKind.Lights: case ActionKind.HornLights:
-                    throw new BluelinkException("Lights and horn aren't available through Kia Connect in gtCTRL yet. Nothing was sent.");
+                    throw new BluelinkException("Lights and horn aren't available through Kia Connect in "+Brand.App+" yet. Nothing was sent.");
                 default: throw new BluelinkException("Unsupported remote command.");
             }
             await EnsureSession(ct);
@@ -302,7 +302,7 @@ public sealed class KiaUsClient : IVehicleConnection, IOneTimeCodeSignIn
         finally { gate.Release(); }
     }
     public Task<string?> SendDestinationAsync(Destination place,CancellationToken ct)=>
-        throw new BluelinkException("Send to car isn't available through Kia Connect in gtCTRL yet. Nothing was sent.");
+        throw new BluelinkException("Send to car isn't available through Kia Connect in "+Brand.App+" yet. Nothing was sent.");
     public Task<SurroundView> CaptureSurroundViewAsync(Action<int>? checkedCount,CancellationToken ct)=>
         throw new BluelinkException("Surround View isn't available through Kia Connect. Nothing was sent.");
 

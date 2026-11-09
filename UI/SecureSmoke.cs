@@ -17,6 +17,7 @@ public partial class Main
         public int Unlocks;
         public string Places="",Location="",Shared="";
         public readonly System.Collections.Generic.List<string> Ops=new();
+        public string Session="";
         private string? saved;
         private string result="";
         public int Availability()=>2;
@@ -30,6 +31,7 @@ public partial class Main
             if(op=="places_save")Places=data;if(op=="places_forget")Places="";
             if(op=="location_save")Location=data;if(op=="location_forget")Location="";
             if(op=="shared_save")Shared=data;if(op=="shared_forget")Shared="";
+            if(op=="session_save")Session=data;if(op=="session_forget")Session="";
             result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");
                 w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:op=="location_load"?Location:op=="shared_load"?Shared:"");});
         }
@@ -55,12 +57,40 @@ public partial class Main
             await PassDisclaimerFixture();
             if(disclaimer?.AccountKey!="")throw new Exception("Acceptance was bound before any sign-in");
             Navigate("Connect");await Capture("19-secure-signin-test.png");
+            fake.Session="{\"left over\":\"from another login\"}";
             await SignIn("tester@example.invalid","fixture-password","1234",true);
             if(!vault.HasAccount||enrollment==null)throw new Exception("Save flow failed");
+            if(fake.Session.Length!=0||fake.Ops.IndexOf("session_forget") is var gone&&(gone<0||gone>fake.Ops.LastIndexOf("save")))
+                throw new Exception("Signing in did not delete the Share sheet session left by an earlier login before saving the new one");
             string testerKey=VehicleLink.AccountKey("tester@example.invalid");
             if(disclaimer?.AccountKey!=testerKey)throw new Exception("Successful sign-in did not bind disclaimer acceptance");
             await ChooseVehicle();
             if(snapshot==null||snapshot.State.Battery!=78||snapshot.AccountKey!=testerKey)throw new Exception("Connecting did not save the vehicle status");
+            await ShareSession();
+            if(SharedSession.Decode(fake.Session) is not {} handed||!handed.BelongsTo(Brand.Hyundai,testerKey)||fake.Session.Contains("tester@",StringComparison.OrdinalIgnoreCase))
+                throw new Exception("The Share sheet session is not tagged with the signed-in login, or shows its email");
+            // Alerts when closed: on asks iOS for notifications, saves the shared settings file, and seeds it from this status.
+            alertsFolderFixture=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"nctrl-alerts-smoke-"+Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(alertsFolderFixture);
+            Navigate("Notify");
+            if(canvas.GetNode<Button>("AlertsOn").Disabled||canvas.GetNode<CheckBox>("AlertCharge").Disabled==false)throw new Exception("The Alerts screen did not start off and ready to turn on");
+            await Capture("70-alerts-off-test.png");
+            canvas.GetNode<Button>("AlertsOn").EmitSignal(Godot.Button.SignalName.Pressed);
+            while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            var alertsFile=LoadAlerts();
+            if(!fake.Ops.Contains("notify_ask")||!alertsFile.On||alertsFile.Memory?.Seen!=true||alertsFile.Car.Length==0)
+                throw new Exception("Turning alerts on did not ask for notifications, save the settings or remember the current status");
+            canvas.GetNode<CheckBox>("AlertTires").ButtonPressed=false;
+            if(LoadAlerts().Tires||!LoadAlerts().Charge)throw new Exception("An alert switch was not saved");
+            await Capture("71-alerts-on-test.png");
+            canvas.GetNode<Button>("AlertsCheckNow").EmitSignal(Godot.Button.SignalName.Pressed);
+            while(liveBusy)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(!fake.Ops.Contains("alerts_check_now"))throw new Exception("Check now did not run the native check");
+            if(CheckResult("{\"ok\":true,\"notices\":[{}],\"registered\":true}")!="Checked: sent 1 notification."||
+               !CheckResult("{\"ok\":false,\"skipped\":\"request limit\",\"registered\":false}").StartsWith("Skipped: request limit. Background checks aren't set up"))
+                throw new Exception("Check now results are not described plainly");
+            notice="";Navigate("Settings");
+            if(!canvas.GetNode<Button>("SettingsAlerts").Text.Contains("On"))throw new Exception("Settings does not show alerts on");
             // A share recorded on launch while the saved Shared list is still loading isn't lost when the list arrives.
             var older=new SharedEntry(DateTimeOffset.UtcNow.AddHours(-1),"Apple Maps","link",new Destination("Older place","",40.7,-74),"");
             fake.Shared=SharedHistory.Encode(new[]{older});sharedHistory=Array.Empty<SharedEntry>();sharedPersisted=false;
@@ -162,11 +192,13 @@ public partial class Main
             if(!sharedFixture.ContainsKey("status.json"))throw new Exception("The widget was not filled from the signed-in status");
             await ForgetAccount();if(parked!=null)throw new Exception("Sign out did not discard the parked session");if(vault.HasAccount||connection!=null)throw new Exception("Forget did not clear account");
             if(linkedVehicle.Length!=0||snapshot!=null)throw new Exception("Forget retained the linked vehicle or saved status");
+            if(System.IO.File.Exists(System.IO.Path.Combine(alertsFolderFixture,AlertFile.Name)))throw new Exception("Sign out did not turn alerts off and delete their file");
+            System.IO.Directory.Delete(alertsFolderFixture,true);alertsFolderFixture=null;
             if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
             if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
             if(sharedFixture.ContainsKey("status.json")||sharedFixture.ContainsKey("car.png"))throw new Exception("Sign out did not clear the widget");
             if(!fake.Ops.Contains("shared_forget")||sharedHistory.Count!=0)throw new Exception("Sign out did not delete the shared places");
-            if(!fake.Ops.Contains("session_save")||!fake.Ops.Contains("session_forget"))throw new Exception("Hyundai's session was not shared with the Share sheet, or not deleted on sign-out");
+            if(!fake.Ops.Contains("session_save")||fake.Session.Length!=0)throw new Exception("Hyundai's session was not shared with the Share sheet, or not deleted on sign-out");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             // The demo is open before acceptance, never touches secure storage, and leaves the gate as it was.
             int ops=fake.Ops.Count;
@@ -179,7 +211,7 @@ public partial class Main
             if(demo||disclaimer!=null||!DisclaimerRequired||fake.Ops.Skip(ops).Any(op=>op is not ("places_load" or "shared_load")))
                 throw new Exception("The demo touched secure storage or the disclaimer");
             AssertAccountOnly();
-            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, reading on open without Face ID, session reuse, commands and location without Face ID, override device check, account re-acceptance, stale-result rejection, ignored places storage, old location, overdue charge update, widget filled then cleared on forget, demo isolation. Fake native bridge only.");
+            GD.Print("SECURE SMOKE PASS: disclaimer gate, save, saved-status open, reading on open without Face ID, session reuse, commands and location without Face ID, override device check, account re-acceptance, stale-result rejection, Share sheet session tagged and replaced on sign-in, alerts when closed on/off and cleared on sign-out, ignored places storage, old location, overdue charge update, widget filled then cleared on forget, demo isolation. Fake native bridge only.");
             GetTree().Quit();
         }catch(Exception ex){GD.PushError("SECURE SMOKE FAIL: "+ex.Message);GetTree().Quit(1);}
     }

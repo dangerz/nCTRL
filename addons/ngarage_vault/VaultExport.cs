@@ -28,6 +28,9 @@ public partial class VaultAndroidExport : EditorExportPlugin
             AddAppleEmbeddedPlatformPlistContent($"<key>NSLocationWhenInUseUsageDescription</key><string>Show where you are on {app}'s car map. Your location stays on this iPhone.</string>");
             // Add-only photo access, for saving Surround View pictures you choose to keep.
             AddAppleEmbeddedPlatformPlistContent("<key>NSPhotoLibraryAddUsageDescription</key><string>Save the Surround View pictures you choose to your photo library.</string>");
+            // Alerts when closed: iOS background refresh runs the alert check (Native/iOS/NGarageVault.mm, Core/AlertCheck.cs).
+            AddAppleEmbeddedPlatformPlistContent("<key>UIBackgroundModes</key><array><string>fetch</string></array>");
+            AddAppleEmbeddedPlatformPlistContent("<key>BGTaskSchedulerPermittedIdentifiers</key><array><string>com.ngarage.nctrl.alerts</string></array>");
         }
     }
     public override string[] _GetAndroidLibraries(EditorExportPlatform platform,bool debug)

@@ -4,6 +4,8 @@
 #import <UIKit/UIKit.h>
 #import <Photos/Photos.h>
 #import <CoreLocation/CoreLocation.h>
+#import <BackgroundTasks/BackgroundTasks.h>
+#import <UserNotifications/UserNotifications.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -257,6 +259,87 @@ static NSString *errorCode(OSStatus status) {
     if(status==errSecAuthFailed || status==errSecInteractionNotAllowed)return @"auth_failed";
     return @"storage_failed";
 }
+// Background alerts. iOS background refresh wakes nCTRL now and then (iOS decides when; never after the app is swiped
+// away); the check reads the status the service already has, never waking the car, and notifies what changed. The check
+// itself is C# (Core/AlertCheck.cs), exported from the app as nctrl_alert_check (UI/AlertExport.cs). It needs the saved
+// login, which is readable only while the phone is unlocked, so checks while it's locked skip themselves.
+extern "C" char *nctrl_alert_check(const char *json);
+extern "C" void nctrl_alert_free(char *text);
+static NSString *const NGAlertTask=@"com.ngarage.nctrl.alerts";
+static BOOL alertsRegistered;
+static NSString *readItem(NSMutableDictionary *q) {
+    q[(__bridge id)kSecReturnData]=@YES;
+    CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
+    NSData *data=value?CFBridgingRelease(value):nil;
+    return status==errSecSuccess&&data?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
+}
+static BOOL alertsOn(void) {
+    NSURL *file=groupFile(@"alerts.json");NSData *data=file?[NSData dataWithContentsOfURL:file]:nil;
+    NSDictionary *json=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+    return [json isKindOfClass:NSDictionary.class]&&[json[@"on"] isEqual:@YES];
+}
+static void ng_alerts_schedule(void) {
+    if(!alertsRegistered||!alertsOn())return;
+    BGAppRefreshTaskRequest *request=[[BGAppRefreshTaskRequest alloc] initWithIdentifier:NGAlertTask];
+    request.earliestBeginDate=[NSDate dateWithTimeIntervalSinceNow:15*60];
+    @try {[BGTaskScheduler.sharedScheduler submitTaskRequest:request error:nil];} @catch(NSException *e) { }
+}
+// Runs one check and posts its notifications. Returns the check's JSON with "registered" added (for Check now).
+static NSString *ng_alerts_run(BOOL manual) {
+    NSString *result=@"{\"ok\":false,\"skipped\":\"no saved login, or the phone is locked\"}";
+    NSString *account=readItem(query());
+    NSURL *folder=appGroup()?[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:appGroup()]:nil;
+    if(account&&folder) {
+        NSDictionary *request=@{@"account":account,@"session":readItem(sessionQuery())?:NSNull.null,@"places":readItem(placesQuery())?:@"",@"folder":folder.path};
+        NSData *json=[NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
+        NSMutableData *text=[json mutableCopy];[text appendBytes:"\0" length:1];
+        char *output=nctrl_alert_check((const char *)text.bytes);
+        memset(text.mutableBytes,0,text.length); // The request holds the login.
+        if(output){result=[NSString stringWithUTF8String:output]?:result;nctrl_alert_free(output);}
+    }
+    NSData *data=[result dataUsingEncoding:NSUTF8StringEncoding];
+    NSMutableDictionary *r=[[NSJSONSerialization JSONObjectWithData:data options:0 error:nil] mutableCopy];
+    if(![r isKindOfClass:NSMutableDictionary.class])r=[@{@"ok":@NO,@"skipped":@"failed"} mutableCopy];
+    for(NSDictionary *notice in [r[@"notices"] isKindOfClass:NSArray.class]?r[@"notices"]:@[]) {
+        if(![notice isKindOfClass:NSDictionary.class])continue;
+        UNMutableNotificationContent *content=[UNMutableNotificationContent new];
+        content.title=[notice[@"title"] description]?:@"";content.body=[notice[@"body"] description]?:@"";content.sound=UNNotificationSound.defaultSound;
+        // One per kind: a newer charging alert replaces an unread older one.
+        NSString *identifier=[@"nctrl.alert." stringByAppendingString:[notice[@"kind"] description]?:@"other"];
+        [UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:identifier content:content trigger:nil] withCompletionHandler:nil];
+    }
+    if([r[@"session"] isKindOfClass:NSString.class]&&[r[@"session"] length]<=65536) {
+        SecItemDelete((__bridge CFDictionaryRef)sessionQuery());
+        NSMutableDictionary *item=sessionQuery();
+        item[(__bridge id)kSecValueData]=[r[@"session"] dataUsingEncoding:NSUTF8StringEncoding];
+        item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+        SecItemAdd((__bridge CFDictionaryRef)item,NULL);
+    }
+    [r removeObjectForKey:@"session"];
+    r[@"registered"]=@(alertsRegistered);
+    NSData *back=[NSJSONSerialization dataWithJSONObject:r options:0 error:nil];
+    return back?[[NSString alloc] initWithData:back encoding:NSUTF8StringEncoding]:@"{\"ok\":false}";
+}
+// Registered when the app's code loads, which is before launch finishes, as iOS requires.
+@interface NGAlertsLoader : NSObject
+@end
+@implementation NGAlertsLoader
++ (void)load {
+    @try {
+        alertsRegistered=[BGTaskScheduler.sharedScheduler registerForTaskWithIdentifier:NGAlertTask usingQueue:nil launchHandler:^(BGTask *task){
+            ng_alerts_schedule();
+            __block BOOL expired=NO;
+            task.expirationHandler=^{expired=YES;};
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+                ng_alerts_run(NO);
+                [task setTaskCompletedWithSuccess:!expired];
+            });
+        }];
+    } @catch(NSException *e) {alertsRegistered=NO;}
+    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note){ng_alerts_schedule();}];
+}
+@end
 NG_EXPORT int ng_vault_availability(void) {
     initialize();LAContext *ctx=[LAContext new];NSError *error=nil;
     // Report packaging separately; never start Face ID without its required usage text.
@@ -315,6 +398,16 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
     NSString *text=payload?[NSString stringWithUTF8String:payload]:@"";
     NSUInteger ticket;
     @synchronized(guard){if(busy)return;ticket=++generation;busy=YES;resultData=nil;}
+    if([op isEqualToString:@"notify_ask"]) {
+        // Shows iOS's permission prompt the first time; afterwards answers with the user's earlier choice.
+        [UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:(UNAuthorizationOptionAlert|UNAuthorizationOptionSound)
+            completionHandler:^(BOOL granted, NSError *error){finish(ticket,granted,granted?@"":@"denied",nil);}];
+        return;
+    }
+    if([op isEqualToString:@"alerts_check_now"]) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{finish(ticket,YES,@"",ng_alerts_run(YES));});
+        return;
+    }
     if([op isEqualToString:@"forget"]) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
             @synchronized(guard){if(ticket!=generation)return;

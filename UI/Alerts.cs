@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 public partial class Main
 {
-    private sealed record PendingConfirm(string Title,string Message,string Confirm,Func<Task> Action);
+    private sealed record PendingConfirm(string Title,string Message,string Confirm,Func<Task> Action,string? Alternate=null,Func<Task>? AlternateAction=null);
     private PendingConfirm? pendingConfirm;
     private static readonly Color Amber=new("#e0a43a");
 
@@ -63,6 +63,17 @@ public partial class Main
         }
         _ = RefreshLive(true);
     }
+    // Heated seats on a warm day (or cooled on a cold one) are usually left over from last time: ask first.
+    private void StartClimateChecked(VehicleCommand command)
+    {
+        double? outsideF=SeatWeather.Usable(outside,DateTimeOffset.UtcNow);
+        var clash=SeatWeather.Check(command.Climate,outsideF);
+        if(clash==SeatWeather.Clash.None||command.Climate is not {} options||outsideF is not double t){_ = SendLive(command);return;}
+        var without=command with {Climate=SeatWeather.Without(options,clash)};
+        pendingConfirm=new(SeatWeather.Title(clash),SeatWeather.Question(clash,options,Units.Temperature(t,units)),"Start anyway",()=>SendLive(command),
+            "Without seats",()=>SendLive(without));
+        Render();
+    }
     private void ConfirmDialog()
     {
         var p=pendingConfirm!;
@@ -70,6 +81,13 @@ public partial class Main
         Panel(24,260,412,330,Skin.Card);
         Label(44,280,372,30,p.Title,18,Amber,true);
         Label(44,322,372,170,p.Message,13,White,false,true).VerticalAlignment=VerticalAlignment.Top;
+        if(p.Alternate is {} alternate&&p.AlternateAction is {} other) {
+            // Three choices: Cancel, the alternative, and going ahead as asked.
+            LiveButton(44,514,116,52,"Cancel",12,()=>{pendingConfirm=null;Render();},false,"ConfirmCancel");
+            LiveButton(172,514,116,52,alternate,12,()=>{pendingConfirm=null;Render();_ = other();},false,"ConfirmAlternate");
+            LiveButton(300,514,116,52,p.Confirm,12,()=>{var action=p.Action;pendingConfirm=null;Render();_ = action();},true,"ConfirmGo");
+            return;
+        }
         LiveButton(44,514,174,52,"Cancel",13,()=>{pendingConfirm=null;Render();},false,"ConfirmCancel");
         LiveButton(242,514,174,52,p.Confirm,13,()=>{var action=p.Action;pendingConfirm=null;Render();_ = action();},true,"ConfirmGo");
     }

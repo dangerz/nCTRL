@@ -55,9 +55,12 @@ public partial class Main
             return;
         }
         if(choose) {
-            for(int i=0;i<ServiceChoices.Length;i++) {
-                var (id,label)=ServiceChoices[i];
-                var b=LiveButton(24+i*210,152,202,34,label,12,()=>ChooseService(id),false,"Service_"+id);
+            var choices=ServiceChoices;int width=(412-(choices.Length-1)*8)/choices.Length;
+            for(int i=0;i<choices.Length;i++) {
+                var (id,label)=choices[i];
+                // Four choices make narrow buttons: the label shrinks until it fits.
+                int size=12;while(size>9&&regular.GetStringSize(label,HorizontalAlignment.Left,-1,size).X>width-10)size--;
+                var b=LiveButton(24+i*(width+8),152,width,34,label,size,()=>ChooseService(id),false,"Service_"+id);
                 if(id==Brand.ServiceId)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
             }
         }
@@ -86,7 +89,7 @@ public partial class Main
             pass.Text="";if(servicePin!=null)servicePin.Text="";
             _ = SignIn(e,p,s,rememberDevice && vault.Available);
         },true,"SignIn");
-        Label(24,732+dy,412,40,AppService.OneTimeCode?"Unofficial integration. Kia may ask for a one-time code by text or email; the app never bypasses its checks.":
+        Label(24,732+dy,412,40,AppService.OneTimeCode?$"Unofficial integration. {Brand.Maker} may ask for a one-time code by text or email; the app never bypasses its checks.":
             "Unofficial integration. MFA or account challenges may block sign-in. The app never bypasses those checks.",11,Muted,false,true);
     }
     private LineEdit AccountInput(int x,int y,int width,string placeholder,bool secret)
@@ -170,6 +173,7 @@ public partial class Main
             PersistSnapshot();
             liveBusy=false;if(IsInsideTree())Render();
             UpdateWidget();
+            RememberAlerts();
             _ = ShareSession();
             if(heldShare!=null&&liveMode)CallDeferred(nameof(CheckShared));
             _ = UpdateOutsideTemperature();
@@ -306,7 +310,7 @@ public partial class Main
         Label(24,546,412,52,(SeatsSupported?"Seats, steering wheel and defrost are sent with each climate start; rear seats and rear-window heat stay off. ":
             "Seat control needs a generation 3 vehicle; the steering wheel and defrost still apply. ")+
             "Climate runs for five minutes after each start.",10,Muted,false,true);
-        CommandFeedback(RemoteButton(24,604,412,52,"Start / update climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,true,CurrentClimateOptions())),true,"ClimateStart"),
+        CommandFeedback(RemoteButton(24,604,412,52,"Start / update climate",14,()=>StartClimateChecked(new(ActionKind.Climate,liveTemperature,true,CurrentClimateOptions())),true,"ClimateStart"),
             ActionKind.Climate,s?.ClimateOn==true,true);
         CommandFeedback(RemoteButton(24,672,412,48,"Stop climate",14,()=>_ = SendLive(new(ActionKind.Climate,liveTemperature,false))),ActionKind.Climate,false,false);
         Button(24,728,198,36,"Save as Warm up",11,()=>SaveClimatePreset(true),false,"SaveWarm");
@@ -318,7 +322,7 @@ public partial class Main
         climateBeforeSync=null;
         liveTemperature=preset.TemperatureF;driverSeat=preset.DriverSeat;passengerSeat=preset.PassengerSeat;
         wheelHeat=preset.SteeringWheel;climateDefrost=preset.Defrost;SavePrefs();
-        _ = SendLive(new(ActionKind.Climate,preset.TemperatureF,true,preset.Options(SeatsSupported)));
+        StartClimateChecked(new(ActionKind.Climate,preset.TemperatureF,true,preset.Options(SeatsSupported)));
     }
     private void SaveClimatePreset(bool warm)
     {
@@ -384,8 +388,9 @@ public partial class Main
         Button(24,346,412,40,"Range & units  /  "+(units==UnitSystem.Metric?"Metric":"Imperial")+"  ›",13,()=>Navigate("Range"),false,"SettingsRange");
         int y=392;
         if(AppService.SendToCar){Button(24,y,412,40,"Offer climate after Send to car  /  "+(climateOffer?"On":"Off"),13,()=>{climateOffer=!climateOffer;SavePrefs();Render();},false,"SettingsClimateOffer");y+=46;}
-        LiveButton(24,y,412,40,"Update",13,()=>_ = RefreshLive(false));y+=46;
-        LiveButton(24,y,412,40,"Wake vehicle and refresh",13,WakeWithCheck,false,"WakeRefresh");y+=46;
+        if(!demo){Button(24,y,412,40,"Alerts when closed  /  "+(LoadAlerts().On?"On":"Off")+"  ›",13,()=>Navigate("Notify"),false,"SettingsAlerts");y+=46;}
+        LiveButton(24,y,198,40,"Update",13,()=>_ = RefreshLive(false));
+        LiveButton(238,y,198,40,"Wake and refresh",13,WakeWithCheck,false,"WakeRefresh");y+=46;
         if(demo)LiveButton(24,y,412,40,"End demo",13,()=>EndLiveSession(),false,"DemoEnd");
         else LiveButton(24,y,412,40,"Sign out & forget",13,()=>_ = ForgetAccount(),false,"SignOut");
         y+=46;

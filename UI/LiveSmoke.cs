@@ -236,6 +236,14 @@ public partial class Main
             if(!detailText.Contains("12-volt battery|87%")||detailText.Contains("40.111")||detailText.Contains("74.222")||detailText.Contains("coord"))
                 throw new Exception("Full detail is missing fields or shows the vehicle location");
             await Capture("31-details-test.png");
+            // Copy for a bug report: the status as text with location, IDs and the VIN's serial removed.
+            canvas.GetNode<Button>("DetailsCopy").EmitSignal(Godot.Button.SignalName.Pressed);
+            string vin=connection!.Selected!.Vin;
+            if(!copiedReport.StartsWith("nCTRL ")||!copiedReport.Contains(" · Bluelink")||copiedReport.Contains("40.111")||copiedReport.Contains("74.222")||
+               copiedReport.Contains(vin)||(copiedReport.Contains("\"vin\"")&&!copiedReport.Contains(vin[..11]+"******"))||!copiedReport.Contains("87")||!notice.StartsWith("Copied"))
+                throw new Exception("Copy for a bug report missed fields or left in the location or VIN");
+            await Capture("32-details-copied-test.png");
+            notice="";
             Navigate("Appearance");
             if(canvas.GetNodeOrNull<LineEdit>("GarageName")==null)throw new Exception("Garage appearance editor missing");
             // Each car's name and picture: Hyundai's model code picked the IONIQ 5 N, and both can be changed.
@@ -441,7 +449,8 @@ public partial class Main
             await Capture("35-horn-lights-test.png");
             await ToSignal(GetTree().CreateTimer(4.3),SceneTreeTimer.SignalName.Timeout);
             if(canvas.GetNode<StatusOverlay>("StatusOverlay").Flashing)throw new Exception("Headlights and horn did not clear after a few seconds");
-            // Seat and steering-wheel choices ride on the single climate start.
+            // Seat and steering-wheel choices ride on the single climate start. (No outside temperature: nothing asks.)
+            var outsideBefore=outside;outside=null;
             Navigate("Climate");
             var driver=canvas.GetNode<OptionButton>("DriverSeat");driver.Select((int)SeatMode.HeatHigh);driver.EmitSignal(OptionButton.SignalName.ItemSelected,(long)SeatMode.HeatHigh);
             var passenger=canvas.GetNode<OptionButton>("PassengerSeat");passenger.Select((int)SeatMode.CoolLow);passenger.EmitSignal(OptionButton.SignalName.ItemSelected,(long)SeatMode.CoolLow);
@@ -462,6 +471,22 @@ public partial class Main
                 throw new Exception("Warm up did not start climate with its preset");
             await Capture("43-climate-presets-test.png");
             await WaitForCommandChecks();
+            // On a warm day, heated seats ask first; "Without seats" starts climate with the heat turned off.
+            outside=new(75,DateTimeOffset.UtcNow,"test");int startsBefore=fixture.ClimateStarts;
+            Navigate("Climate");canvas.GetNode<Button>("PresetWarm").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingConfirm?.Title!="HEATED SEATS?"||!pendingConfirm.Message.Contains("75°F")||canvas.GetNodeOrNull<Button>("ConfirmAlternate")==null||fixture.ClimateStarts!=startsBefore)
+                throw new Exception("Heated seats on a warm day did not ask first, or sent before asking");
+            await Capture("44-climate-warm-day-test.png");
+            canvas.GetNode<Button>("ConfirmAlternate").EmitSignal(Godot.Button.SignalName.Pressed);
+            for(int i=0;i<300&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
+            if(fixture.ClimateStarts!=startsBefore+1||!fixture.LastBody.Contains("\"drvSeatHeatState\":0")||!fixture.LastBody.Contains("\"astSeatHeatState\":0")||
+               !fixture.LastBody.Contains("\"heating1\":0")||!fixture.LastBody.Contains("\"defrost\":true"))
+                throw new Exception("Without seats did not start climate with the seats and wheel off");
+            await WaitForCommandChecks();
+            Navigate("Climate");canvas.GetNode<Button>("PresetWarm").EmitSignal(Godot.Button.SignalName.Pressed);
+            canvas.GetNode<Button>("ConfirmCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(pendingConfirm!=null||fixture.ClimateStarts!=startsBefore+1)throw new Exception("Cancelling the warm-day question sent climate");
+            outside=outsideBefore;
             liveTemperature=70;Render();canvas.GetNode<Button>("SaveWarm").EmitSignal(Godot.Button.SignalName.Pressed);
             if(warmPreset.TemperatureF!=70||!canvas.GetNode<Button>("PresetWarm").Text.Contains("70°F"))throw new Exception("Save as Warm up did not store the current settings");
             // Charge presets: Road trip sends 100% for both targets in one request.
@@ -573,6 +598,8 @@ public partial class Main
             var picture=Image.CreateEmpty(32,16,false,Image.Format.Rgb8);picture.Fill(new Color("#3aa0ff"));
             fixture.SvmImage=Convert.ToBase64String(picture.SavePngToBuffer());
             byte[]? savedPicture=null;savePhoto=bytes=>{savedPicture=bytes;return Task.FromResult("Saved to Photos.");};
+            lookFolderFixture=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"nctrl-look-smoke-"+Guid.NewGuid().ToString("N"));
+            ForgetLookHistory();lookHistoryLoaded=false;
             Navigate("Locate");canvas.GetNode<Button>("LookAround").EmitSignal(Godot.Button.SignalName.Pressed);
             if(screen!="Look")throw new Exception("Vehicle location does not open Look around");
             canvas.GetNode<Button>("LookCapture").EmitSignal(Godot.Button.SignalName.Pressed);
@@ -589,12 +616,23 @@ public partial class Main
             canvas.GetNode<Button>("LookSave").EmitSignal(Godot.Button.SignalName.Pressed);
             for(int i=0;i<100&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(savedPicture==null||Convert.ToBase64String(savedPicture)!=fixture.SvmImage||notice!="Saved to Photos.")throw new Exception("Save to Photos did not save the captured picture");
+            // The capture is kept on the phone: one picture in the strip, its file re-encoded as JPEG.
+            if(lookHistory.Count!=1||!System.IO.File.Exists(System.IO.Path.Combine(lookFolderFixture,lookHistory[0].File))||canvas.GetNodeOrNull<Button>("LookThumb0")==null||
+               canvas.GetNode<Button>("LookDelete").Disabled||System.IO.File.ReadAllBytes(System.IO.Path.Combine(lookFolderFixture,lookHistory[0].File))[0]!=0xFF)
+                throw new Exception("Look around did not keep the capture on the phone");
+            lookView=null;lookTexture=null;lookHistoryLoaded=false;Navigate("Look");
+            if(lookTexture==null||lookShown!=lookHistory[0].File)throw new Exception("Reopening Look around did not show the kept picture");
+            await Capture("49-look-history-test.png");
             // A second capture within 5 minutes warns before anything is sent.
             canvas.GetNode<Button>("LookCapture").EmitSignal(Godot.Button.SignalName.Pressed);
             canvas.GetNode<Button>("ConfirmGo").EmitSignal(Godot.Button.SignalName.Pressed);
             for(int i=0;i<100&&liveBusy;i++)await ToSignal(GetTree(),SceneTree.SignalName.ProcessFrame);
             if(pendingOverride?.Kind!=RequestKind.Camera||fixture.SvmRequests!=1)throw new Exception("A second capture within 5 minutes was not refused first");
             canvas.GetNode<Button>("OverrideCancel").EmitSignal(Godot.Button.SignalName.Pressed);
+            string keptFile=System.IO.Path.Combine(lookFolderFixture,lookHistory[0].File);
+            canvas.GetNode<Button>("LookDelete").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(lookHistory.Count!=0||System.IO.File.Exists(keptFile)||lookTexture!=null)throw new Exception("Deleting the kept picture did not remove it");
+            notice="";System.IO.Directory.Delete(lookFolderFixture,true);lookFolderFixture=null;lookHistoryLoaded=false;
             if(Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--art-gallery"))await ArtGallery();
             // Range & units: metric everywhere, the loss setting, and turning the estimate off and on.
             int weatherBefore=weatherFixture.Requests;

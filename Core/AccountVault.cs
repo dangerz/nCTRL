@@ -17,12 +17,12 @@ public sealed class SavedAccount
     // Kia Connect's remember token (lets sign-in skip the one-time code) and the device id it belongs to.
     public string RememberToken { get; }
     public string DeviceId { get; }
-    // The car service this login belongs to ("hyundai" or "kia"). Logins saved before Kia support are Hyundai's.
+    // The car service this login belongs to (see Brand: "hyundai", "kia", "hyundai-ca", "kia-ca"). Logins saved before Kia support are Hyundai's.
     public string Service { get; }
     public SavedAccount(string email,string password,string pin,string rememberToken="",string deviceId="",string service=Brand.Hyundai)
     {
         if(string.IsNullOrWhiteSpace(email)||email.Length>320||password.Length is <1 or >4096||pin.Length is not (0 or 4)||
-           rememberToken.Length>8192||deviceId.Length>128||service is not (Brand.Hyundai or Brand.Kia))
+           rememberToken.Length>8192||deviceId.Length>128||!Brand.Known(service))
             throw new VaultException("invalid_data");
         foreach(char c in pin)if(!char.IsAsciiDigit(c))throw new VaultException("invalid_data");
         Email=email;Password=password;Pin=pin;RememberToken=rememberToken;DeviceId=deviceId;Service=service;
@@ -133,6 +133,16 @@ public sealed class AccountVault
     public Task<string> LoadSharedAsync(CancellationToken ct)=>bridge.Present?Request("shared_load","",ct):throw new VaultException("unavailable");
     public Task SaveSharedAsync(string json,CancellationToken ct)=>bridge.Present?Request("shared_save",json,ct):throw new VaultException("unavailable");
     public Task ForgetSharedAsync(CancellationToken ct)=>bridge.Present?Request("shared_forget","",ct):throw new VaultException("unavailable");
+    /// <summary>Asks iOS for permission to show alerts. False when the user says no (now, or earlier in Settings).</summary>
+    public async Task<bool> AskNotificationsAsync(CancellationToken ct)
+    {
+        if(!bridge.Present)throw new VaultException("unavailable");
+        try {await Request("notify_ask","",ct);return true;}
+        catch(VaultException ex) when(ex.Code=="denied"){return false;}
+    }
+    /// <summary>Runs the background alert check right now, through the same native path iOS background refresh uses.
+    /// Returns the check's JSON (see AlertCheck), plus whether background refresh is registered.</summary>
+    public Task<string> CheckAlertsNowAsync(CancellationToken ct)=>bridge.Present?Request("alerts_check_now","",ct):throw new VaultException("unavailable");
     public async Task ForgetAsync(CancellationToken ct)
     {
         // Deletion must still work when enrollment was changed or biometrics are unavailable.

@@ -195,6 +195,7 @@ public partial class Main : Control
         else if(screen=="Places") PlacesScreen();
         else if(screen=="Range") RangeScreen();
         else if(screen=="AppColor") AppColorScreen();
+        else if(screen=="Notify") AlertsScreen();
         else LiveScreen();
         PullLayer(content);
         if(liveMode)Nav();
@@ -273,7 +274,7 @@ public partial class Main : Control
     {
         Rect(0,851,460,69,Skin.Nav);Rect(0,851,460,1,Skin.NavLine);
         string[] names={"Car","Energy","Details","Activity","Settings"};
-        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range" or "AppColor"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look" or "Send"?"Car":screen;
+        string selected=screen is "Appearance" or "Paint" or "Model" or "Disclaimer" or "Limits" or "Places" or "Range" or "AppColor" or "Notify"?"Settings":screen is "Climate" or "Locate" or "Alerts" or "Look" or "Send"?"Car":screen;
         for(int i=0;i<names.Length;i++)
         {
             string name=names[i];int x=i*92;
