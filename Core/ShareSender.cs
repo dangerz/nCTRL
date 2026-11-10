@@ -11,7 +11,8 @@ namespace NGarage.Core;
 
 /// <summary>A share read as far as it can go without an address lookup: the place, or what to look up (keeping the
 /// shared name), or why it can't be read.</summary>
-public sealed record ShareResult(Destination? Place,string Lookup,string Name,string Problem);
+/// <param name="Confirm">See <see cref="SharedItem.Confirm"/>: show the place and send only after a tap.</param>
+public sealed record ShareResult(Destination? Place,string Lookup,string Name,string Problem,bool Confirm=false);
 
 /// <summary>Reading and sending places shared to nCTRL, used by the app (UI/SharedPlaces.cs) and by the Share
 /// extension through the C entry points in Native/iOS/CoreLib, so both do exactly the same thing.</summary>
@@ -32,7 +33,7 @@ public static class ShareSender
             } else if(lookup.Length==0)problem="Only a Google Maps short link, and it didn't lead to a place";
         }
         if(place==null&&lookup.Length==0&&problem.Length==0)problem="Nothing in it looked like a place";
-        return new(place,place==null?lookup:"",name,place==null?problem:"");
+        return new(place,place==null?lookup:"",name,place==null?problem:"",place!=null&&item.Confirm&&ReferenceEquals(place,item.Place));
     }
 
     // For the Share extension. In: share.json. Out: {"place":{…}} or {"lookup","name"} or {"problem"}, with source and kinds.
@@ -43,7 +44,7 @@ public static class ShareSender
         return Json(w=>{
             if(read.Place is {} p)WritePlace(w,p);
             w.WriteString("lookup",read.Lookup);w.WriteString("name",read.Name);w.WriteString("problem",read.Problem);
-            w.WriteString("source",item.Source);w.WriteString("kinds",item.Kinds);
+            w.WriteString("source",item.Source);w.WriteString("kinds",item.Kinds);w.WriteBoolean("confirm",read.Confirm);
         });
     }
 

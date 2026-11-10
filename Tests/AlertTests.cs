@@ -114,6 +114,42 @@ static class AlertTests
             Check(held.Contains("keeping the rest")&&quiet.Requests==0,"Near the daily read limit the check skips itself");
             File.Delete(Path.Combine(folder,AlertCheck.LimitsFile));
             Check((await AlertCheck.CheckJsonAsync("garbage",quiet,default,t0)).Contains("\"ok\":false")&&quiet.Requests==0,"A damaged request sends nothing");
+            // A refused login pauses the checks, with one notification, until a sign-in in the app.
+            File.WriteAllText(alerts,new AlertFile(On:true,Car:"Flareon").Encode());
+            var refusing=new Refusing();
+            using(var r=JsonDocument.Parse(await AlertCheck.CheckJsonAsync(Request(null),refusing,default,t0))) {
+                var notices=r.RootElement.GetProperty("notices");
+                Check(!r.RootElement.GetProperty("ok").GetBoolean()&&notices.GetArrayLength()==1&&notices[0].GetProperty("kind").GetString()=="SignIn"&&
+                    notices[0].GetProperty("title").GetString()==AlertCheck.PausedTitle&&notices[0].GetProperty("body").GetString()!.Contains("sign in again")&&refusing.Requests==1,
+                    "A refused password: one request, one notification saying to sign in again");
+            }
+            Check(AlertFile.Decode(File.ReadAllText(alerts)) is {Paused:true,SignIns:1,SignInDay:"2026-11-09"},"The pause and the sign-in are saved");
+            string again=await AlertCheck.CheckJsonAsync(Request(null),refusing,default,t0.AddMinutes(15));
+            Check(again.Contains("refused the saved login")&&!again.Contains("notices")&&refusing.Requests==1,"While paused nothing is sent and nothing is announced again");
+            File.Delete(Path.Combine(folder,AlertCheck.LimitsFile));
+            Check((await AlertCheck.CheckJsonAsync(Request(session),refusing,default,t0.AddHours(1))).Contains("refused")&&refusing.Requests==1,"Paused even with a session");
+            AlertCheck.Resume(folder);
+            Check(AlertFile.Decode(File.ReadAllText(alerts)) is {Paused:false,SignIns:0,On:true,Car:"Flareon"},"A sign-in in the app resumes the checks and keeps the settings");
+            // At most four background sign-ins or renewals a day.
+            File.WriteAllText(alerts,new AlertFile(On:true,SignInDay:"2026-11-09",SignIns:AlertCheck.SignInsPerDay).Encode());
+            var capped=new DemoHyundai(Array.Empty<byte>());
+            Check((await AlertCheck.CheckJsonAsync(Request(null),capped,default,t0)).Contains("used up")&&capped.Requests==0,"Sign-ins used up for today: nothing is sent");
+            var expired=SharedSession.Decode(session)! with {Expires=t0.AddSeconds(30)};
+            Check((await AlertCheck.CheckJsonAsync(Request(expired.Encode()),capped,default,t0)).Contains("used up")&&capped.Requests==0,"A session that needs renewing counts as a sign-in");
+            using(var r=JsonDocument.Parse(await AlertCheck.CheckJsonAsync(Request(null),capped,default,t0.AddDays(1))))
+                Check(r.RootElement.GetProperty("ok").GetBoolean()&&AlertFile.Decode(File.ReadAllText(alerts)) is {SignIns:1,SignInDay:"2026-11-10"},"The count starts again the next day");
+            File.Delete(Path.Combine(folder,AlertCheck.LimitsFile));
+            int before=AlertFile.Decode(File.ReadAllText(alerts)).SignIns;
+            var valid=SharedSession.Decode(session)! with {Expires=t0.AddDays(1).AddHours(5)};
+            await AlertCheck.CheckJsonAsync(Request(valid.Encode()),new DemoHyundai(Array.Empty<byte>()),default,t0.AddDays(1).AddMinutes(1));
+            Check(AlertFile.Decode(File.ReadAllText(alerts)).SignIns==before,"A valid session isn't counted");
+            Check(AlertCheck.Refused(new BluelinkException("x",401))&&AlertCheck.Refused(new BluelinkException("x",200,7402))&&
+                AlertCheck.Refused(new BluelinkException("Sign-in: Kia didn't accept that email and password."))&&
+                !AlertCheck.Refused(new BluelinkException("Status: HTTP 500.",500))&&!AlertCheck.Refused(new BluelinkException("Status: Connection failed. No automatic retry was sent."))&&
+                !AlertCheck.Refused(new BluelinkException("x",429)),"Refused means the login, not an outage or a busy service");
+            var pausedFile=new AlertFile(On:true,Memory:new AlertMemory(),Paused:true,SignInDay:"2026-11-09",SignIns:2);
+            Check(AlertFile.Decode(pausedFile.Encode())==pausedFile,"The pause and count round-trip");
+
             File.WriteAllText(alerts,new AlertFile(On:true).Encode());
             AlertCheck.Remember(folder,State(charging:true),false,"Flareon",t0);
             Check(AlertFile.Decode(File.ReadAllText(alerts)) is {Car:"Flareon",Memory.Charging:true},"The app's reads update the memory silently");
@@ -121,4 +157,14 @@ static class AlertTests
         Console.WriteLine($"PASS: {count} background alert checks (fake server, no network).");
     }
     sealed class FixedClock(DateTimeOffset now) : TimeProvider {public override DateTimeOffset GetUtcNow()=>now;}
+    // A service that refuses every request (a changed password).
+    sealed class Refusing : System.Net.Http.HttpMessageHandler
+    {
+        public int Requests;
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request,System.Threading.CancellationToken ct)
+        {
+            Requests++;
+            return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Unauthorized){Content=new System.Net.Http.StringContent("{}")});
+        }
+    }
 }

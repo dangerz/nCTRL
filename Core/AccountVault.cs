@@ -149,6 +149,19 @@ public sealed class AccountVault
         if(!bridge.Present)throw new VaultException("unavailable");
         await Request("forget","",ct);
     }
+    /// <summary>Sign out & forget: deletes every Keychain item (the session first, then the login, ignored places, last
+    /// location and shared places) and the Share extension's files, trying all of them and reporting a failure at the end.</summary>
+    public async Task ForgetEverythingAsync(CancellationToken ct)
+    {
+        if(!bridge.Present)throw new VaultException("unavailable");
+        try {await Request("forget_all","",ct);return;}
+        catch(VaultException ex) when(ex.Code=="invalid_data") { } // A bridge without forget_all (Android): one at a time.
+        VaultException? first=null;
+        foreach(string op in ForgetOrder)
+            try {await Request(op,"",ct);} catch(VaultException ex){first??=ex;}
+        if(first!=null)throw first;
+    }
+    public static readonly string[] ForgetOrder={"session_forget","forget","places_forget","location_forget","shared_forget"};
     private async Task<string> Request(string operation,string payload,CancellationToken ct)
     {
         await gate.WaitAsync(ct);

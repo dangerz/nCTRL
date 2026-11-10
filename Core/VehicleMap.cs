@@ -128,4 +128,20 @@ public sealed class MapTileCache : IDisposable
         return bytes;
     }
     public void Dispose()=>http.Dispose();
+    /// <summary>Pictures are kept about a week.</summary>
+    public static readonly TimeSpan MaxAge=TimeSpan.FromDays(7);
+    /// <summary>Deletes pictures not refreshed within <see cref="MaxAge"/> (at launch). Returns how many went.</summary>
+    public static int Prune(string directory,DateTimeOffset now)
+    {
+        int removed=0;
+        if(!Directory.Exists(directory))return 0;
+        foreach(string file in Directory.EnumerateFiles(directory))
+            try {if(now-new DateTimeOffset(File.GetLastWriteTimeUtc(file))>MaxAge){File.Delete(file);removed++;}} catch(IOException) { } catch(UnauthorizedAccessException) { }
+        return removed;
+    }
+    /// <summary>Deletes every picture (Sign out & forget).</summary>
+    public static void Clear(string directory)
+    {
+        try {if(Directory.Exists(directory))Directory.Delete(directory,true);} catch(IOException) { } catch(UnauthorizedAccessException) { }
+    }
 }

@@ -77,6 +77,7 @@ public partial class Main
             return (null,false);
         }
         accountKey=VehicleLink.AccountKey(account.Email);BindDisclaimer();
+        ResumeAlerts(); // The saved password worked.
         int index=VehicleLink.Find(linkedVehicle,accountKey,vehicles);
         if(index<0) {
             enrollment=vehicles;selectedIndex=0;liveMode=false;screen="Connect";

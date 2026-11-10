@@ -122,8 +122,11 @@ NG_EXPORT char *ng_geocode_result(int *state) {
     }
 }
 // Files shared with the widget and the Share extension, in the App Group "group.<app bundle ID>".
-// The App Group ("group.<app bundle ID>"), or nil in a build without it. Its name is also a Keychain access group
-// the Share extension can read: the saved login and Hyundai's session are kept there.
+// The App Group ("group.<app bundle ID>"), or nil in a build without it. Its name is also a Keychain access group that
+// the widget can read too, so since 2.17 the saved login and the session are no longer kept there: they go in the app's
+// default access group, "<team>.<app bundle ID>.secure" (the first of its keychain-access-groups, added by
+// Native/iOS/add-extensions.rb), which only the app and the Share extension have. Items still in the App Group's are
+// moved on the next unlock.
 static NSString *appGroup(void) {
     static NSString *group;static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -143,6 +146,27 @@ NG_EXPORT char *ng_group_path(void) {
     const char *path=folder.path.UTF8String;
     return path?strdup(path):NULL;
 }
+// Keeps one of the app's own folders, and everything in it, out of iCloud and computer backups (Godot's user:// is in the
+// app's Documents folder, which iOS backs up by default). complete: files in it, and those added later, can't be read
+// while the phone is locked. Returns 1 when the folder is excluded from backups, 0 otherwise.
+NG_EXPORT int ng_file_privacy(const char *path, int complete) {
+    NSString *text=path?[NSString stringWithUTF8String:path]:nil;
+    if(text.length==0)return 0;
+    NSURL *folder=[NSURL fileURLWithPath:text isDirectory:YES];
+    NSFileManager *files=NSFileManager.defaultManager;BOOL directory=NO;
+    if(![files fileExistsAtPath:folder.path isDirectory:&directory]||!directory)return 0;
+    [folder setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+    if(complete) {
+        NSDictionary *protection=@{NSFileProtectionKey:NSFileProtectionComplete};
+        [files setAttributes:protection ofItemAtPath:folder.path error:nil];
+        for(NSString *name in [files contentsOfDirectoryAtPath:folder.path error:nil]?:@[])
+            [files setAttributes:protection ofItemAtPath:[folder.path stringByAppendingPathComponent:name] error:nil];
+    }
+    NSNumber *excluded=nil;
+    [folder removeCachedResourceValueForKey:NSURLIsExcludedFromBackupKey];
+    [folder getResourceValue:&excluded forKey:NSURLIsExcludedFromBackupKey error:nil];
+    return excluded.boolValue?1:0;
+}
 extern "C" void ng_widget_reload_swift(void);
 // Writes (or, with no bytes, deletes) one shared file, then asks the widget to redraw. Returns 1 when done.
 NG_EXPORT int ng_group_write(const char *name, const unsigned char *bytes, int length) {
@@ -159,7 +183,8 @@ NG_EXPORT int ng_group_write(const char *name, const unsigned char *bytes, int l
 NG_EXPORT char *ng_group_take(const char *name) {
     NSURL *file=groupFile(name?[NSString stringWithUTF8String:name]:@"");
     NSData *data=file?[NSData dataWithContentsOfURL:file]:nil;
-    if(file)[NSFileManager.defaultManager removeItemAtURL:file error:nil];
+    // Unreadable (the phone is locked, so it's protected) stays for next time; only what was read is deleted.
+    if(file&&data)[NSFileManager.defaultManager removeItemAtURL:file error:nil];
     if(data.length==0 || data.length>256*1024)return NULL;
     char *copy=(char *)calloc(data.length+1,1);
     if(copy)memcpy(copy,data.bytes,data.length);
@@ -199,14 +224,36 @@ static NSMutableDictionary *locationQuery(void) {
               (__bridge id)kSecAttrService:@"com.ngarage.nctrl.location.v1",(__bridge id)kSecAttrAccount:@"location",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
 }
-// Hyundai's session (tokens and the selected car), shared with the Share extension through the App Group's Keychain
-// access group so it can send without signing in again. Device-only, no Face ID gate.
+// The service's session (tokens and the selected car), shared with the Share extension through the app's secure
+// access group (see appGroup) so it can send without signing in again. Device-only, no Face ID gate. Queries name no
+// group, so they find it wherever it is; new items go in the default (secure) group.
 static NSMutableDictionary *sessionQuery(void) {
-    NSMutableDictionary *q=[@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+    return [@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
               (__bridge id)kSecAttrService:@"com.ngarage.nctrl.session.v1",(__bridge id)kSecAttrAccount:@"session",
               (__bridge id)kSecAttrSynchronizable:@NO} mutableCopy];
-    if(appGroup())q[(__bridge id)kSecAttrAccessGroup]=appGroup();
-    return q;
+}
+// Replaces an item's data in place, or adds it (in the default access group) when there is none, so a reader in the
+// Share extension never finds it missing part-way.
+static OSStatus replaceItem(NSMutableDictionary *(*itemQuery)(void),NSData *data) {
+    OSStatus status=SecItemUpdate((__bridge CFDictionaryRef)itemQuery(),(__bridge CFDictionaryRef)@{(__bridge id)kSecValueData:data});
+    if(status!=errSecItemNotFound)return status;
+    NSMutableDictionary *item=itemQuery();
+    item[(__bridge id)kSecValueData]=data;
+    item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+    return SecItemAdd((__bridge CFDictionaryRef)item,NULL);
+}
+// Moves an item out of the App Group's access group (where the widget could read it) into the default one.
+static void moveOutOfAppGroup(NSMutableDictionary *(*itemQuery)(void)) {
+    if(!appGroup())return;
+    NSMutableDictionary *q=itemQuery();q[(__bridge id)kSecAttrAccessGroup]=appGroup();q[(__bridge id)kSecReturnData]=@YES;
+    CFTypeRef value=NULL;
+    if(SecItemCopyMatching((__bridge CFDictionaryRef)q,&value)!=errSecSuccess||!value)return;
+    NSData *data=CFBridgingRelease(value);
+    SecItemDelete((__bridge CFDictionaryRef)itemQuery()); // Every copy, in any group.
+    NSMutableDictionary *item=itemQuery();
+    item[(__bridge id)kSecValueData]=data;
+    item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+    SecItemAdd((__bridge CFDictionaryRef)item,NULL);
 }
 // Places shared to nCTRL from other apps (Activity → Shared), stored the same way.
 static NSMutableDictionary *sharedQuery(void) {
@@ -285,18 +332,38 @@ static void ng_alerts_schedule(void) {
     @try {[BGTaskScheduler.sharedScheduler submitTaskRequest:request error:nil];} @catch(NSException *e) { }
 }
 // Runs one check and posts its notifications. Returns the check's JSON with "registered" added (for Check now).
+// The Keychain bytes of an item, or nil. The caller zeroes them when done (wipeData).
+static NSData *readSecret(NSMutableDictionary *q) {
+    q[(__bridge id)kSecReturnData]=@YES;
+    CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
+    NSData *data=value?CFBridgingRelease(value):nil;
+    return status==errSecSuccess?data:nil;
+}
+// Zeroes data the Keychain returned (its own heap buffer; nothing else shares it) so the login doesn't linger in memory.
+static void wipeData(NSData *data) {if(data.length)memset((void *)data.bytes,0,data.length);}
 static NSString *ng_alerts_run(BOOL manual) {
+    initialize();
     NSString *result=@"{\"ok\":false,\"skipped\":\"no saved login, or the phone is locked\"}";
-    NSString *account=readItem(query());
     NSURL *folder=appGroup()?[NSFileManager.defaultManager containerURLForSecurityApplicationGroupIdentifier:appGroup()]:nil;
-    if(account&&folder) {
-        NSDictionary *request=@{@"account":account,@"session":readItem(sessionQuery())?:NSNull.null,@"places":readItem(placesQuery())?:@"",@"folder":folder.path};
-        NSData *json=[NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
-        NSMutableData *text=[json mutableCopy];[text appendBytes:"\0" length:1];
-        char *output=nctrl_alert_check((const char *)text.bytes);
-        memset(text.mutableBytes,0,text.length); // The request holds the login.
-        if(output){result=[NSString stringWithUTF8String:output]?:result;nctrl_alert_free(output);}
+    NSData *account=readSecret(query()),*session=readSecret(sessionQuery());
+    if(account&&folder) @autoreleasepool {
+        // The strings point at the Keychain's bytes (no copies), and the request is written into a buffer of our own:
+        // all of it is zeroed after the check.
+        NSString *(^view)(NSData *)=^NSString *(NSData *d){return d?[[NSString alloc] initWithBytesNoCopy:(void *)d.bytes length:d.length encoding:NSUTF8StringEncoding freeWhenDone:NO]:nil;};
+        NSDictionary *request=@{@"account":view(account)?:@"",@"session":view(session)?:NSNull.null,@"places":readItem(placesQuery())?:@"",@"folder":folder.path};
+        NSUInteger capacity=account.length*2+session.length*2+256*1024;
+        uint8_t *buffer=(uint8_t *)calloc(capacity,1);
+        if(buffer) {
+            NSOutputStream *stream=[NSOutputStream outputStreamToBuffer:buffer capacity:capacity-1];[stream open];
+            NSInteger written=[NSJSONSerialization writeJSONObject:request toStream:stream options:0 error:nil];[stream close];
+            if(written>0&&(NSUInteger)written<capacity-1) {
+                char *output=nctrl_alert_check((const char *)buffer);
+                if(output){result=[NSString stringWithUTF8String:output]?:result;nctrl_alert_free(output);}
+            }
+            memset(buffer,0,capacity);free(buffer);
+        }
     }
+    wipeData(account);wipeData(session);
     NSData *data=[result dataUsingEncoding:NSUTF8StringEncoding];
     NSMutableDictionary *r=[[NSJSONSerialization JSONObjectWithData:data options:0 error:nil] mutableCopy];
     if(![r isKindOfClass:NSMutableDictionary.class])r=[@{@"ok":@NO,@"skipped":@"failed"} mutableCopy];
@@ -309,11 +376,8 @@ static NSString *ng_alerts_run(BOOL manual) {
         [UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:[UNNotificationRequest requestWithIdentifier:identifier content:content trigger:nil] withCompletionHandler:nil];
     }
     if([r[@"session"] isKindOfClass:NSString.class]&&[r[@"session"] length]<=65536) {
-        SecItemDelete((__bridge CFDictionaryRef)sessionQuery());
-        NSMutableDictionary *item=sessionQuery();
-        item[(__bridge id)kSecValueData]=[r[@"session"] dataUsingEncoding:NSUTF8StringEncoding];
-        item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
-        SecItemAdd((__bridge CFDictionaryRef)item,NULL);
+        // Under the same lock as the app's own session saves.
+        @synchronized(guard){replaceItem(sessionQuery,[r[@"session"] dataUsingEncoding:NSUTF8StringEncoding]);}
     }
     [r removeObjectForKey:@"session"];
     r[@"registered"]=@(alertsRegistered);
@@ -365,12 +429,11 @@ static BOOL itemExists(NSMutableDictionary *q) {
 NG_EXPORT int ng_vault_has_account(void) {
     initialize();return itemExists(query()) || itemExists(legacyQuery());
 }
-// Writes the saved login to its item (replacing any) and removes the legacy Face ID item.
-// In the App Group's access group when there is one, so the Share extension can read it too.
+// Writes the saved login to its item (replacing any copy, in any access group) and removes the legacy Face ID item.
+// In the default access group: the app's secure group, which the Share extension shares and the widget doesn't.
 static OSStatus storeAccount(NSData *data) {
     SecItemDelete((__bridge CFDictionaryRef)query());
     NSMutableDictionary *item=query();
-    if(appGroup())item[(__bridge id)kSecAttrAccessGroup]=appGroup();
     item[(__bridge id)kSecValueData]=data;
     item[(__bridge id)kSecAttrAccessible]=(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
     OSStatus status=SecItemAdd((__bridge CFDictionaryRef)item,NULL);
@@ -408,6 +471,25 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{finish(ticket,YES,@"",ng_alerts_run(YES));});
         return;
     }
+    if([op isEqualToString:@"forget_all"]) {
+        // Sign out & forget: every item, the session first, then the Share extension's files. All are tried; the first
+        // failure is reported at the end.
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
+            @synchronized(guard){if(ticket!=generation)return;
+                OSStatus failed=errSecSuccess;
+                NSArray *queries=@[sessionQuery(),query(),legacyQuery(),placesQuery(),locationQuery(),sharedQuery()];
+                for(NSMutableDictionary *q in queries) {
+                    OSStatus status=SecItemDelete((__bridge CFDictionaryRef)q);
+                    if(status!=errSecSuccess&&status!=errSecItemNotFound&&failed==errSecSuccess)failed=status;
+                }
+                for(NSString *name in @[@"share.json",@"share-log.json"]) {
+                    NSURL *file=groupFile(name);NSError *error=nil;
+                    if(file&&![NSFileManager.defaultManager removeItemAtURL:file error:&error]&&error.code!=NSFileNoSuchFileError&&failed==errSecSuccess)failed=errSecIO;
+                }
+                finish(ticket,failed==errSecSuccess,failed==errSecSuccess?@"":errorCode(failed),nil);
+            }
+        });return;
+    }
     if([op isEqualToString:@"forget"]) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
             @synchronized(guard){if(ticket!=generation)return;
@@ -435,6 +517,10 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
                     finish(ticket,stored!=nil,stored?@"":errorCode(status),stored);
                 } else if([op isEqualToString:[kind stringByAppendingString:@"save"]]) {
                     if(text.length>65536){finish(ticket,NO,@"invalid_data",nil);return;}
+                    if(itemQuery==sessionQuery) {
+                        OSStatus status=replaceItem(sessionQuery,[text dataUsingEncoding:NSUTF8StringEncoding]);
+                        finish(ticket,status==errSecSuccess,errorCode(status),nil);return;
+                    }
                     SecItemDelete((__bridge CFDictionaryRef)itemQuery());
                     NSMutableDictionary *item=itemQuery();
                     item[(__bridge id)kSecValueData]=[text dataUsingEncoding:NSUTF8StringEncoding];
@@ -482,8 +568,9 @@ NG_EXPORT void ng_vault_start(const char *operation, const char *payload) {
         CFTypeRef value=NULL;OSStatus status=SecItemCopyMatching((__bridge CFDictionaryRef)q,&value);
         NSDictionary *found=value?CFBridgingRelease(value):nil;
         NSData *data=found[(__bridge id)kSecValueData];
-        // A login saved before the App Group existed moves into it (no prompt).
-        if(status==errSecSuccess && data && appGroup() && ![found[(__bridge id)kSecAttrAccessGroup] isEqual:appGroup()])storeAccount(data);
+        // A login (and session) kept in the App Group's access group by 2.16 or earlier moves to the secure group, out of
+        // the widget's reach (no prompt).
+        if(status==errSecSuccess && data && appGroup() && [found[(__bridge id)kSecAttrAccessGroup] isEqual:appGroup()]){storeAccount(data);moveOutOfAppGroup(sessionQuery);}
         if(status!=errSecItemNotFound) {
             NSString *account=status==errSecSuccess?[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]:nil;
             finish(ticket,account!=nil,account?@"":errorCode(status),account);return;

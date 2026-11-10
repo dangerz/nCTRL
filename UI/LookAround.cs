@@ -25,6 +25,19 @@ public partial class Main
     private string? lookFolderFixture;
     private string LookFolder=>lookFolderFixture??ProjectSettings.GlobalizePath("user://look");
 
+    // The app's own files stay out of iCloud and computer backups: Look around pictures show where the car is parked and the
+    // map cache the areas you looked at. The pictures also can't be read while the phone is locked.
+    private bool filesExcludedFromBackup;
+    private void KeepFilesPrivate()
+    {
+        filesExcludedFromBackup=NativeVaultBridge.FilePrivacy(ProjectSettings.GlobalizePath("user://"),false);
+        if(Directory.Exists(LookFolder))NativeVaultBridge.FilePrivacy(LookFolder,true);
+        MapTileCache.Prune(MapFolder,DateTimeOffset.UtcNow);
+    }
+    // Map pictures from OpenStreetMap, kept about a week (pruned at launch) and deleted by Sign out & forget.
+    private string? mapFolderFixture;
+    private string MapFolder=>mapFolderFixture??ProjectSettings.GlobalizePath("user://map-cache");
+    private void ForgetMapPictures()=>MapTileCache.Clear(MapFolder);
     private void LoadLookHistory()
     {
         if(lookHistoryLoaded)return;
@@ -48,6 +61,7 @@ public partial class Main
         LoadLookHistory();
         try {
             Directory.CreateDirectory(LookFolder);
+            if(lookFolderFixture==null)NativeVaultBridge.FilePrivacy(LookFolder,true);
             string file=LookHistory.NewFile();
             File.WriteAllBytes(Path.Combine(LookFolder,file),texture.GetImage().SaveJpgToBuffer(0.9f));
             var (list,removed)=LookHistory.Add(lookHistory,new LookEntry(file,view.CapturedAt,DateTimeOffset.UtcNow));

@@ -32,6 +32,7 @@ public partial class Main
             if(op=="location_save")Location=data;if(op=="location_forget")Location="";
             if(op=="shared_save")Shared=data;if(op=="shared_forget")Shared="";
             if(op=="session_save")Session=data;if(op=="session_forget")Session="";
+            if(op=="forget_all"){saved=null;Places="";Location="";Shared="";Session="";}
             result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");
                 w.WriteString("data",op=="unlock"?saved:op=="places_load"?Places:op=="location_load"?Location:op=="shared_load"?Shared:"");});
         }
@@ -72,6 +73,9 @@ public partial class Main
             // Alerts when closed: on asks iOS for notifications, saves the shared settings file, and seeds it from this status.
             alertsFolderFixture=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"nctrl-alerts-smoke-"+Guid.NewGuid().ToString("N"));
             System.IO.Directory.CreateDirectory(alertsFolderFixture);
+            // A map picture to be deleted by Sign out & forget.
+            mapFolderFixture=System.IO.Path.Combine(System.IO.Path.GetTempPath(),"nctrl-map-smoke-"+Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(mapFolderFixture);System.IO.File.WriteAllBytes(System.IO.Path.Combine(mapFolderFixture,"tile.png"),new byte[]{1});
             Navigate("Notify");
             if(canvas.GetNode<Button>("AlertsOn").Disabled||canvas.GetNode<CheckBox>("AlertCharge").Disabled==false)throw new Exception("The Alerts screen did not start off and ready to turn on");
             await Capture("70-alerts-off-test.png");
@@ -197,7 +201,9 @@ public partial class Main
             if(fake.Places.Length!=0||ignoredPlaces.Count!=0)throw new Exception("Sign out did not delete ignored places");
             if(fake.Location.Length!=0||savedLocation!=null)throw new Exception("Sign out did not delete the last known location");
             if(sharedFixture.ContainsKey("status.json")||sharedFixture.ContainsKey("car.png"))throw new Exception("Sign out did not clear the widget");
-            if(!fake.Ops.Contains("shared_forget")||sharedHistory.Count!=0)throw new Exception("Sign out did not delete the shared places");
+            if(!fake.Ops.Contains("forget_all")||sharedHistory.Count!=0)throw new Exception("Sign out did not delete the shared places");
+            if(System.IO.Directory.Exists(mapFolderFixture))throw new Exception("Sign out did not delete the map pictures");
+            mapFolderFixture=null;
             if(!fake.Ops.Contains("session_save")||fake.Session.Length!=0)throw new Exception("Hyundai's session was not shared with the Share sheet, or not deleted on sign-out");
             if(disclaimer!=null||canvas.GetNodeOrNull<Button>("DisclaimerSubmit")==null)throw new Exception("Sign out did not immediately require the disclaimer again");
             // The demo is open before acceptance, never touches secure storage, and leaves the gate as it was.

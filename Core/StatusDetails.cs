@@ -48,6 +48,8 @@ public static class StatusDetails
         ("odometer","Odometer",Raw),("engine","Vehicle on",YesNo)
     };
 
+    /// <summary>The field paths nCTRL knows (case-insensitive), for the bug report's allow-list.</summary>
+    public static readonly IReadOnlySet<string> KnownPaths=new HashSet<string>(Known.Select(k=>k.Path),StringComparer.OrdinalIgnoreCase);
     public static IReadOnlyList<DetailRow> Rows(JsonElement status,UnitSystem units=UnitSystem.Imperial)
     {
         var leaves=new List<(string Path,JsonElement Value)>();

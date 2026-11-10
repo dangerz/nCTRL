@@ -66,6 +66,20 @@ static class SharedTests
             "{\"id\":\"b\",\"at\":\"2026-10-24T20:00:00Z\",\"stage\":\"failed\",\"problem\":\"The app didn't hand over the place in time. Try sharing again.\",\"kinds\":[\"text\"],\"saved\":false}]");
         Check(stopped[0].Reason=="The Share sheet stopped before anything arrived"&&stopped[1].Reason=="The app didn't hand over the place in time. Try sharing again"&&
             stopped[1].Kinds=="text","A share that went nowhere says how far it got, or why");
+        // A hand-written link that names the place and points somewhere: shown and sent only after a tap.
+        var crafted=Destinations.FromShare("{\"version\":1,\"urls\":[\"https://maps.apple.com/?ll=40.78,-73.96&q=Home\"],\"texts\":[]}");
+        Check(crafted.Confirm&&crafted.Place?.Name=="Home","A link's own name with its own pin needs a tap");
+        Check(ShareSender.ReadAsync(crafted,_=>Task.FromResult<string?>(null)).Result.Confirm&&
+            ShareSender.ReadJsonAsync("{\"version\":1,\"urls\":[\"https://maps.apple.com/?ll=40.78,-73.96&q=Home\"],\"texts\":[]}",null,default).Result.Contains("\"confirm\":true"),
+            "The Share sheet is told to ask");
+        var card=Destinations.FromShare("{\"version\":1,\"urls\":[],\"texts\":[\"BEGIN:VCARD\\r\\nFN:Central Park\\r\\nitem2.URL;type=pref:http://maps.apple.com/?ll=40.7812\\\\,-73.9665&q=Central%20Park\\r\\nEND:VCARD\"]}");
+        Check(card.Place?.Name=="Central Park"&&!card.Confirm,"Apple Maps' own share (with its contact card) sends with no extra tap");
+        var bare=Destinations.FromShare("{\"version\":1,\"urls\":[\"https://maps.apple.com/?ll=40.78,-73.96\"],\"texts\":[]}");
+        Check(bare.Place!=null&&!bare.Confirm,"A pin with no name of its own needs no tap");
+        var shortLink=new Redirects{Answer=_=>Redirects.To("https://www.google.com/maps/place/Home/@40.78,-73.96,17z/data=!3d40.78!4d-73.96")};
+        var resolved=await ShareSender.ReadAsync(Destinations.FromShare("{\"version\":1,\"urls\":[\"https://maps.app.goo.gl/abc\"],\"texts\":[]}"),
+            l=>ShortLinks.ResolveAsync(l,shortLink,default));
+        Check(resolved.Place!=null&&!resolved.Confirm,"A Google short link, read from Google itself, needs no tap");
         Console.WriteLine($"PASS: {count} shared-place checks (no network).");
     }
 }

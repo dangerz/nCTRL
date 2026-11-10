@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace NGarage.Core;
 
-public enum NoticeKind { Charge, Open, Battery12V, Tires }
+public enum NoticeKind { Charge, Open, Battery12V, Tires, SignIn }
 /// <summary>A notification to show: one per thing that happened.</summary>
 public sealed record Notice(NoticeKind Kind,string Title,string Body);
 
@@ -19,10 +19,15 @@ public sealed record AlertMemory(bool Seen=false,bool Charging=false,bool Plugge
 /// <summary>The alert settings and memory, kept in the App Group file "alerts.json" so the background check and the app
 /// share them. Holds no login, location or VIN: only which alerts are on, the car's display name and what the last status
 /// said about charging, doors, the 12-volt battery and tires.</summary>
-public sealed record AlertFile(bool On=false,bool Charge=true,bool Open=true,bool Battery12V=true,bool Tires=true,string Car="",AlertMemory? Memory=null)
+/// <param name="Paused">The service refused the saved login in a background check: checks stop until you sign in again in
+/// the app, so a changed password isn't retried all day (which can lock the account).</param>
+/// <param name="SignInDay">The UTC day (yyyy-MM-dd) <paramref name="SignIns"/> counts: background sign-ins and session
+/// renewals, at most <see cref="AlertCheck.SignInsPerDay"/> a day.</param>
+public sealed record AlertFile(bool On=false,bool Charge=true,bool Open=true,bool Battery12V=true,bool Tires=true,string Car="",AlertMemory? Memory=null,
+    bool Paused=false,string SignInDay="",int SignIns=0)
 {
     public const string Name="alerts.json";
-    public bool Allows(NoticeKind kind)=>On&&kind switch {NoticeKind.Charge=>Charge,NoticeKind.Open=>Open,NoticeKind.Battery12V=>Battery12V,_=>Tires};
+    public bool Allows(NoticeKind kind)=>On&&kind switch {NoticeKind.Charge=>Charge,NoticeKind.Open=>Open,NoticeKind.Battery12V=>Battery12V,NoticeKind.SignIn=>true,_=>Tires};
     public string Encode()
     {
         var m=Memory??new AlertMemory();
@@ -31,6 +36,7 @@ public sealed record AlertFile(bool On=false,bool Charge=true,bool Open=true,boo
             w.WriteStartObject();w.WriteNumber("version",1);
             w.WriteBoolean("on",On);w.WriteBoolean("charge",Charge);w.WriteBoolean("open",Open);w.WriteBoolean("battery12v",Battery12V);w.WriteBoolean("tires",Tires);
             w.WriteString("car",Car);
+            w.WriteBoolean("paused",Paused);w.WriteString("signInDay",SignInDay);w.WriteNumber("signIns",SignIns);
             w.WriteStartObject("memory");
             w.WriteBoolean("seen",m.Seen);w.WriteBoolean("charging",m.Charging);w.WriteBoolean("plugged",m.PluggedIn);
             if(m.Battery is int b)w.WriteNumber("battery",b);
@@ -57,9 +63,10 @@ public sealed record AlertFile(bool On=false,bool Charge=true,bool Open=true,boo
                 memory=new(Flag(m,"seen",false),Flag(m,"charging",false),Flag(m,"plugged",false),Number(m,"battery"),Number(m,"limit"),
                     since,Flag(m,"openAlerted",false),Flag(m,"low12v",false),Flag(m,"tire",false),Text(m,"report"));
             }
-            string car=Text(r,"car");
+            string car=Text(r,"car"),day=Text(r,"signInDay");
             return new(Flag(r,"on",false),Flag(r,"charge",true),Flag(r,"open",true),Flag(r,"battery12v",true),Flag(r,"tires",true),
-                car.Length>CarModels.MaxName?car[..CarModels.MaxName]:car,memory);
+                car.Length>CarModels.MaxName?car[..CarModels.MaxName]:car,memory,
+                Flag(r,"paused",false),day.Length==10?day:"",Math.Clamp(Number(r,"signIns")??0,0,1000));
         } catch(Exception){return new();}
     }
 }

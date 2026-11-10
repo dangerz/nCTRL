@@ -120,7 +120,7 @@ public partial class Main
                 var (token,device)=Remembered(active);
                 var saved=new SavedAccount(email,password,pin,token,device,Brand.ServiceId);
                 await vault.SaveAsync(saved,liveLifetime.Token);EnsureLive(version);
-                sessionAccount=saved;
+                sessionAccount=saved;ResumeAlerts();
                 notice="Account saved securely. Select your vehicle.";
             } else if(vault.HasAccount) {
                 await vault.ForgetAsync(liveLifetime.Token);EnsureLive(version);

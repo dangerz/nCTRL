@@ -5,7 +5,7 @@
     <NctrlVaultOutput>$(MSBuildThisFileDirectory)build/aot/$(RuntimeIdentifier)/$(Configuration)</NctrlVaultOutput>
   </PropertyGroup>
   <ItemGroup Condition="'$(GodotTargetPlatform)' == 'ios'">
-    <DirectPInvoke Include="__Internal!ng_vault_availability;__Internal!ng_vault_has_account;__Internal!ng_vault_start;__Internal!ng_vault_take_result;__Internal!ng_vault_free;__Internal!ng_vault_cancel;__Internal!ng_vault_resume;__Internal!ng_vault_open_map;__Internal!ng_photo_save;__Internal!ng_photo_status;__Internal!ng_phone_locate;__Internal!ng_phone_location;__Internal!ng_geocode;__Internal!ng_geocode_result;__Internal!ng_group_write;__Internal!ng_group_take;__Internal!ng_group_path" />
+    <DirectPInvoke Include="__Internal!ng_vault_availability;__Internal!ng_vault_has_account;__Internal!ng_vault_start;__Internal!ng_vault_take_result;__Internal!ng_vault_free;__Internal!ng_vault_cancel;__Internal!ng_vault_resume;__Internal!ng_vault_open_map;__Internal!ng_photo_save;__Internal!ng_photo_status;__Internal!ng_phone_locate;__Internal!ng_phone_location;__Internal!ng_geocode;__Internal!ng_geocode_result;__Internal!ng_group_write;__Internal!ng_group_take;__Internal!ng_group_path;__Internal!ng_file_privacy" />
     <NativeLibrary Include="$(NctrlVaultOutput)/NGarageVault.a" />
     <!-- Swift runtime and WidgetKit for the widget refresh call (paths written by build-aot.sh). -->
     <LinkerArg Include="@$(NctrlVaultOutput)/link.rsp" />

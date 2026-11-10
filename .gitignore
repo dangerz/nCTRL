@@ -36,3 +36,4 @@ exports/*
 
 # Visual Studio caches (hold local machine paths)
 .vs/
+.claude/settings.local.json

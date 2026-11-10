@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # Adds the app's widget and its "Send to car" Share extension to the Xcode project Godot exports, with an App Group
-# shared by the app and both extensions ("group.<app bundle ID>"). The Share extension sends to the car with the app's
+# shared by the app and both extensions ("group.<app bundle ID>") and a Keychain access group for the saved login shared
+# by the app and the Share extension only ("<team>.<app bundle ID>.secure"). The Share extension sends to the car with the app's
 # C# Core, built here with NativeAOT (Native/iOS/CoreLib) into NctrlCore.xcframework (with its debug symbols), embedded
 # in the app. nCTRL gets the Share extension; other builds (gtCTRL, Kia Connect only, which can't send places) get only
 # the widget. --share or --no-share overrides that. Godot regenerates the project on every export, so run this after
@@ -78,10 +79,14 @@ embed_frameworks.dst_subfolder_spec = '10' # Frameworks
 embed_frameworks.add_file_reference(core, true).settings = { 'ATTRIBUTES' => %w[CodeSignOnCopy RemoveHeadersOnCopy] }
 end
 
-# The app joins the App Group.
+# The app joins the App Group (files shared with both extensions) and gets a Keychain access group of its own for the
+# saved login and session, shared with the Share extension but not the widget. Being the first keychain-access-groups
+# entry makes it the default for new Keychain items, so the code never needs the team prefix.
+secure_group = "$(AppIdentifierPrefix)#{bundle}.secure"
 entitlements_path = File.join(export, release.build_settings['CODE_SIGN_ENTITLEMENTS'] || "#{name}/#{name}.entitlements")
 entitlements = File.exist?(entitlements_path) ? Xcodeproj::Plist.read_from_path(entitlements_path) : {}
 entitlements['com.apple.security.application-groups'] = [app_group]
+entitlements['keychain-access-groups'] = [secure_group]
 Xcodeproj::Plist.write_to_path(entitlements, entitlements_path)
 
 attributes = project.root_object.attributes['TargetAttributes'] ||= {}
@@ -101,7 +106,9 @@ EXTENSIONS.each do |x|
       File.write(f, File.read(f).gsub('nCTRL', name).gsub('nctrl://', "#{name.downcase}://"))
     end
   end
-  Xcodeproj::Plist.write_to_path({ 'com.apple.security.application-groups' => [app_group] }, File.join(folder, "#{x[:name]}.entitlements"))
+  extension_entitlements = { 'com.apple.security.application-groups' => [app_group] }
+  extension_entitlements['keychain-access-groups'] = [secure_group] if x[:name] == SHARE_NAME # Never the widget.
+  Xcodeproj::Plist.write_to_path(extension_entitlements, File.join(folder, "#{x[:name]}.entitlements"))
 
   target = project.new_target(:app_extension, x[:name], :ios, '17.0', nil, :swift)
   group = project.main_group.new_group(x[:name], x[:name])

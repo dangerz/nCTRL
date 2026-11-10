@@ -87,7 +87,7 @@ public partial class Main
         // Smoke tests never contact the map service.
         if(smoke){mapStatus="Map network disabled in offline tests.";notice=old?"Old location fixture loaded.":"Location fixture loaded.";return;}
         try {
-            using var cache=new MapTileCache(ProjectSettings.GlobalizePath("user://map-cache"));
+            using var cache=new MapTileCache(MapFolder);
             var loaded=new List<(MapTile Tile,Texture2D Texture)>();
             foreach(var tile in VehicleMap.TilesFor(frame)) {
                 token.ThrowIfCancellationRequested();

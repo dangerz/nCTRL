@@ -88,7 +88,7 @@ public partial class Main
         if(smoke)return;
         int version=liveEpoch;
         try {
-            using var cache=new MapTileCache(ProjectSettings.GlobalizePath("user://map-cache"));
+            using var cache=new MapTileCache(MapFolder);
             var loaded=new List<(MapTile Tile,Texture2D Texture)>();
             foreach(var tile in VehicleMap.TilesFor(new MapFrame(place.Latitude,place.Longitude,VehicleMap.CloseZoom,412,200))) {
                 if(screen!="Send"||pendingDestination!=place)return;

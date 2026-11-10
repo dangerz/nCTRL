@@ -91,19 +91,16 @@ public partial class Main
         if(liveBusy)return;
         if(demo){EndLiveSession();return;}
         // End access immediately. If deletion fails, keep showing the failure and allow retry.
-        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();ForgetAlerts();ForgetLookHistory();heldShare=null;sharedHistory=Array.Empty<SharedEntry>();EndLiveSession();
+        ClearSnapshot();ignoredPlaces.Clear();savedLocation=null;storedLocation=null;savedFor="";savedLoaded=false;ForgetOutside();ClearWidget();ForgetAlerts();ForgetLookHistory();ForgetMapPictures();heldShare=null;sharedHistory=Array.Empty<SharedEntry>();EndLiveSession();
         // Signing out resets the risk acceptance; the next account must accept again.
         // Car names and pictures go with the account too.
         linkedVehicle="";disclaimer=null;cars.Clear();SelectCar();SavePrefs();
         if(!vault.Present){notice="Session cleared. This build has no saved account storage.";Render();return;}
         int version=liveEpoch;
         await RunLive(async()=>{
-            await vault.ForgetAsync(liveLifetime.Token);EnsureLive(version);
-            // Ignored places go with the account.
-            await vault.ForgetPlacesAsync(liveLifetime.Token);EnsureLive(version);
-            await vault.ForgetLocationAsync(liveLifetime.Token);EnsureLive(version);
-            await vault.ForgetSharedAsync(liveLifetime.Token);EnsureLive(version);
-            await vault.ForgetSessionAsync(liveLifetime.Token);EnsureLive(version);sessionShared="";
+            // Everything in the Keychain (session first, login, ignored places, last location, shared places) and the Share
+            // extension's files; all are tried even if one fails.
+            await vault.ForgetEverythingAsync(liveLifetime.Token);EnsureLive(version);sessionShared="";
             manualAccountEntry=true;notice="Signed out. Saved account removed from this device.";
         },"Removing saved account…");
     }
