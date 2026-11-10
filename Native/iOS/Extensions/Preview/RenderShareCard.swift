@@ -20,7 +20,8 @@ struct RenderShareCard {
             (.sending(place: "Central Park"), "share-sending"),
             (.sent(place: "Central Park", detail: "5th Ave, New York, NY 10022"), "share-sent"),
             (.notSent("Hyundai is rate limiting requests. No automatic retry was sent.\nOpen nCTRL to send it."), "share-not-sent"),
-            (.handedOff("Open nCTRL to send it."), "share-saved")]
+            (.handedOff("Open nCTRL to send it."), "share-saved"),
+            (.confirm(place: "Home", address: "1 Example St, Springfield"), "share-confirm")]
         for (phase, name) in states {
             let model = SendCardModel()
             model.phase = phase

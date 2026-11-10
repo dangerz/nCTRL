@@ -14,10 +14,15 @@ static class VaultTests
         public int Status=2;
         public string? Data;
         public string Places="";
+        public bool NoForgetAll,FailForget;
+        public readonly System.Collections.Generic.List<string> Ops=new();
         string result="";
         public int Availability()=>Available?Status:0;
         public bool HasAccount()=>Saved;
-        public void Start(string op,string payload){Starts++;if(Hang)return;if(Fail){result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
+        public void Start(string op,string payload){Starts++;Ops.Add(op);if(Hang)return;if(Fail){result="{\"ok\":false,\"code\":\"cancelled\"}";return;}
+            if(op=="forget_all"&&NoForgetAll){result="{\"ok\":false,\"code\":\"invalid_data\"}";return;}
+            if(op=="forget"&&FailForget){result="{\"ok\":false,\"code\":\"storage_failed\"}";return;}
+            if(op=="forget_all"){Data=null;Saved=false;Places="";}
             if(op=="save"){Data=payload;Saved=true;}if(op=="forget"){Data=null;Saved=false;}
             if(op=="places_save")Places=payload;if(op=="places_forget")Places="";
             result=RequestJson.Object(w=>{w.WriteBoolean("ok",true);w.WriteString("code","");w.WriteString("data",op=="unlock"?Data:op=="places_load"?Places:"");});}
@@ -69,6 +74,13 @@ static class VaultTests
         Check((await placesVault.LoadPlacesAsync(default)).Contains("places"),"Places are saved and read back");
         await placesVault.ForgetPlacesAsync(default);Check(await placesVault.LoadPlacesAsync(default)=="","Forgetting places clears them");
         await Rejected(()=>absent.LoadPlacesAsync(default),"unavailable");
+        // Sign out & forget: one native operation, or every item one at a time on a bridge without it, all tried.
+        var all=new Bridge();var everything=new AccountVault(all);await everything.SaveAsync(account,default);await everything.SavePlacesAsync("[1]",default);
+        await everything.ForgetEverythingAsync(default);Check(!everything.HasAccount&&all.Places==""&&all.Ops[^1]=="forget_all","Forget everything is one operation");
+        var old=new Bridge{NoForgetAll=true,FailForget=true};var older=new AccountVault(old);await older.SaveAsync(account,default);await older.SavePlacesAsync("[1]",default);
+        await Rejected(()=>older.ForgetEverythingAsync(default),"storage_failed");
+        Check(old.Places==""&&old.Ops.IndexOf("session_forget")<old.Ops.IndexOf("forget")&&old.Ops.Contains("shared_forget")&&old.Ops.Contains("location_forget"),
+            "Without it: the session first, and a failure doesn't stop the rest");
         Console.WriteLine($"PASS: {checks} secure-login coordinator checks (fake native bridge, not device biometrics).");
     }
 }

@@ -9,7 +9,10 @@ namespace NGarage.Core;
 public sealed record Destination(string Name,string Address,double Latitude,double Longitude,string Zip="");
 /// <summary>What a share from another app holds: a place when it has coordinates, otherwise what to look up (and the
 /// shared name), or a Google Maps short link to open. Source and Kinds describe it for Activity → Shared.</summary>
-public sealed record SharedItem(Destination? Place,string Lookup,string Name,string ShortLink,string Source,string Kinds,string Id,string Unsent="");
+/// <param name="Confirm">The place's name and its coordinates both came from a link someone could have written by hand
+/// (no Apple Maps contact card, not a Google short link): the name could say "Home" while the coordinates point
+/// elsewhere, so it's shown with Apple's own address for the coordinates and sent only after a tap.</param>
+public sealed record SharedItem(Destination? Place,string Lookup,string Name,string ShortLink,string Source,string Kinds,string Id,string Unsent="",bool Confirm=false);
 
 public static class Destinations
 {
@@ -123,7 +126,8 @@ public static class Destinations
         foreach(var link in links)
             if(FromText(link).Place is {} place) {
                 bool unnamed=place.Name==Format(place.Latitude,place.Longitude)||place.Name=="Shared location";
-                return Found(place with {Name=unnamed&&name.Length>0?name:place.Name,Address=place.Address.Length>0?place.Address:address},"","","");
+                return Found(place with {Name=unnamed&&name.Length>0?name:place.Name,Address=place.Address.Length>0?place.Address:address},"","","")
+                    with {Confirm=!card&&!unnamed};
             }
         foreach(var text in plain) {
             if(FromText(text).Place is {} typed)return Found(typed,"","","");

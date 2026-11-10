@@ -92,6 +92,16 @@ public static class NativeVaultBridge
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern IntPtr ng_group_take([MarshalAs(UnmanagedType.LPUTF8Str)]string name);
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_phone_locate();
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern int ng_phone_location(out double latitude,out double longitude,out double accuracy);
+    /// <summary>Keeps one of the app's folders out of iCloud and computer backups; complete: its files can't be read while the
+    /// phone is locked. True when the folder is excluded; false elsewhere than iOS.</summary>
+    public static bool FilePrivacy(string folder,bool complete)
+    {
+        if(OS.GetName()!="iOS")return false;
+        try {return ng_file_privacy(folder,complete?1:0)==1;}
+        catch(DllNotFoundException){return false;}
+        catch(EntryPointNotFoundException){return false;}
+    }
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern int ng_file_privacy([MarshalAs(UnmanagedType.LPUTF8Str)]string path,int complete);
     public static bool CanSavePhotos=>OS.GetName()=="iOS";
     // Starts an add-only save to Photos; poll PhotoStatus: 1 saving, 2 saved, 3 not allowed, 4 failed.
     public static bool SavePhoto(byte[] image)

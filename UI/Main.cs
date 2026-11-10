@@ -51,7 +51,7 @@ public partial class Main : Control
         // The build's flavor: gtCTRL exports carry the "gtctrl" feature tag; desktop runs can pass --flavor=gtctrl.
         Brand.Use(OS.HasFeature("gtctrl")||Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--flavor=gtctrl")?Brand.GtCtrl:Brand.NCtrl);
         paintName=Brand.Flavor.DefaultPaintName;paintHex=Brand.Flavor.DefaultPaintHex;Skin.Use(AppTheme.DefaultHex);SelectCar();
-        if (!smoke) { LoadPrefs(); LoadSnapshot(); }
+        if (!smoke) { LoadPrefs(); LoadSnapshot(); KeepFilesPrivate(); }
 #if DEBUG
         budget = new RequestBudget(smoke ? new MemoryBudgetStore() : LimitsStore(), null, smoke ? SmokeLimits : null);
 #else

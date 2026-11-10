@@ -397,7 +397,7 @@ public partial class Main
         Button(24,y,412,40,"Request limits  ›",13,()=>Navigate("Limits"),false,"ViewLimits");y+=46;
         Button(24,y,412,40,"View disclaimer  ›",13,()=>Navigate("Disclaimer"),false,"ViewDisclaimer");y+=46;
         Button(24,y,412,40,"Ignored places  ›",13,()=>Navigate("Places"),false,"ViewPlaces");
-        Label(24,712,412,60,demo?$"This is a pretend car. Nothing here is sent to {Brand.Maker} or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status.":
+        Label(24,712,412,60,demo?$"This is a pretend car. Nothing here is sent to {Brand.Maker} or saved; End demo puts everything back.":vault.HasAccount?"Account saved in this phone's Keychain. The app opens to the last saved status and reads a new one each time you open it. Signing out removes the saved login and status."+(filesExcludedFromBackup?" App files stay out of backups.":""):
             "Session-only login. To enable saved login, sign out and sign in with Save account selected on a supported phone.",12,Muted,false,true);
     }
     private void LiveActivity()

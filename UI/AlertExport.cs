@@ -21,5 +21,11 @@ public static class AlertExport
         return Marshal.StringToCoTaskMemUTF8(result);
     }
     [UnmanagedCallersOnly(EntryPoint="nctrl_alert_free")]
-    public static void Free(IntPtr text)=>Marshal.FreeCoTaskMem(text);
+    public static void Free(IntPtr text)
+    {
+        if(text==IntPtr.Zero)return;
+        // The result can hold the session's tokens: zeroed before it's freed.
+        for(int i=0;Marshal.ReadByte(text,i)!=0;i++)Marshal.WriteByte(text,i,0);
+        Marshal.FreeCoTaskMem(text);
+    }
 }

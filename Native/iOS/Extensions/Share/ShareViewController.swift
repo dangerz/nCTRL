@@ -6,8 +6,8 @@ import Security
 import os
 
 // "Send to car" in the Share sheet. It sends the shared place to the car itself, without opening nCTRL, using nCTRL's
-// own C# Core (NctrlCore.framework, see Native/iOS/CoreLib) with the saved login and Hyundai session the app keeps in
-// the App Group's Keychain group: Core reads the place (opening a Google Maps short link if that's all there is),
+// own C# Core (NctrlCore.framework, see Native/iOS/CoreLib) with the saved login and session the app keeps in the
+// Keychain group it shares only with this extension: Core reads the place (opening a Google Maps short link if that's all there is),
 // Apple's geocoder looks up an address, and Core sends it through the same request limits as the app. If it can't
 // send (no saved login, Hyundai refused, no connection), the share is saved for nCTRL to show the next time it opens,
 // without sending again by itself. Each share leaves a note for Activity → Shared, written first and updated as it goes.
@@ -80,7 +80,7 @@ final class ShareViewController: UIViewController {
             found = await geocode(lookup, name: read["name"] as? String ?? "")
             if found == nil { fail(id, linkLate ? late : "Apple Maps couldn't find “\(lookup)”."); return }
         }
-        guard let place = found else {
+        guard var place = found else {
             let problem = (read["problem"] as? String).flatMap { $0.isEmpty ? nil : $0 + "." } ?? "Nothing in it looked like a place."
             fail(id, linkLate ? late : problem)
             return
@@ -94,6 +94,23 @@ final class ShareViewController: UIViewController {
             await handOff(shared, id: id, unsent: "")
             return
         }
+        // A hand-written link named the place: show Apple's address for its coordinates and send only on a tap.
+        if read["confirm"] as? Bool == true, let lat = place["lat"] as? Double, let lon = place["lon"] as? Double {
+            note(id, ["stage": "confirming"])
+            card.phase = .working("Checking where the link points…")
+            let address = await reverseGeocode(lat, lon)
+            if let address { place["address"] = address }
+            card.phase = .confirm(place: name, address: address ?? "Apple Maps found no address at this pin.")
+            let send = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                let card = self.card
+                card.answer = { [weak card] yes in card?.answer = nil; continuation.resume(returning: yes) }
+            }
+            if !send {
+                note(id, ["stage": "cancelled", "problem": "Cancelled after checking the address."])
+                finish(.notSent("Cancelled. Nothing was sent."), after: 0.8)
+                return
+            }
+        }
         note(id, ["stage": "sending"])
         card.phase = .sending(place: name)
         let session = keychain("com.ngarage.nctrl.session.v1", "session")
@@ -106,7 +123,7 @@ final class ShareViewController: UIViewController {
             finish(.sent(place: name, detail: place["address"] as? String ?? ""), after: 2.2)
         } else {
             let error = result?["error"] as? String ?? "nCTRL couldn't send it from here."
-            log.info("Not sent from the Share sheet: \(error, privacy: .public)")
+            log.info("Not sent from the Share sheet: \(error, privacy: .private)")
             note(id, ["stage": "not sent", "problem": error])
             await handOff(shared, id: id, unsent: error)
         }
@@ -114,7 +131,7 @@ final class ShareViewController: UIViewController {
 
     private func fail(_ id: String, _ problem: String) {
         note(id, ["stage": "failed", "problem": problem])
-        log.info("Share not read: \(problem, privacy: .public)")
+        log.info("Share not read: \(problem, privacy: .private)")
         finish(.notSent(problem), after: 3.0)
     }
 
@@ -149,6 +166,15 @@ final class ShareViewController: UIViewController {
         }.value
     }
 
+    // The address Apple Maps gives for a pin, in one line.
+    private func reverseGeocode(_ lat: Double, _ lon: Double) async -> String? {
+        guard let mark = try? await CLGeocoder().reverseGeocodeLocation(CLLocation(latitude: lat, longitude: lon)).first else { return nil }
+        let street = mark.thoroughfare.map { street in mark.subThoroughfare.map { "\($0) \(street)" } ?? street }
+        let region = [mark.administrativeArea, mark.postalCode].compactMap { $0 }.joined(separator: " ")
+        let full = [street, mark.locality, region.isEmpty ? nil : region].compactMap { $0 }.joined(separator: ", ")
+        return full.isEmpty ? nil : full
+    }
+
     private func geocode(_ address: String, name: String) async -> [String: Any]? {
         guard let mark = try? await CLGeocoder().geocodeAddressString(address).first, let location = mark.location else { return nil }
         let street = mark.thoroughfare.map { street in mark.subThoroughfare.map { "\($0) \(street)" } ?? street }
@@ -158,7 +184,10 @@ final class ShareViewController: UIViewController {
                 "lat": location.coordinate.latitude, "lon": location.coordinate.longitude]
     }
 
-    // The App Group's Keychain items the app keeps for the Share sheet.
+    // The Keychain items the app keeps for the Share sheet, in the access group only the app and this extension have
+    // ("<team>.<app bundle ID>.secure", the first of both targets' keychain-access-groups, so it's the default for new
+    // items). Queries name no group, so a login an older nCTRL kept in the App Group's group is still found until the
+    // app moves it.
     private func keychain(_ service: String, _ account: String) -> String? {
         var query = itemQuery(service, account)
         query[kSecReturnData as String] = true
@@ -166,17 +195,19 @@ final class ShareViewController: UIViewController {
         guard SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess, let data = value as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
+    // Replaced in place (never deleted first), so the app reading it at the same moment doesn't find it missing.
     private func saveSession(_ json: String) {
         let query = itemQuery("com.ngarage.nctrl.session.v1", "session")
-        SecItemDelete(query as CFDictionary)
+        let data = Data(json.utf8)
+        if SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) != errSecItemNotFound { return }
         var item = query
-        item[kSecValueData as String] = Data(json.utf8)
+        item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         SecItemAdd(item as CFDictionary, nil)
     }
     private func itemQuery(_ service: String, _ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
-         kSecAttrSynchronizable as String: false, kSecAttrAccessGroup as String: "group." + NctrlGroup.appBundleID]
+         kSecAttrSynchronizable as String: false]
     }
 
     // Some apps (Google Maps) build what they share while the sheet is open; wait at most this long. late: it didn't
@@ -193,11 +224,13 @@ final class ShareViewController: UIViewController {
 
     private func save(_ shared: [String: Any]) -> Bool {
         guard let file = NctrlGroup.file("share.json"), let data = try? JSONSerialization.data(withJSONObject: shared) else { return false }
-        return (try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])) != nil
+        return (try? data.write(to: file, options: [.atomic, .completeFileProtection])) != nil
     }
 
     // The last 10 notes about shares, kept until nCTRL reads them (Activity → Shared): when, the kinds of items, the
-    // link hosts, how far it got, whether it was saved, sent or opened nCTRL, why not, and the place once found.
+    // link hosts, how far it got, whether it was saved, sent or opened nCTRL, why not, and the place once found. Like
+    // share.json it can be read only while the phone is unlocked, and nCTRL deletes it once read. The system log gets
+    // only the kinds of items and link hosts; anything that could name the place is marked private.
     private func note(_ id: String, _ fields: [String: Any]) {
         guard let file = NctrlGroup.file("share-log.json") else { return }
         var notes = ((try? Data(contentsOf: file)).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [[String: Any]]) ?? []
@@ -210,7 +243,7 @@ final class ShareViewController: UIViewController {
             notes.append(entry)
         }
         if let data = try? JSONSerialization.data(withJSONObject: Array(notes.suffix(10))) {
-            try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            try? data.write(to: file, options: [.atomic, .completeFileProtection])
         }
     }
 

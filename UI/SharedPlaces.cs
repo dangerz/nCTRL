@@ -111,6 +111,8 @@ public partial class Main
         _ = LoadDestinationMap(place);
         // The Share sheet already tried and Hyundai refused, or it couldn't reach Hyundai: don't try again by itself.
         if(item.Unsent.Length>0){notice="The Share sheet couldn't send it: "+item.Unsent+" Tap Send to car to try again.";noticeError=true;Render();return;}
+        // A hand-written link names the place itself: check the pin before sending.
+        if(read.Confirm){notice=$"The link calls this “{place.Name}”. Check the pin on the map, then tap Send to car.";noticeError=false;Render();return;}
         await SendShared(place);
     }
     // Waits for any request already running (such as the read when the app opens), then sends. If you've moved on,

@@ -30,6 +30,12 @@ public partial class Main
         if(demo||!liveMode||CurrentState is not {} state||AlertsFolder.Length==0)return;
         try {AlertCheck.Remember(AlertsFolder,state,AtIgnoredPlace,CarTitle,DateTimeOffset.UtcNow);} catch(Exception) { }
     }
+    // After a sign-in with the password: background checks paused by a refused login start again.
+    private void ResumeAlerts()
+    {
+        if(demo||AlertsFolder.Length==0)return;
+        try {AlertCheck.Resume(AlertsFolder);} catch(Exception) { }
+    }
     private void ForgetAlerts()
     {
         if(AlertsFolder.Length==0)return;
@@ -56,6 +62,7 @@ public partial class Main
         }
         LiveButton(24,y+8,412,44,"Check now",13,()=>_ = CheckAlertsNow(),false,"AlertsCheckNow").Disabled|=!file.On||!available;
         Label(24,y+64,412,190,(available?"":"Alerts work in the iPhone app with a saved login. ")+
+            (file.On&&file.Paused?$"Paused: {Brand.Maker} refused the saved login. Checks start again the next time {Brand.App} signs in with your password. ":"")+
             "iOS decides when to check: usually every 15 minutes to a few hours, more often when you use your phone. "+
             "Checks run only while your phone is unlocked, and stop if you swipe nCTRL away in the app switcher. "+
             $"Each check reads the status {Brand.Maker} already has, without waking the car, and counts toward your request limits; "+

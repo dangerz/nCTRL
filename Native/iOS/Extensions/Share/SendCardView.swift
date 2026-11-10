@@ -8,10 +8,14 @@ enum SendPhase: Equatable {
     case sent(place: String, detail: String)
     case notSent(String)
     case handedOff(String)
+    // A hand-written link named the place: its name, and the address Apple finds at its coordinates, sent only on a tap.
+    case confirm(place: String, address: String)
 }
 
 final class SendCardModel: ObservableObject {
     @Published var phase: SendPhase = .working("Reading what you shared…")
+    // Answers .confirm: true to send, false to cancel.
+    var answer: ((Bool) -> Void)?
 }
 
 struct SendCardView: View {
@@ -71,6 +75,21 @@ struct SendCardView: View {
             Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 30)).foregroundStyle(Self.amber)
             Text("NOT SENT").font(.system(size: 22, weight: .heavy)).foregroundStyle(text)
             Text(reason).font(.system(size: 13)).foregroundStyle(muted).multilineTextAlignment(.center)
+        case .confirm(let place, let address):
+            Image(systemName: "mappin.and.ellipse").font(.system(size: 30)).foregroundStyle(Self.amber)
+            Text("SEND \(place)?").font(.system(size: 18, weight: .heavy)).foregroundStyle(text).multilineTextAlignment(.center)
+            Text(address).font(.system(size: 13, weight: .semibold)).foregroundStyle(text).multilineTextAlignment(.center)
+            Text("The link names this place itself. Apple Maps puts its pin at the address above.").font(.system(size: 12)).foregroundStyle(muted).multilineTextAlignment(.center)
+            HStack(spacing: 12) {
+                Button { model.answer?(false) } label: {
+                    Text("Cancel").font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .foregroundStyle(text).background(RoundedRectangle(cornerRadius: 14).stroke(muted.opacity(0.6), lineWidth: 1))
+                }
+                Button { model.answer?(true) } label: {
+                    Text("Send to car").font(.system(size: 15, weight: .bold)).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .foregroundStyle(back).background(RoundedRectangle(cornerRadius: 14).fill(accent))
+                }
+            }
         case .handedOff(let reason):
             Image(systemName: "arrow.up.forward.app.fill").font(.system(size: 30)).foregroundStyle(accent)
             Text("SAVED FOR nCTRL").font(.system(size: 20, weight: .heavy)).foregroundStyle(text)
