@@ -53,9 +53,15 @@ static class FlavorTests
                 (ThemeRole.Back,ThemeRole.Accent),(ThemeRole.Back,ThemeRole.AccentHover),(ThemeRole.Back,ThemeRole.AccentPressed),(ThemeRole.Text,ThemeRole.Notice),(ThemeRole.Text,ThemeRole.Selected)})
                 Check(AppTheme.Contrast(n[fg],n[bg])>=4.5,$"GT Neon {fg} on {bg} is 4.5:1 or better");
             Check(CarModels.Default.Id=="ev6gt"&&CarModels.Default.ShortName=="EV6 GT"&&CarModels.Offered.Select(m=>m.Id).SequenceEqual(new[]{"ev6gt","ev6","ev9"}),"gtCTRL offers the Kia pictures, EV6 GT first");
+            Check(CarPaints.For(CarModels.ById("ev6gt")).Count==6&&CarPaints.For(CarModels.ById("ioniq5n"))[0].Name=="Performance Blue","Paint presets follow the picture's maker");
             Check(CarModels.Detect("EV6")==null&&CarModels.Detect("EV6 GT")?.Id=="ev6gt"&&CarModels.Detect("EV9")?.Id=="ev9","Kia reports an EV6 GT as EV6, which keeps the EV6 GT default");
             Check(Disclaimer.Version==2&&Disclaimer.Text.StartsWith("gtCTRL is an independent")&&!Disclaimer.Text.Contains("nCTRL"),"gtCTRL's disclaimer");
             Check(Brand.Flavor.DefaultPaintHex=="525252"&&Brand.Flavor.Detail==null&&!Brand.Flavor.Demo,"Gray paint, details follow the app color, no demo");
+            Check(CarPaints.IconFor("525252")==""&&CarPaints.IconFor("2b4f86")=="AppIcon-YachtBlue"&&CarPaints.IconFor("e9ecee")=="AppIcon-SnowWhitePearl"&&
+                CarPaints.IconFor("b01020")=="AppIcon-RunwayRed"&&CarPaints.IconFor(null)==""&&CarPaints.IconFor("nope")=="","Paint picks the nearest preset's app icon; gray is the main icon");
+            Check(CarPaints.Kia.Skip(1).All(p=>System.IO.File.Exists(System.IO.Path.Combine(AppContext.BaseDirectory,"../../../../Native/iOS/AppIcons",CarPaints.IconName(p.Name)+".png"))),"Every other Kia paint has its icon");
+            Check(Brand.Flavor.PaintIcons&&Brand.Flavor.LockTab&&!Brand.NCtrl.PaintIcons&&!Brand.NCtrl.LockTab,"Paint icons and the lock tab are gtCTRL's");
+            Check(Brand.Flavor.SystemFont&&Brand.Flavor.TextFloor==14&&!Brand.NCtrl.SystemFont&&Brand.NCtrl.TextFloor==0,"San Francisco at 11 points and up is gtCTRL's; nCTRL keeps its font and sizes");
             Check(Brand.ById("gtctrl")==Brand.GtCtrl&&Brand.ById("other")==Brand.NCtrl&&Brand.ById(null)==Brand.NCtrl,"Flavor ids");
 
             // The saved login remembers its service; older logins are Hyundai's.

@@ -108,5 +108,70 @@ def main():
     print(f"Wrote {OUT.relative_to(ROOT)} (paint #{PAINT})")
 
 
+def splash():
+    """Assets/gtctrl_splash.png: the launch screen. The car on GT Neon graphite with the GT mark, portrait."""
+    src = np.asarray(Image.open(SOURCE).convert("RGB"), dtype=np.float32) / 255
+    inside = silhouette(src)
+    car = Image.fromarray((np.clip(repaint(src), 0, 1) * 255).astype(np.uint8)).convert("RGBA")
+    car.putalpha(Image.fromarray((inside * 255).astype(np.uint8)))
+    w, h = 1290, 2796  # iPhone portrait, centered and scaled to fit on smaller phones
+    screen = Image.new("RGBA", (w, h), BACK + (255,))
+    width = 1150
+    height = round(car.height * width / car.width)
+    screen.alpha_composite(car.resize((width, height), Image.BOX), ((w - width) // 2, h // 2 - height // 2))
+    mark = pixel_text("GT", 18)
+    screen.alpha_composite(mark, ((w - mark.width) // 2, h // 2 + height // 2 + 90))
+    screen.convert("RGB").save(ROOT / "Assets" / "gtctrl_splash.png")
+    print("Wrote Assets/gtctrl_splash.png")
+
+
+# Kia presets after the first (the main icon). Keep in step with Core/CarPaints.cs.
+ALTERNATES = {"Yacht Blue": "2b4f86", "Runway Red": "a3222b", "Moonscape": "7a7f78",
+              "Aurora Black Pearl": "1c1f24", "Snow White Pearl": "e9ecee"}
+
+
+def alternates():
+    """Native/iOS/AppIcons/AppIcon-<Paint>.png: gtCTRL's icon in each other Kia paint (iOS alternate icons)."""
+    global PAINT, OUT
+    folder = ROOT / "Native" / "iOS" / "AppIcons"
+    folder.mkdir(exist_ok=True)
+    (folder / ".gdignore").touch()
+    keep = (PAINT, OUT)
+    for name, hexcode in ALTERNATES.items():
+        PAINT, OUT = hexcode, folder / ("AppIcon-" + "".join(c for c in name if c.isalnum()) + ".png")
+        main()
+    PAINT, OUT = keep
+
+
+def tinted():
+    """Native/iOS/AppIcons/Tinted.png: the icon for the Tinted and Clear home screens. iOS reads it as brightness
+    only and adds the user's tint, so it is grayscale on black: the original pale art (light body, dark outlines and
+    glass) and a white GT mark. One for every paint, since the tint replaces the paint anyway."""
+    src = np.asarray(Image.open(SOURCE).convert("RGB"), dtype=np.float32) / 255
+    inside = silhouette(src)
+    lum = src[..., 0] * 0.299 + src[..., 1] * 0.587 + src[..., 2] * 0.114
+    lum = np.clip((lum - 0.08) / 0.84, 0, 1) ** 0.9  # full range: outlines near black, body near white
+    gray = (np.repeat(lum[..., None], 3, axis=2) * 255).astype(np.uint8)
+    car = Image.fromarray(gray).convert("RGBA")
+    car.putalpha(Image.fromarray((inside * 255).astype(np.uint8)))
+    icon = Image.new("RGBA", (1024, 1024), (0, 0, 0, 255))
+    width = 1000
+    height = round(car.height * width / car.width)
+    icon.alpha_composite(car.resize((width, height), Image.BOX), (12, 600 - height // 2))
+    mark = pixel_text("GT", 22)
+    white = Image.new("RGBA", mark.size, (255, 255, 255, 255))
+    icon.paste(white, (96, 120), mark)
+    icon.paste(Image.new("RGBA", (mark.width, 10), (255, 255, 255, 255)), (96, 120 + mark.height + 22))
+    out = ROOT / "Native" / "iOS" / "AppIcons" / "Tinted.png"
+    icon.convert("RGB").save(out)
+    print(f"Wrote {out.relative_to(ROOT)}")
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--tinted"]:
+    tinted()
+    sys.exit()
 if __name__ == "__main__":
     main()
+    splash()
+    alternates()
+    tinted()

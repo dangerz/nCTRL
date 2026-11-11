@@ -17,6 +17,9 @@ run/main_scene="res://Main.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="Godot/app_userdata/N Garage"
 config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+boot_splash/bg_color.gtctrl=Color(0.051, 0.059, 0.063, 1)
+boot_splash/image.gtctrl="res://Assets/gtctrl_splash.png"
+boot_splash/fullsize.gtctrl=true
 
 [display]
 

@@ -8,6 +8,12 @@ using NGarage.Core;
 public partial class StatusOverlay : Control
 {
     public LockEffect Lock;
+    // gtCTRL: the lock state sits in a tab rising from the picture's bottom edge (an upside-down notch) instead of
+    // a padlock on the front door. TabFont writes LOCKED / UNLOCKED; TabBottom is how far below this control the
+    // picture's frame ends, so the tab meets the frame's edge.
+    public bool LockTab;
+    public Font? TabFont;
+    public float TabBottom=4;
     public ComfortTint Windshield,DriverSeat,PassengerSeat;
     public bool WheelHeat;
     // Flash lights / horn & lights: blink the headlights (and show the horn "!") until this engine time.
@@ -45,7 +51,9 @@ public partial class StatusOverlay : Control
     private float ArtScale=>Mathf.Min(Size.X/TextureSize.X,Size.Y/TextureSize.Y);
     private Vector2 At(Vector2 source)=>(Size-TextureSize*ArtScale)/2+source*ArtScale;
     // The padlock's tap area in this control's coordinates (larger than the 28-point badge).
-    public Rect2 LockArea()=>new(At(Art.Lock)-new Vector2(24,24),new Vector2(48,48));
+    public Rect2 LockArea()=>LockTab?Tab().Grow(6):new(At(Art.Lock)-new Vector2(24,24),new Vector2(48,48));
+    private const float TabWidth=148,TabHeight=32,TabRadius=10,TabFillet=8;
+    private Rect2 Tab()=>new(new Vector2((Size.X-TabWidth)/2,Size.Y+TabBottom-TabHeight),new Vector2(TabWidth,TabHeight));
     private static Color Tint(ComfortTint tint,float alpha)=>new(tint==ComfortTint.Heat?HeatTint:CoolTint,alpha);
     public override void _Draw()
     {
@@ -65,7 +73,7 @@ public partial class StatusOverlay : Control
             for(int i=0;i<ring.Length;i++){float a=i*Mathf.Tau/24;ring[i]=center+new Vector2(Mathf.Cos(a)*radius.X,Mathf.Sin(a)*radius.Y);}
             DrawPolyline(ring,new Color(HeatTint,0.9f),2.5f);
         }
-        if(Lock!=LockEffect.None)DrawLock();
+        if(Lock!=LockEffect.None){if(LockTab)DrawLockTab();else DrawLock();}
         drewFlash=Flashing;
         if(drewFlash)DrawFlash();
     }
@@ -99,6 +107,41 @@ public partial class StatusOverlay : Control
         float head=rect.Size.Y*0.3f;
         DrawRect(new Rect2(rect.Position+new Vector2(rect.Size.X*0.25f,0),new Vector2(rect.Size.X*0.5f,head*0.8f)),Tint(tint,0.55f));
         DrawRect(new Rect2(rect.Position+new Vector2(0,head),new Vector2(rect.Size.X,rect.Size.Y-head)),Tint(tint,0.55f));
+    }
+    // The tab's outline: rounded top corners, and concave fillets where its sides meet the frame's bottom edge.
+    private Vector2[] TabShape()
+    {
+        var r=Tab();float left=r.Position.X,right=r.End.X,top=r.Position.Y,bottom=r.End.Y;
+        var points=new System.Collections.Generic.List<Vector2>();
+        void Arc(Vector2 c,float radius,float from,float to){for(int i=0;i<=8;i++){float a=Mathf.Lerp(from,to,i/8f);points.Add(c+new Vector2(Mathf.Cos(a),Mathf.Sin(a))*radius);}}
+        Arc(new(left-TabFillet,bottom-TabFillet),TabFillet,Mathf.Pi/2,0);
+        Arc(new(left+TabRadius,top+TabRadius),TabRadius,Mathf.Pi,Mathf.Pi*1.5f);
+        Arc(new(right-TabRadius,top+TabRadius),TabRadius,Mathf.Pi*1.5f,Mathf.Tau);
+        Arc(new(right+TabFillet,bottom-TabFillet),TabFillet,Mathf.Pi,Mathf.Pi/2);
+        return points.ToArray();
+    }
+    private void DrawLockTab()
+    {
+        bool locked=Lock==LockEffect.Locked;
+        float pulse=0.5f+0.5f*Mathf.Sin(time*(locked?3f:2f));
+        var shape=TabShape();
+        DrawColoredPolygon(shape,Skin.Back);
+        // The edge follows the frame's own line color, and red while locked (gently pulsing).
+        DrawPolyline(shape,locked?new Color(LockRed,0.45f+0.35f*pulse):Skin.PanelEdge,1.5f,true);
+        string label=locked?"LOCKED":"UNLOCKED";
+        var ink=locked?LockRed:new Color(Outline,0.75f+0.25f*pulse);
+        var r=Tab();
+        float textWidth=TabFont?.GetStringSize(label,HorizontalAlignment.Left,-1,12).X??0;
+        float contentWidth=18+8+textWidth;
+        var origin=new Vector2(r.Position.X+(r.Size.X-contentWidth)/2,r.Position.Y+(r.Size.Y-18)/2+1).Snapped(Vector2.One);
+        var rows=locked?Closed:Open;
+        for(int y=0;y<rows.Length;y++)for(int x=0;x<rows[y].Length;x++)
+            if(rows[y][x]=='X')DrawRect(new Rect2(origin+new Vector2(x*2,y*2),Vector2.One*2),ink);
+        if(locked) {
+            float sweep=Mathf.PosMod(time,2.6f)/0.5f;
+            if(sweep<1f)for(int y=3;y<9;y++){int x=(int)(sweep*12f)-(y-3);if(x>=0&&x<9&&rows[y][x]=='X')DrawRect(new Rect2(origin+new Vector2(x*2,y*2),Vector2.One*2),Outline);}
+        }
+        if(TabFont!=null)DrawString(TabFont,origin+new Vector2(26,14),label,HorizontalAlignment.Left,-1,12,ink);
     }
     private void DrawLock()
     {

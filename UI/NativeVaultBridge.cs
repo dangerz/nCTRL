@@ -13,6 +13,16 @@ public static class NativeVaultBridge
         catch(EntryPointNotFoundException){return false;}
     }
     [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl)]private static extern void ng_vault_open_map(double latitude,double longitude);
+    /// <summary>Switches to an alternate app icon built into the app ("" for the main icon). iOS only; iOS shows its
+    /// own short notice after a change, and does nothing when that icon is already showing.</summary>
+    public static void SetAppIcon(string name)
+    {
+        if(OS.GetName()!="iOS")return;
+        try {ng_app_icon(name);}
+        catch(DllNotFoundException){}
+        catch(EntryPointNotFoundException){}
+    }
+    [DllImport("__Internal",CallingConvention=CallingConvention.Cdecl,CharSet=CharSet.Ansi)]private static extern void ng_app_icon(string name);
     // The phone's own position for the map: asks iOS (and the user, the first time), then poll PhoneLocation:
     // 0 none, 1 locating, 2 located, 3 not allowed, 4 failed, 5 usage text missing. Other platforms have none.
     public static void PhoneLocate()

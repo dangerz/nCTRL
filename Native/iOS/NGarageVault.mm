@@ -14,6 +14,18 @@
 #define NG_EXPORT extern "C" __attribute__((visibility("default"), used))
 // No canOpenURL probe/Info.plist allowlist needed: the completion callback tells
 // us whether the system could dispatch to its default navigation application.
+// Alternate app icon by name ("" puts back the main icon). Only icons built into the app can be set; iOS shows its
+// own notice after each change. Nothing happens when that icon is already showing.
+NG_EXPORT void ng_app_icon(const char *name) {
+    NSString *icon=(name && *name)?[NSString stringWithUTF8String:name]:nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIApplication *app=UIApplication.sharedApplication;
+        if(!app.supportsAlternateIcons)return;
+        NSString *current=app.alternateIconName;
+        if((current==nil && icon==nil) || [current isEqualToString:icon])return;
+        [app setAlternateIconName:icon completionHandler:nil];
+    });
+}
 NG_EXPORT void ng_vault_open_map(double latitude, double longitude) {
     if (!isfinite(latitude) || !isfinite(longitude) || fabs(latitude)>90 || fabs(longitude)>180) return;
     dispatch_async(dispatch_get_main_queue(), ^{

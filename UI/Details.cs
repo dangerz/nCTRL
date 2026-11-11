@@ -5,31 +5,41 @@ using System.Text.Json;
 
 public partial class Main
 {
+    // Details: plain names and values, or the service's raw field names (kept in preferences).
+    private bool detailsReadable=true;
     // Tires and every field from the latest status read in this session (memory only).
     private void LiveDetails()
     {
         var raw=connection?.RawStatus;
-        Title("VEHICLE DETAILS.",raw==null?$"Tires and everything {Brand.Maker} reports":Updated(connection?.State?.RetrievedAt)+$" · everything {Brand.Maker} reports");
+        Title("VEHICLE DETAILS.",raw==null?$"Everything {Brand.Maker} reports":Updated(connection?.State?.RetrievedAt)+$" · everything {Brand.Maker} reports");
         if(raw is not JsonElement status) {
-            Label(24,206,412,96,$"Tap Update to load tire pressures and every status field {Brand.Maker} reports.",14,White,false,true);
+            Label(24,206,412,96,$"Tap Update to load every status field {Brand.Maker} reports.",14,White,false,true);
         } else {
-            Label(24,188,412,22,"TIRES",11,Muted,true);
+            // Tires only when the service reports per-tire readings (Hyundai does; Kia Connect US sends only the
+            // overall tire warning, which Check your car shows). Without them, the full detail takes the space.
             var tires=StatusDetails.Tires(status);
-            for(int i=0;i<tires.Count;i++) {
-                var tire=tires[i];int x=24+(i%2)*214,y=214+(i/2)*62;bool low=tire.Warning==true;
-                Panel(x,y,198,54,Skin.Card,false);Rect(x,y,3,54,low?Red:Blue);
-                Label(x+14,y+4,180,20,tire.Position,11,Muted,true);
-                Label(x+14,y+24,180,26,(tire.Psi is double psi?Units.Pressure(psi,units):"—")+(tire.Warning switch {true=>" · Low",false=>" · OK",_=>""}),15,low?Red:White,true)
-                    .Name="Tire"+i;
+            bool hasTires=tires.Any(t=>t.Psi!=null||t.Warning!=null);
+            if(hasTires) {
+                Label(24,188,412,22,"TIRES",11,Muted,true);
+                for(int i=0;i<tires.Count;i++) {
+                    var tire=tires[i];int x=24+(i%2)*214,y=214+(i/2)*62;bool low=tire.Warning==true;
+                    Panel(x,y,198,54,Skin.Card,false);Rect(x,y,3,54,low?Red:Blue);
+                    Label(x+14,y+4,180,20,tire.Position,11,Muted,true);
+                    Label(x+14,y+24,180,26,(tire.Psi is double psi?Units.Pressure(psi,units):"—")+(tire.Warning switch {true=>" · Low",false=>" · OK",_=>""}),15,low?Red:White,true)
+                        .Name="Tire"+i;
+                }
             }
-            if(tires.All(t=>t.Psi==null&&t.Warning==null))
-                Label(24,214,412,116,$"{Brand.Maker} did not report tire data for this vehicle.",13,Muted,false,true);
-            Label(24,342,412,22,"FULL DETAIL",11,Muted,true);
-            Panel(24,366,412,346,Skin.Card,false);
-            var scroll=new ScrollContainer {Name="DetailScroll",Position=new(32,372),Size=new(398,334),HorizontalScrollMode=ScrollContainer.ScrollMode.Disabled};
+            int top=hasTires?342:188;
+            Label(24,top,200,22,"FULL DETAIL",11,Muted,true);
+            var readable=new CheckBox {Name="DetailsReadable",Position=new(236,top-9),Size=new(200,36),Text="Readable names",ButtonPressed=detailsReadable};
+            readable.AddThemeFontOverride("font",regular);readable.AddThemeFontSizeOverride("font_size",12);
+            readable.Toggled+=on=>{detailsReadable=on;SavePrefs();Callable.From(Render).CallDeferred();};
+            canvas.AddChild(readable);
+            Panel(24,top+24,412,712-top-24,Skin.Card,false);
+            var scroll=new ScrollContainer {Name="DetailScroll",Position=new(32,top+30),Size=new(398,712-top-36),HorizontalScrollMode=ScrollContainer.ScrollMode.Disabled};
             var list=new VBoxContainer {CustomMinimumSize=new(382,0)};
             list.AddThemeConstantOverride("separation",6);
-            foreach(var row in StatusDetails.Rows(status,units)) {
+            foreach(var row in StatusDetails.Rows(status,units,detailsReadable)) {
                 var line=new HBoxContainer();
                 var name=new Label {Text=row.Label,AutowrapMode=TextServer.AutowrapMode.Arbitrary,CustomMinimumSize=new(232,0),SizeFlagsHorizontal=Control.SizeFlags.ExpandFill};
                 name.AddThemeFontOverride("font",regular);name.AddThemeFontSizeOverride("font_size",11);name.AddThemeColorOverride("font_color",Muted);

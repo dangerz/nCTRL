@@ -121,19 +121,31 @@ public partial class Main
             {
                 Navigate(route);notice="";Render();await WaitFrames(3);
                 if(route=="Settings"&&(canvas.GetNodeOrNull("SettingsClimateOffer")!=null||canvas.GetNodeOrNull("SignOut")==null))throw new Exception("Settings still offers Send to car climate, or lost Sign out");
+                if(route=="Details"&&(canvas.GetNodeOrNull("Tire0")!=null||canvas.GetNodeOrNull<ScrollContainer>("DetailScroll")?.Position.Y>=372))throw new Exception("Details shows empty tires for Kia, or the full detail didn't move up");
                 if(route=="Activity"&&canvas.GetNodeOrNull("ActivityShared")!=null)throw new Exception("Activity still has the Shared tab");
                 if(route=="Model"&&(canvas.GetNodeOrNull("Model_ioniq5n")!=null||canvas.GetNodeOrNull("Model_ev6gt")==null))throw new Exception("Model picker isn't Kia only for a Kia account");
                 await Capture(Brand.Flavor.Id+"-"+file);
             }
-            // App & car color: both on one screen. The default car is gray; a car swatch repaints the car.
+            // Settings: one place for car color (Paint), one for app color. Picking a car color repaints the car.
+            Navigate("Appearance");
+            if(canvas.GetNode<Button>("SettingsPaint").Text.Contains("App")||canvas.GetNode<Button>("SettingsAppColor").Text.Contains("car"))
+                throw new Exception("Appearance still mixes car and app color");
             Navigate("AppColor");
-            if(paintHex!=Brand.Flavor.DefaultPaintHex||canvas.GetNodeOrNull<Button>("CarColor0")==null||canvas.GetNodeOrNull<Button>("AppColor8")==null||canvas.GetNodeOrNull("CustomCarColor")==null)
-                throw new Exception("App & car color screen is missing the car colors, or the default paint isn't gray");
-            canvas.GetNode<Button>("CarColor1").EmitSignal(Godot.Button.SignalName.Pressed);
-            if(paintHex!="2b4f86"||canvas.GetNode<Label>("CarColorName").Text!="YACHT BLUE")throw new Exception("Picking a car color on the app color screen didn't repaint the car");
-            await Capture(Brand.Flavor.Id+"-k20-app-car-color-blue.png");
-            canvas.GetNode<Button>("CarColor0").EmitSignal(Godot.Button.SignalName.Pressed);
-            if(paintHex!="525252")throw new Exception("Couldn't pick the gray back");
+            if(canvas.GetNodeOrNull("CarColor0")!=null||canvas.GetNodeOrNull("CustomCarColor")!=null||canvas.GetNodeOrNull("AppColor8")==null)
+                throw new Exception("App color still shows car colors, or lost a preset");
+            Navigate("Paint");
+            if(paintHex!=Brand.Flavor.DefaultPaintHex||canvas.GetNodeOrNull<Button>("Paint1")==null)throw new Exception("Car color screen missing its presets, or the default paint isn't the flavor's");
+            canvas.GetNode<Button>("Paint1").EmitSignal(Godot.Button.SignalName.Pressed);
+            if(paintHex!="2b4f86"&&Brand.Flavor==Brand.GtCtrl)throw new Exception("Picking a car color didn't repaint the car");
+            await Capture(Brand.Flavor.Id+"-k20-car-color-blue.png");
+            canvas.GetNode<Button>("Paint0").EmitSignal(Godot.Button.SignalName.Pressed);
+            // Details: readable names on by default; off shows the raw fields.
+            Navigate("Details");
+            if(!detailsReadable||canvas.GetNodeOrNull<CheckBox>("DetailsReadable")==null)throw new Exception("Details has no Readable names switch");
+            await Capture(Brand.Flavor.Id+"-k22-details-readable.png");
+            detailsReadable=false;Render();await WaitFrames(3);
+            await Capture(Brand.Flavor.Id+"-k23-details-raw.png");
+            detailsReadable=true;Render();
             // One command: unlock sends exactly one Kia unlock request.
             Navigate("Car");
             int sent=fixture.Paths.Count(p=>p=="rems/door/unlock");
@@ -141,6 +153,11 @@ public partial class Main
             for(int i=0;i<300&&fixture.Paths.Count(p=>p=="rems/door/unlock")==sent;i++)await WaitFrames(1);
             if(fixture.Paths.Count(p=>p=="rems/door/unlock")!=sent+1)throw new Exception("Unlock did not send one Kia unlock");
             await WaitFrames(5);notice="";Render();await Capture(Brand.Flavor.Id+"-k19-car-after-unlock.png");
+            // The lock tab (gtCTRL) in its unlocked look; the fake car always reports locked.
+            if(Brand.Flavor.LockTab&&canvas.GetNodeOrNull<StatusOverlay>("StatusOverlay") is {} tab) {
+                tab.Lock=LockEffect.Unlocked;tab.QueueRedraw();await WaitFrames(3);
+                await Capture(Brand.Flavor.Id+"-k21-lock-tab-unlocked.png");
+            }
             GD.Print($"KIA SMOKE PASS ({Brand.App}): {(Brand.ChoosesService?"Hyundai/Kia choice, Kia disclaimer, ":"")}disclaimer, sign-in, one-time code (text), remember token, EV6 GT Car screen, every settings screen, unsupported features hidden, unlock. {fixture.Requests} fake Kia requests, no network.");
             GetTree().Quit();
         }
