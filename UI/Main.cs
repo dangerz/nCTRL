@@ -15,6 +15,32 @@ public partial class Main : Control
     private readonly List<(string Title,string Detail,bool Ok)> history = new();
     private Control canvas = null!;
     private Font regular = null!, bold = null!;
+    // Large bold text (titles, the car name, battery and range): a heavier weight than small bold labels. With the
+    // bundled font it's the same Bold.
+    private Font display = null!;
+    // The smallest text size on screen, in canvas units (0: as designed).
+    private int textFloor;
+    // The system UI font: San Francisco on Apple devices (Apple doesn't allow bundling it, but apps may use it).
+    private void UseSystemFont()
+    {
+        // ".AppleSystemUIFont" is how Apple platforms name San Francisco; others fall back to their own sans-serif.
+        string[] names = { ".AppleSystemUIFont", "SF Pro Text", "SF Pro", "sans-serif" };
+        regular = new SystemFont { FontNames = names, FontWeight = 400, AllowSystemFallback = true };
+        // Bold for small labels, Heavy for large titles and numbers (close to the original's weight). Godot finds no
+        // semibold cut of the system font, so labels use Bold.
+        bold = new SystemFont { FontNames = names, FontWeight = 700, AllowSystemFallback = true };
+        display = new SystemFont { FontNames = names, FontWeight = 800, AllowSystemFallback = true };
+#if DEBUG
+        GD.Print($"FONT regular={regular.GetFontName()} w{regular.GetFontWeight()} bold={bold.GetFontName()} w{bold.GetFontWeight()}");
+#endif
+    }
+    // Raises every text size below the floor, on every control just drawn.
+    private void ApplyTextFloor(Node node)
+    {
+        if (node is Control c && c.HasThemeFontSizeOverride("font_size") && c.GetThemeFontSize("font_size") < textFloor)
+            c.AddThemeFontSizeOverride("font_size", textFloor);
+        foreach (var child in node.GetChildren()) ApplyTextFloor(child);
+    }
     private Shader paintShader = null!, chargeOutline = null!;
     private string screen = "Connect", paintName = Brand.Flavor.DefaultPaintName, paintHex = Brand.Flavor.DefaultPaintHex;
     private string garageName = "My garage", notice = "";
@@ -22,23 +48,24 @@ public partial class Main : Control
     private string linkedVehicle="",accountKey="";
     private const string Prefs = "user://preferences.cfg";
     private bool smoke=false;
-    // Paint presets for the picture's maker. Illustrative, picked by eye; not factory color matching.
-    private static readonly (string Name,string Hex)[] HyundaiPaints = {
-        ("Performance Blue","89b7f0"),("Atlas White","e4e8ed"),
-        ("Ecotonic Gray","747c79"),("Phantom Black","202630"),
-        ("Soultronic Orange","ee632f"),("Gravity Gold","b6ab8a")
-    };
-    private static readonly (string Name,string Hex)[] KiaPaints = {
-        ("Interstellar Gray","525252"),("Yacht Blue","2b4f86"),
-        ("Runway Red","a3222b"),("Moonscape","7a7f78"),
-        ("Aurora Black Pearl","1c1f24"),("Snow White Pearl","e9ecee")
-    };
-    private (string Name,string Hex)[] paints=>carModel.Maker=="Kia"?KiaPaints:HyundaiPaints;
+    // Paint presets for the picture's maker (Core/CarPaints.cs).
+    private IReadOnlyList<(string Name,string Hex)> paints=>CarPaints.For(carModel);
 
     public override void _Ready()
     {
         regular = GD.Load<Font>("res://Assets/Body.ttf");
         bold = GD.Load<Font>("res://Assets/Bold.ttf");
+        display = bold;
+#if DEBUG
+        // Typography mockups: --font=system uses the phone's own UI font (San Francisco on iPhone and Mac);
+        // --text-floor=N raises every smaller text size to N canvas units.
+        if (Array.Exists(OS.GetCmdlineUserArgs(), x => x == "--font=system")) UseSystemFont();
+        foreach (var arg in OS.GetCmdlineUserArgs())
+            if (arg.StartsWith("--display-weight=") && int.TryParse(arg["--display-weight=".Length..], out int weight) && regular is SystemFont)
+                display = new SystemFont { FontNames = ((SystemFont)regular).FontNames, FontWeight = weight, AllowSystemFallback = true };
+        foreach (var arg in OS.GetCmdlineUserArgs())
+            if (arg.StartsWith("--text-floor=") && int.TryParse(arg["--text-floor=".Length..], out int floor)) textFloor = floor;
+#endif
         paintShader = GD.Load<Shader>("res://Assets/Paint.gdshader");
         chargeOutline = GD.Load<Shader>("res://Assets/ChargeOutline.gdshader");
 #if DEBUG
@@ -51,6 +78,9 @@ public partial class Main : Control
         // The build's flavor: gtCTRL exports carry the "gtctrl" feature tag; desktop runs can pass --flavor=gtctrl.
         Brand.Use(OS.HasFeature("gtctrl")||Array.Exists(OS.GetCmdlineUserArgs(),x=>x=="--flavor=gtctrl")?Brand.GtCtrl:Brand.NCtrl);
         paintName=Brand.Flavor.DefaultPaintName;paintHex=Brand.Flavor.DefaultPaintHex;Skin.Use(AppTheme.DefaultHex);SelectCar();
+        // gtCTRL: San Francisco (Heavy titles, Bold labels) at Apple's minimum text size.
+        if (Brand.Flavor.SystemFont) UseSystemFont();
+        if (Brand.Flavor.TextFloor > textFloor) textFloor = Brand.Flavor.TextFloor;
         if (!smoke) { LoadPrefs(); LoadSnapshot(); KeepFilesPrivate(); }
 #if DEBUG
         budget = new RequestBudget(smoke ? new MemoryBudgetStore() : LimitsStore(), null, smoke ? SmokeLimits : null);
@@ -98,6 +128,7 @@ public partial class Main : Control
         widgetEnabled=cfg.GetValue("appearance","widget",true).AsBool();
         linkedVehicle=cfg.GetValue("connection","vehicle_fingerprint","").AsString();
         kiaDeviceId=cfg.GetValue("connection","kia_device","").AsString();
+        detailsReadable=cfg.GetValue("details","readable",true).AsBool();
         cars.Clear();
         if(cfg.HasSection("cars"))foreach(string key in cfg.GetSectionKeys("cars")) {
             var car=cfg.GetValue("cars",key).AsStringArray();
@@ -134,6 +165,7 @@ public partial class Main : Control
         cfg.SetValue("appearance","widget",widgetEnabled);
         cfg.SetValue("connection","vehicle_fingerprint",linkedVehicle);
         cfg.SetValue("connection","service",Brand.ServiceId);
+        cfg.SetValue("details","readable",detailsReadable);
         if(kiaDeviceId.Length>0)cfg.SetValue("connection","kia_device",kiaDeviceId);
         foreach(var (key,car) in cars)cfg.SetValue("cars",key,new[]{car.Model,car.Name});
         // Your own climate choices, not the car's settings the Climate page may be showing.
@@ -165,7 +197,12 @@ public partial class Main : Control
     private static SeatMode SeatPreference(int stored)=>Enum.IsDefined(typeof(SeatMode),stored)?(SeatMode)stored:SeatMode.Off;
     private void PickPaint(string name,string hex)
     {
-        paintName = name; paintHex = hex; SavePrefs(); Render();
+        paintName = name; paintHex = hex; SavePrefs(); UpdateAppIcon(); Render();
+    }
+    // gtCTRL: the app icon follows the car's paint (the nearest preset's icon). iOS shows its own notice on a change.
+    private void UpdateAppIcon()
+    {
+        if(Brand.Flavor.PaintIcons&&!smoke)NativeVaultBridge.SetAppIcon(CarPaints.IconFor(paintHex));
     }
     private void Navigate(string target) { screen=target; notice=""; Render(); }
 
@@ -208,6 +245,7 @@ public partial class Main : Control
         else if(pendingConfirm!=null)ConfirmDialog();
         else if(pendingPlaceAt!=null)PlaceNameDialog();
         else if(sentDestination!=null)SentDialog();
+        if (textFloor > 0) ApplyTextFloor(canvas);
     }
     private void Title(string title,string sub)
     {
@@ -243,15 +281,20 @@ public partial class Main : Control
         Label(24,148,410,24,"Choose the paint for your pixel "+carModel.Name+".",12,Muted);
         Hero(185,215);
         Label(24,419,410,30,paintName.ToUpperInvariant(),20,Blue,true);
-        Label(24,455,410,30,"Wheels, glass, lights and neon calipers stay as they are.",11,Muted);
-        for(int i=0;i<paints.Length;i++)
+        Label(24,455,410,30,carModel.Id=="ev6gt"?"Wheels, glass, lights and neon calipers stay as they are.":"Wheels, glass, lights and trim stay as they are.",11,Muted);
+        for(int i=0;i<paints.Count;i++)
         {
             var selected=paints[i];
-            int x=24+(i%3)*142,y=501+(i/3)*82;
-            var b=Button(x,y,128,68,"",12,()=>PickPaint(selected.Name,selected.Hex),false,"Paint"+i);
-            var swatch=new ColorRect {Position=new(8,8),Size=new(112,23),Color=new(selected.Hex),MouseFilter=MouseFilterEnum.Ignore};
+            // Three wide columns for up to six presets; four narrower ones beyond that.
+            int cols=paints.Count>6?4:3,w=cols==4?98:128,step=cols==4?104:142,h=cols==4?62:68;
+            int x=24+(i%cols)*step,y=501+(i/cols)*(h+12);
+            var b=Button(x,y,w,h,"",12,()=>PickPaint(selected.Name,selected.Hex),false,"Paint"+i);
+            var swatch=new ColorRect {Position=new(8,8),Size=new(w-16,21),Color=new(selected.Hex),MouseFilter=MouseFilterEnum.Ignore};
             b.AddChild(swatch);
-            var text=new Label {Position=new(4,36),Size=new(120,24),Text=selected.Name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore};
+            var text=new Label {Position=new(2,33),Size=new(w-4,24),Text=selected.Name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore,ClipText=true};
+            // Long names on narrow tiles drop their last word ("Aurora Black Pearl" reads "Aurora Black").
+            if(cols==4&&regular.GetStringSize(selected.Name,HorizontalAlignment.Left,-1,Math.Max(10,textFloor)).X>w-8)
+                text.Text=selected.Name[..selected.Name.LastIndexOf(' ')];
             text.AddThemeFontOverride("font",regular);text.AddThemeFontSizeOverride("font_size",10);b.AddChild(text);
             if(selected.Hex==paintHex) b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
@@ -265,7 +308,7 @@ public partial class Main : Control
                 mat.SetShaderParameter("paint",value);
         };
         // Rebuild on the next frame: freeing the picker while its popup is still closing crashes Godot.
-        picker.PopupClosed += ()=> { SavePrefs(); Callable.From(Render).CallDeferred(); };
+        picker.PopupClosed += ()=> { SavePrefs(); UpdateAppIcon(); Callable.From(Render).CallDeferred(); };
         canvas.AddChild(picker);
         Button(214,714,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"PaintDone");
         if(notice.Length==0) Label(24,794,410,40,"Preview colors are illustrative, not factory paint matching.",11,Muted,false,true);
@@ -297,7 +340,7 @@ public partial class Main : Control
     private Label Label(float x,float y,float w,float h,string text,int size,Color color,bool strong=false,bool wrap=false)
     {
         var n=new Label {Position=new(x,y),Size=new(w,h),Text=text,MouseFilter=MouseFilterEnum.Ignore,VerticalAlignment=VerticalAlignment.Center};
-        n.AddThemeFontOverride("font",strong?bold:regular);n.AddThemeFontSizeOverride("font_size",size);n.AddThemeColorOverride("font_color",color);
+        n.AddThemeFontOverride("font",!strong?regular:size>=20?display:bold);n.AddThemeFontSizeOverride("font_size",size);n.AddThemeColorOverride("font_color",color);
         if(wrap)n.AutowrapMode=TextServer.AutowrapMode.WordSmart;
         canvas.AddChild(n);return n;
     }

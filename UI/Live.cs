@@ -210,7 +210,7 @@ public partial class Main
         var overlay=new StatusOverlay {Name="StatusOverlay",Position=new(24,143),Size=new(412,207),TextureSize=CarTexture.GetSize(),Art=CarArt.For(carModel.Id),
             Lock=VehicleIndicators.Lock(s?.Locked),Windshield=VehicleIndicators.Windshield(s?.ClimateOn,s?.TemperatureF),
             DriverSeat=VehicleIndicators.Seat(s?.DriverSeat),PassengerSeat=VehicleIndicators.Seat(s?.PassengerSeat),WheelHeat=s?.SteeringWheelHeat==true,
-            FlashUntilMs=flashEffectUntil,Horn=hornEffect,ExclaimFont=bold,
+            FlashUntilMs=flashEffectUntil,Horn=hornEffect,ExclaimFont=bold,LockTab=Brand.Flavor.LockTab,TabFont=bold,
             // The art shows the car's left (driver's) side.
             FrontDoorOpen=s?.Health?.FrontLeftDoor==true,RearDoorOpen=s?.Health?.RearLeftDoor==true,
             FrontWindowOpen=s?.Health?.FrontLeftWindow==true,RearWindowOpen=s?.Health?.RearLeftWindow==true,HoodOpen=s?.Health?.Hood==true};

@@ -8,8 +8,13 @@ namespace NGarage.Core;
 /// original (Hyundai Bluelink by default, Kia Connect as a choice); gtCTRL is the Kia EV6 GT build (Kia only).
 /// An export picks gtCTRL with the custom feature tag "gtctrl"; desktop runs can pass --flavor=gtctrl.</summary>
 /// <param name="Detail">The motorsport detail color (header stripe, panel corners, selected tab); null follows the app color.</param>
+/// <param name="LockTab">Lock state in a tab rising from the picture's bottom edge, instead of a padlock on the door.</param>
+/// <param name="PaintIcons">The app icon follows the car's paint (alternate icons, see CarPaints and add-app-icons.sh).</param>
+/// <param name="SystemFont">Text in the phone's own font (San Francisco on iPhone) instead of the bundled DejaVu Sans.</param>
+/// <param name="TextFloor">Smallest text size in canvas units (14: at least 11 points on every iPhone); 0 keeps the design's sizes.</param>
 public sealed record Flavor(string Id,string App,IReadOnlyList<string> Services,string DefaultTheme,string DefaultCar,
-    string DefaultPaintName,string DefaultPaintHex,bool Demo,string? Detail,string? DetailDark);
+    string DefaultPaintName,string DefaultPaintHex,bool Demo,string? Detail,string? DetailDark,bool LockTab=false,bool PaintIcons=false,
+    bool SystemFont=false,int TextFloor=0);
 
 /// <summary>The app's visible name and the car service in use. Screens and messages read names from here, so
 /// nothing hard-codes a maker. Internal identifiers (namespace, Keychain items, file names) are deliberately not
@@ -23,7 +28,7 @@ public static class Brand
     public static readonly Flavor NCtrl=new("nctrl","nCTRL",new[]{Hyundai,Kia,HyundaiCanada,KiaCanada},AppTheme.BaseHex,"ioniq5n",
         "Performance Blue","89b7f0",Demo:true,Detail:"f24a4d",DetailDark:"c63842");
     public static readonly Flavor GtCtrl=new("gtctrl","gtCTRL",new[]{Kia,KiaCanada},AppTheme.NeonHex,"ev6gt",
-        "Interstellar Gray","525252",Demo:false,Detail:null,DetailDark:null);
+        "Interstellar Gray","525252",Demo:false,Detail:null,DetailDark:null,LockTab:true,PaintIcons:true,SystemFont:true,TextFloor:14);
 
     public static Flavor Flavor { get; private set; }=NCtrl;
     private static string service=Hyundai;

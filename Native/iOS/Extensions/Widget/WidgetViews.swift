@@ -32,7 +32,14 @@ struct StatusView: View {
     }
     private func carPicture() -> some View {
         Group {
-            if let picture { Image(decorative: picture, scale: 1).resizable().scaledToFit() } else { Color.clear }
+            if let picture {
+                // Tinted and Clear home screens turn full-color images into a flat accent silhouette; desaturated keeps the art.
+                if #available(iOS 18.0, *) {
+                    Image(decorative: picture, scale: 1).resizable().widgetAccentedRenderingMode(.desaturated).scaledToFit()
+                } else {
+                    Image(decorative: picture, scale: 1).resizable().scaledToFit()
+                }
+            } else { Color.clear }
         }
     }
     private func batteryText(_ s: WidgetStatus, size: CGFloat) -> some View {

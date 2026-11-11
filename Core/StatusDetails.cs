@@ -45,21 +45,57 @@ public static class StatusDetails
         ("tirePressureLamp.tirePressureWarningLampFrontLeft","Front-left tire warning",Warning),("tirePressureLamp.tirePressureWarningLampFrontRight","Front-right tire warning",Warning),
         ("tirePressureLamp.tirePressureWarningLampRearLeft","Rear-left tire warning",Warning),("tirePressureLamp.tirePressureWarningLampRearRight","Rear-right tire warning",Warning),
         ("washerFluidStatus","Washer fluid low",YesNo),("breakOilStatus","Brake fluid warning",YesNo),("smartKeyBatteryWarning","Key fob battery low",YesNo),
-        ("odometer","Odometer",Raw),("engine","Vehicle on",YesNo)
+        ("odometer","Odometer",Raw),("engine","Vehicle on",YesNo),
+        // Kia Connect (US) cmm/gvi vehicleStatus.
+        ("syncDate.utc","Last report",KiaTime),
+        ("climate.airCtrl","Climate",OnOff),("climate.airTemp.value","Climate set to",Raw),("climate.defrost","Front defrost",OnOff),
+        ("climate.heatingAccessory.steeringWheel","Steering wheel heat",OnOff),("climate.heatingAccessory.steeringWheelStep","Steering wheel heat level",Raw),
+        ("climate.heatingAccessory.rearWindow","Rear window heat",OnOff),("climate.heatingAccessory.sideMirror","Mirror heat",OnOff),
+        ("climate.heatVentSeat.driverSeat.heatVentType","Driver seat",VentType),("climate.heatVentSeat.passengerSeat.heatVentType","Passenger seat",VentType),
+        ("climate.heatVentSeat.rearLeftSeat.heatVentType","Rear-left seat",VentType),("climate.heatVentSeat.rearRightSeat.heatVentType","Rear-right seat",VentType),
+        ("doorStatus.frontLeft","Front-left door",OpenClosed),("doorStatus.frontRight","Front-right door",OpenClosed),
+        ("doorStatus.backLeft","Rear-left door",OpenClosed),("doorStatus.backRight","Rear-right door",OpenClosed),
+        ("doorStatus.trunk","Tailgate",OpenClosed),("doorStatus.hood","Hood",OpenClosed),("sunroofOpen","Sunroof",OpenClosed),
+        ("windowStatus.windowFL","Front-left window",OpenClosed),("windowStatus.windowFR","Front-right window",OpenClosed),
+        ("windowStatus.windowRL","Rear-left window",OpenClosed),("windowStatus.windowRR","Rear-right window",OpenClosed),
+        ("evStatus.windowStatus.windowFL","Front-left window",OpenClosed),("evStatus.windowStatus.windowFR","Front-right window",OpenClosed),
+        ("evStatus.windowStatus.windowRL","Rear-left window",OpenClosed),("evStatus.windowStatus.windowRR","Rear-right window",OpenClosed),
+        ("tirePressure.all","Tire pressure",Warning),("batteryStatus.stateOfCharge","12-volt battery",Percent),
+        ("evStatus.batteryPrecondition","Battery preconditioning",OnOff),
+        ("evStatus.remainChargeTime.0.timeInterval.value","Charge time left (min)",Raw),("evStatus.remainChargeTime.0.etc1.value","DC fast charge time (min)",Raw),
+        ("evStatus.remainChargeTime.0.etc2.value","Portable charger time (min)",Raw),("evStatus.remainChargeTime.0.etc3.value","Level 2 charge time (min)",Raw),
+        ("evStatus.drvDistance.0.rangeByFuel.gasModeRange.value","Fuel range",Raw),("distanceToEmpty.value","Range to empty",Raw),
+        ("lowFuelLight","Low fuel light",OnOff),("ign3","Accessory power",OnOff),("sleepMode","Sleep mode",OnOff),
+        ("valetParkingMode","Valet mode",OnOff),("remoteControlAvailable","Remote control available",YesNo)
     };
+    // Plumbing the readable view leaves out: units, codes and the range estimate at each charge target.
+    private static bool Plumbing(string path)=>path.EndsWith(".unit",StringComparison.OrdinalIgnoreCase)||
+        path.EndsWith(".type",StringComparison.OrdinalIgnoreCase)||path.Contains(".dte.",StringComparison.OrdinalIgnoreCase)||
+        path.Contains(".heatVentLevel",StringComparison.OrdinalIgnoreCase)||path.Contains(".heatVentStep",StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The field paths nCTRL knows (case-insensitive), for the bug report's allow-list.</summary>
     public static readonly IReadOnlySet<string> KnownPaths=new HashSet<string>(Known.Select(k=>k.Path),StringComparer.OrdinalIgnoreCase);
-    public static IReadOnlyList<DetailRow> Rows(JsonElement status,UnitSystem units=UnitSystem.Imperial)
+    /// <summary>Every reported field. Readable: known fields with plain names, values and units first, then the rest
+    /// by raw name (unit and code fields left out). Not readable: every field by its raw name and raw value.</summary>
+    public static IReadOnlyList<DetailRow> Rows(JsonElement status,UnitSystem units=UnitSystem.Imperial,bool readable=true)
     {
         var leaves=new List<(string Path,JsonElement Value)>();
         Walk(status,"",leaves);
+        if(!readable)return leaves.Take(MaxRows).Select(l=>new DetailRow(l.Path,Clip(l.Value.ValueKind==JsonValueKind.String?l.Value.GetString()??"":l.Value.GetRawText()))).ToList();
         var byPath=leaves.GroupBy(l=>l.Path,StringComparer.OrdinalIgnoreCase).ToDictionary(g=>g.Key,g=>g.First().Value,StringComparer.OrdinalIgnoreCase);
         var rows=new List<DetailRow>();var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var labels=new HashSet<string>(StringComparer.Ordinal);
         foreach(var (path,label,format) in Known)
-            if(byPath.TryGetValue(path,out var value)){rows.Add(new(label,Clip(Measure(path,value,byPath,units)??format(value))));used.Add(path);}
+            // A label already shown (Hyundai and Kia name some fields differently) isn't repeated.
+            if(byPath.TryGetValue(path,out var value)){used.Add(path);if(labels.Add(label))rows.Add(new(label,Clip(Measure(path,value,byPath,units)??format(value))));}
+        // Kia's charge targets: a list of plug types and levels.
+        for(int i=0;i<4;i++)
+            if(byPath.TryGetValue($"evStatus.targetSOC.{i}.targetSOClevel",out var level)&&byPath.TryGetValue($"evStatus.targetSOC.{i}.plugType",out var plug)) {
+                rows.Add(new(Number(plug)==1?"AC charge target":Number(plug)==0?"DC charge target":"Charge target",Percent(level)));
+                used.Add($"evStatus.targetSOC.{i}.targetSOClevel");used.Add($"evStatus.targetSOC.{i}.plugType");
+            }
         foreach(var (path,value) in leaves)
-            if(rows.Count<MaxRows&&used.Add(path))rows.Add(new(path,Clip(Raw(value))));
+            if(rows.Count<MaxRows&&!Plumbing(path)&&used.Add(path))rows.Add(new(path,Clip(Raw(value))));
         return rows.Take(MaxRows).ToList();
     }
     // Distances, pressures and temperatures in the chosen units. Hyundai USA reports miles (a range with
@@ -71,6 +107,7 @@ public static class StatusDetails
         if(path.StartsWith("tirePressure.",StringComparison.OrdinalIgnoreCase))return Units.Pressure(n,units);
         if(path=="odometer")return Units.Distance(n,units);
         if(path=="airTemp.value")return Units.Temperature(Unit("airTemp.unit",0)?Units.Fahrenheit(n):n,units);
+        if(path=="climate.airTemp.value")return Units.Temperature(Unit("climate.airTemp.unit",0)?Units.Fahrenheit(n):n,units);
         if(path.EndsWith("Range.value",StringComparison.OrdinalIgnoreCase))return Units.Distance(Unit(path[..^5]+"unit",1)?n/Units.KmPerMile:n,units);
         return null;
     }
@@ -99,5 +136,11 @@ public static class StatusDetails
     private static string Warning(JsonElement e)=>Flag(e) switch {true=>"Warning",false=>"OK",_=>Raw(e)};
     private static string Percent(JsonElement e)=>Number(e) is double n?n.ToString("0",CultureInfo.InvariantCulture)+"%":Raw(e);
     private static string Seat(JsonElement e)=>Number(e) is double n&&n==Math.Floor(n)?SeatCodes.Reported((int)n):Raw(e);
+    // Kia seat mode: 0 off, 1 heating, 2 ventilating.
+    private static string VentType(JsonElement e)=>Number(e) switch {0=>"Off",1=>"Heating",2=>"Ventilating",_=>Raw(e)};
+    // Kia's compact UTC time, shown in local time.
+    private static string KiaTime(JsonElement e)=>e.ValueKind==JsonValueKind.String&&e.GetString() is {Length:14} t&&
+        DateTime.TryParseExact(t,"yyyyMMddHHmmss",CultureInfo.InvariantCulture,DateTimeStyles.AssumeUniversal,out var at)?
+        at.ToLocalTime().ToString("MMM d, h:mm tt",CultureInfo.InvariantCulture):Raw(e);
     private static string Plug(JsonElement e)=>Number(e) switch {0=>"Unplugged",double n=>"Plugged in (type "+n.ToString(CultureInfo.InvariantCulture)+")",_=>Raw(e)};
 }

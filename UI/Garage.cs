@@ -12,7 +12,8 @@ public partial class Main
     private Texture2D? carTexture;
     private string CarKey=>linkedVehicle.Length>0?linkedVehicle:"default";
     // The maker is dropped from the header only for your own service's cars ("EV6 GT" on Kia, "Kia EV6" on Hyundai).
-    private string CarTitle=>carName.Length>0?carName:carModel.Maker==Brand.Maker?carModel.ShortName:carModel.Name;
+    private string CarTitle=>carName.Length>0?carName:ModelName;
+    private string ModelName=>carModel.Maker==Brand.Maker?carModel.ShortName:carModel.Name;
     // Only the current picture stays loaded; the picker's thumbnails are released when it closes.
     private Texture2D CarTexture=>carTexture??=CarPicture(carModel);
     private static Texture2D CarPicture(CarModel model)=>GD.Load<Texture2D>("res://Assets/"+model.Picture);
@@ -46,11 +47,11 @@ public partial class Main
         var garage=NameInput(214,"GarageName",garageName,"My garage",30);
         Button(314,214,122,42,"Save",13,()=>{garageName=string.IsNullOrWhiteSpace(garage.Text)?"My garage":garage.Text.Trim();SavePrefs();Render();},true,"SaveGarage");
         Label(24,266,412,22,"CAR NAME",11,Muted,true);
-        var name=NameInput(290,"CarName",carName,carModel.Name,CarModels.MaxName);
+        var name=NameInput(290,"CarName",carName,ModelName,CarModels.MaxName);
         Button(314,290,122,42,"Save",13,()=>{SaveCar(carModel.Id,name.Text);notice=carName.Length>0?"Car name saved.":"Car name reset to the model name.";noticeError=false;Render();},true,"SaveCarName");
-        Button(24,344,412,44,"Model  /  "+carModel.Name+"  ›",13,()=>Navigate("Model"),false,"SettingsModel");
+        Button(24,344,412,44,"Model  /  "+ModelName+"  ›",13,()=>Navigate("Model"),false,"SettingsModel");
         Button(24,396,412,44,"Car color  /  "+paintName+"  ›",13,()=>Navigate("Paint"),false,"SettingsPaint");
-        Button(24,448,412,44,"App & car color  /  "+AppTheme.Name(Skin.Hex)+" · "+paintName+"  ›",13,()=>Navigate("AppColor"),false,"SettingsAppColor");
+        Button(24,448,412,44,"App color  /  "+AppTheme.Name(Skin.Hex)+"  ›",13,()=>Navigate("AppColor"),false,"SettingsAppColor");
         var widget=new CheckBox {Name="WidgetOn",Position=new(24,498),Size=new(412,36),Text=$"Show status in {Brand.App}'s widgets",ButtonPressed=widgetEnabled};
         widget.AddThemeFontOverride("font",regular);widget.AddThemeFontSizeOverride("font_size",13);
         // Off deletes what the widgets show; on fills them again from the last status.
@@ -65,57 +66,37 @@ public partial class Main
         input.AddThemeFontOverride("font",regular);input.AddThemeFontSizeOverride("font_size",14);canvas.AddChild(input);
         return input;
     }
-    // App and car color on one screen: the app color sets the whole look (Core/AppTheme.cs; the default is GT Neon),
-    // the car color paints the picture. The small car preview shows both.
+    // App color: one picked color sets the whole look (Core/AppTheme.cs). Car color has its own screen (Paint).
     private void AppColorScreen()
     {
-        Title("APP & CAR COLOR.","Saved on this device.");
-        Hero(196,136);
-        Label(24,342,110,22,"APP COLOR  ·",12,Muted,true);
-        Label(124,342,312,22,AppTheme.Name(Skin.Hex).ToUpperInvariant(),12,Blue,true).Name="AppColorName";
+        Title("APP COLOR.","One color sets the whole look. Saved on this device.");
+        Label(24,192,412,30,AppTheme.Name(Skin.Hex).ToUpperInvariant(),20,Blue,true).Name="AppColorName";
         var presets=AppTheme.Presets;
         for(int i=0;i<presets.Count;i++) {
             var (name,hex)=presets[i];
-            int x=24+(i%5)*84,y=364+(i/5)*60;
-            var b=Button(x,y,76,52,"",12,()=>PickAppColor(hex),false,"AppColor"+i);
+            int x=24+(i%4)*104,y=232+(i/4)*80;
+            var b=Button(x,y,96,68,"",12,()=>PickAppColor(hex),false,"AppColor"+i);
             // Swatches show each choice's own colors.
-            b.AddChild(new ColorRect {Name="Swatch",Position=new(6,6),Size=new(64,16),Color=new(hex),MouseFilter=MouseFilterEnum.Ignore});
-            b.AddChild(new ColorRect {Name="SwatchCard",Position=new(6,22),Size=new(64,3),Color=new(AppTheme.Derive(hex)[ThemeRole.Card]),MouseFilter=MouseFilterEnum.Ignore});
-            b.AddChild(SwatchText(name,76));
+            b.AddChild(new ColorRect {Name="Swatch",Position=new(8,8),Size=new(80,23),Color=new(hex),MouseFilter=MouseFilterEnum.Ignore});
+            b.AddChild(new ColorRect {Name="SwatchCard",Position=new(8,31),Size=new(80,4),Color=new(AppTheme.Derive(hex)[ThemeRole.Card]),MouseFilter=MouseFilterEnum.Ignore});
+            b.AddChild(SwatchText(name,96,38));
             if(hex==Skin.Hex)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
+        // Below the last row of presets (two rows for nCTRL's eight, three for gtCTRL's nine).
+        int y0=232+(presets.Count+3)/4*80+4;
+        Label(24,y0,200,22,"CUSTOM COLOR",11,Muted,true);
         // The picker button shows only its color, so its name sits beside it.
-        var picker=new ColorPickerButton {Name="CustomAppColor",Position=new(24,486),Size=new(56,40),Color=new(Skin.Hex),EditAlpha=false};
-        Label(90,496,140,22,"Custom app color",12,White);
+        var picker=new ColorPickerButton {Name="CustomAppColor",Position=new(24,y0+28),Size=new(56,46),Color=new(Skin.Hex),EditAlpha=false};
+        Label(90,y0+40,140,22,"Choose color",12,White);
         // Applied when the picker closes: rebuilding the screen while its popup is open crashes Godot.
         string chosen=Skin.Hex;
         picker.ColorChanged+=value=>chosen=value.ToHtml(false);
         picker.PopupClosed+=()=>Callable.From(()=>PickAppColor(chosen)).CallDeferred();
         canvas.AddChild(picker);
-        Button(238,486,198,40,"Reset to default",13,()=>PickAppColor(AppTheme.DefaultHex),false,"AppColorReset");
-
-        Label(24,542,110,22,"CAR COLOR  ·",12,Muted,true);
-        Label(124,542,312,22,paintName.ToUpperInvariant(),12,Blue,true).Name="CarColorName";
-        for(int i=0;i<paints.Length;i++) {
-            var (name,hex)=paints[i];
-            int x=24+(i%3)*142,y=568+(i/3)*54;
-            var b=Button(x,y,128,46,"",12,()=>PickPaint(name,hex),false,"CarColor"+i);
-            b.AddChild(new ColorRect {Name="Swatch",Position=new(8,6),Size=new(112,14),Color=new(hex),MouseFilter=MouseFilterEnum.Ignore});
-            b.AddChild(SwatchText(name,128,22));
-            if(hex==paintHex)b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
-        }
-        var paintPicker=new ColorPickerButton {Name="CustomCarColor",Position=new(24,680),Size=new(56,40),Color=new(paintHex),EditAlpha=false};
-        Label(90,690,140,22,"Custom car color",12,White);
-        // The preview follows live; the screen is rebuilt after the popup closes.
-        paintPicker.ColorChanged+=value=>{
-            paintName="Custom color";paintHex=value.ToHtml(false);
-            if(canvas.GetNodeOrNull<TextureRect>("CarArtwork")?.Material is ShaderMaterial mat)mat.SetShaderParameter("paint",value);
-        };
-        paintPicker.PopupClosed+=()=>{SavePrefs();Callable.From(Render).CallDeferred();};
-        canvas.AddChild(paintPicker);
-        Button(238,680,198,40,"Done  ›",14,()=>Navigate("Appearance"),true,"AppColorDone");
-        if(notice.Length==0)Label(24,732,412,40,"Red for locked and alerts, yellow for charging and amber for warnings keep their meaning in every app color. Car colors are illustrative, not factory matched.",
-            10,Muted,false,true);
+        Button(238,y0+28,198,46,"Reset to default",13,()=>PickAppColor(AppTheme.DefaultHex),false,"AppColorReset");
+        Label(24,y0+90,412,80,"Buttons, cards, text and the background all follow this color. Red for locked and alerts, yellow for charging and amber for warnings keep their meaning in every color.",
+            11,Muted,false,true);
+        Button(214,718,222,46,"Done  ›",14,()=>Navigate("Appearance"),true,"AppColorDone");
     }
     private Label SwatchText(string text,int width,int y=26)
     {
