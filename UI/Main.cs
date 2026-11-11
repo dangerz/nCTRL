@@ -292,9 +292,11 @@ public partial class Main : Control
             var swatch=new ColorRect {Position=new(8,8),Size=new(w-16,21),Color=new(selected.Hex),MouseFilter=MouseFilterEnum.Ignore};
             b.AddChild(swatch);
             var text=new Label {Position=new(2,33),Size=new(w-4,24),Text=selected.Name,HorizontalAlignment=HorizontalAlignment.Center,MouseFilter=MouseFilterEnum.Ignore,ClipText=true};
-            // Long names on narrow tiles drop their last word ("Aurora Black Pearl" reads "Aurora Black").
-            if(cols==4&&regular.GetStringSize(selected.Name,HorizontalAlignment.Left,-1,Math.Max(10,textFloor)).X>w-8)
-                text.Text=selected.Name[..selected.Name.LastIndexOf(' ')];
+            // Long names on narrow tiles drop their last word ("Aurora Black Pearl" reads "Aurora Black"); a long
+            // one-word name stays whole and is clipped.
+            int cut=selected.Name.LastIndexOf(' ');
+            if(cols==4&&cut>0&&regular.GetStringSize(selected.Name,HorizontalAlignment.Left,-1,Math.Max(10,textFloor)).X>w-8)
+                text.Text=selected.Name[..cut];
             text.AddThemeFontOverride("font",regular);text.AddThemeFontSizeOverride("font_size",10);b.AddChild(text);
             if(selected.Hex==paintHex) b.AddThemeStyleboxOverride("normal",Style(Skin.Selected,Blue,2));
         }
